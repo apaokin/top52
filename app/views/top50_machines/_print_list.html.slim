@@ -165,7 +165,7 @@ table class="table table-responsive table-striped"
                   = node_platform.elem_name
             tr
               td
-              td
+              td valign="top"
                 - if top50_cpus.any?
                   = "CPU: "
               td
@@ -189,7 +189,7 @@ table class="table table-responsive table-striped"
             - if top50_gpus.any? or top50_cops.any?
               tr
                 td
-                td
+                td valign="top"
                   = "Acc: "
                 td
                   - i = 0

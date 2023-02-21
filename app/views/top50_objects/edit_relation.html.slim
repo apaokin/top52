@@ -1,0 +1,12 @@
+div class="page-header"
+  h1 = t(".title", default: "Редактировать связь")
+
+div class="row"
+  div class="col-xs-8"
+    = bootstrap_form_for @top50_relation, url: top50_object_relation_save_path(@top50_object, @top50_relation) do |f|
+      = f.collection_select :sec_obj_id, Top50Object.all, :id, :id, label: "ID существующего объекта"
+      = f.collection_select :type_id, Top50RelationType.all, :id, :name, label: "Связь"
+      = f.number_field :sec_obj_qty, label: "Количество"
+      = f.collection_select :is_valid, Top50ValidType.all, :id, :name, {include_blank: true, label: "Статус"}
+      = f.form_group do
+        = f.submit t("buttons.save", default: "Save")

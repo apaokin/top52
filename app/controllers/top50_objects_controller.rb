@@ -107,6 +107,28 @@ class Top50ObjectsController < Top50BaseController
     end
   end
 
+  def edit_relation
+    @top50_object = Top50Object.find(params[:id])
+    @top50_relation = Top50Relation.find(params[:relid])
+  end
+
+  def save_relation
+    @top50_object = Top50Object.find(params[:id])
+    @top50_relation = Top50Relation.find(params[:relid])
+    @top50_relation.update(top50_relation_params)
+    @top50_relation.save!
+    redirect_to @top50_object
+  end
+
+  def destroy_relation
+    @top50_object = Top50Object.find(params[:id])
+    @top50_relation = Top50Relation.find(params[:relid])
+    if @top50_relation.prim_obj_id == @top50_object.id
+      @top50_relation.destroy!
+    end
+    redirect_to @top50_object
+  end
+
   def new_attribute_val_dict_set_attr
     attr = Top50AttributeDict.find(params[:attr_id])
     redirect_to proc { new_top50_object_top50_attribute_val_dict_step2_path(params[:id], attr.id) }
@@ -211,6 +233,10 @@ class Top50ObjectsController < Top50BaseController
 
   def top50_nested_object_params
     params.require(:top50_relation).permit(:top50_relation => [:type_id, :sec_obj_qty, :is_valid], :top50_object => [:id, :type_id, :is_valid])
+  end
+
+  def top50_relation_params
+    params.require(:top50_relation).permit(:type_id, :sec_obj_qty, :is_valid, :sec_obj_id)
   end
 
 end
