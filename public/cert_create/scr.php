@@ -33,8 +33,8 @@
 
         $tmp_dir='';
         //генерируем пути к временным svg, ps и pdf файлам
-        $tmp_svg_file=tempnam($tmp_dir,"");
-        $tmp_ps_file=tempnam($tmp_dir,"");
+        $tmp_svg_file=tempnam($tmp_dir,"") . '.svg';
+        $tmp_ps_file=tempnam($tmp_dir,"") . '.ps';
         $pdf_file="public/cert_create/certificates/" . 'rev' . $reliz_file . '_' . $position_file . '.pdf';
 
         /* Шаблонизатор FastTemplate */
@@ -110,7 +110,7 @@
                 //Ключи
                 //    -T     — служит для преобразования текста в кривые (для нормальной поддержки шрифтов)
                 //    -P    — указывает на необходимость преобразования в PostScript-файл
-                system("inkscape -T $tmp_svg_file -P $tmp_ps_file" ,$success);
+               system("inkscape -o $tmp_ps_file   $tmp_svg_file" ,$success);
                 //    system(
 
                    //в случае неудачного выполнения преобразования формируем исключение
