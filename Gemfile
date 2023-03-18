@@ -2,7 +2,11 @@ source "https://rubygems.org"
 
 gem "rake"
 gem "rails", "~> 4.1.2"
-gem "activerecord-jdbcpostgresql-adapter", "~> 1.3"
+gem 'sass-rails'
+platforms :jruby do
+  gem "activerecord-jdbcpostgresql-adapter", "~> 1.3.21"
+end
+gem "pg", "~> 0.18", platform: :ruby
 gem "uglifier", ">= 1.3.0"
 gem "chartkick"
 
@@ -46,6 +50,7 @@ gem "ckeditor"
 
 group :production do
   gem "whenever"
+  gem "honeybadger"
 end
 
 group :test do
