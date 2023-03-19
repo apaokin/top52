@@ -4,10 +4,14 @@
 2. `sudo apt-get install php7.2`
 2. `sudo apt-get install inkscape`
 2. `sudo apt-get install ghostscript`
-2. `sudo apt-get install openjdk-8-jdk` (найти текущую версию OpenJDK из `sudo apt-cache search openjdk`)
+2. Если используется jruby `sudo apt-get install openjdk-8-jdk` (найти текущую версию OpenJDK из `sudo apt-cache search openjdk`)
+2. Если используется ruby 2.4.5 `sudo apt-get install git curl wget build-essential libssl-dev libreadline-dev zlib1g-dev libpq-dev nodejs`
 3. `sudo apt-get install postgresql-9.6` (найти текущую версию Postgres из `sudo apt-cache search postgresql`)
-4. Поставить rbenv, установить jruby-9.1.10.0
-5. Установить bundler в папке с проектом: `gem install bundler`
+4. Поставить rbenv
+    1. jruby: rbenv install jruby-9.1.10.0
+    2. MRI: rbenv  install 2.4.5
+4. rbenv local при переключении версии
+5. Установить bundler в папке с проектом: `gem install bundler -v $(cat Gemfile.lock | grep -A1 "BUNDLED WITH" | tail -n 1 | xargs)`
 6. `bundle install`.
 7. `sudo -u postgres psql`<br />
 postgres=# `create user dbuser_dev;`<br />
