@@ -2,11 +2,11 @@ require "sidekiq/web"
 require "admin_constraint"
 
 Octoshell::Application.routes.draw do
-    
+
   get "certificates/page1" => "certificates#page1"
   post "certificates/page2" => "certificates#page2"
   post "certificates/scr" => "certificates#scr"
-    
+
   # This line mounts Wiki routes at /wiki by default.
   mount Wiki::Engine, :at => "/wiki"
 
@@ -34,7 +34,7 @@ Octoshell::Application.routes.draw do
     get :login_as, on: :member
     get :return_to_self, on: :member
   end
-  
+
   get 'certificates/download', to: 'top50_machines#download_certificate', as: 'download_certificate'
 
   resource :profile
@@ -64,7 +64,7 @@ Octoshell::Application.routes.draw do
   get 'delete_preview_list/:id', to: 'top50_machines#delete_preview_list', as: 'top50_machines_delete_preview_list'
   get 'publish_list/:id', to: 'top50_machines#publish_list', as: 'top50_machines_publish_list'
   get 'unpublish_list/:id', to: 'top50_machines#unpublish_list', as: 'top50_machines_unpublish_list'
-  
+
   get 'systems/moderate/:id', to: 'top50_machines#moderate', as: 'top50_machines_moderate'
   post 'systems/moderate/:id', to: 'top50_machines#pre_save', as: 'top50_machines_presave'
   get 'systems/moderate', to: 'top50_machines#moderate', as: 'top50_machines_moderate_new'
@@ -94,7 +94,7 @@ Octoshell::Application.routes.draw do
   resources :top50_benchmarks
   resources :top50_attribute_dbvals
   resources :top50_attribute_dicts
-  
+
   get 'list', to: 'top50_machines#list', as:'top50_machines_list'
   get 'archive/:eid', to: 'top50_machines#archive', as:'top50_machines_archive'
   get 'archive/:eid/vendor/:vid', to: 'top50_machines#archive_by_vendor', as:'top50_machines_archive_vendor'
@@ -102,7 +102,7 @@ Octoshell::Application.routes.draw do
   get 'archive/:eid/organization/:oid', to: 'top50_machines#archive_by_org', as:'top50_machines_archive_org'
   get 'archive/:eid/city/:cid', to: 'top50_machines#archive_by_city', as:'top50_machines_archive_city'
   get 'archive/:eid/country/:cid', to: 'top50_machines#archive_by_country', as:'top50_machines_archive_country'
-  get 'archive/:eid/component/:oid', to: 'top50_machines#archive_by_comp', as:'top50_machines_archive_comp'  
+  get 'archive/:eid/component/:oid', to: 'top50_machines#archive_by_comp', as:'top50_machines_archive_comp'
   get 'archive/:eid/component_spec/:elid', to: 'top50_machines#archive_by_comp_attrd', as:'top50_machines_archive_comp_attrd'
   get 'archive/:eid/spec/:aid/:elid', to: 'top50_machines#archive_by_attr_dict', as:'top50_machines_archive_attr_dict'
 
@@ -112,7 +112,7 @@ Octoshell::Application.routes.draw do
   get 'archive/:year/:month/organization/:oid', to: 'top50_machines#get_archive_by_org', as:'get_archive_org'
   get 'archive/:year/:month/city/:cid', to: 'top50_machines#get_archive_by_city', as:'get_archive_city'
   get 'archive/:year/:month/country/:cid', to: 'top50_machines#get_archive_by_country', as:'get_archive_country'
-  get 'archive/:year/:month/component/:oid', to: 'top50_machines#get_archive_by_comp', as:'get_archive_comp'  
+  get 'archive/:year/:month/component/:oid', to: 'top50_machines#get_archive_by_comp', as:'get_archive_comp'
   get 'archive/:year/:month/component_spec/:elid', to: 'top50_machines#get_archive_by_comp_attrd', as:'get_archive_comp_attrd'
   get 'archive/:year/:month/spec/:aid/:elid', to: 'top50_machines#get_archive_by_attr_dict', as:'get_archive_attr_dict'
   get 'archive', to: 'top50_machines#archive_lists', as:'top50_machines_archive_lists'
@@ -125,7 +125,7 @@ Octoshell::Application.routes.draw do
   get 'stats/:section/:year/:month', to: 'top50_machines#get_stats_per_list', as: 'get_stats_per_list'
   get 'ext_stats/:eid', to: 'top50_machines#ext_stats', as: 'top50_ext_stats'
   get 'ext_stats/:year/:month', to: 'top50_machines#get_ext_stats', as: 'get_ext_stats'
-  
+  get 'about', to: 'about#help'
   post 'objects/:id/attribute_val_dbvals', to: 'top50_objects#create_attribute_val_dbval', as:'top50_object_top50_attribute_val_dbvals'
   get 'objects/:id/attribute_val_dbvals/new', to: 'top50_objects#new_attribute_val_dbval', as:'new_top50_object_top50_attribute_val_dbval'
   patch 'objects/:id/attribute_val_dbvals/:avid', to: 'top50_objects#save_attribute_val_dbval', as:'top50_object_top50_attribute_val_dbval_save'
@@ -150,18 +150,18 @@ Octoshell::Application.routes.draw do
   patch 'objects/:id/relations/:relid', to: 'top50_objects#save_relation', as:'top50_object_relation_save'
   get 'objects/:id/relations/:relid', to: 'top50_objects#edit_relation', as:'top50_object_relation_edit'
   delete 'objects/:id/relation/:relid', to: 'top50_objects#destroy_relation', as:'top50_object_relation_destroy'
-  
+
   get 'systems/:id/add_component', to: 'top50_machines#add_component', as:'add_top50_machine_component'
   post 'systems/:id/add_component', to: 'top50_machines#create_component'
   patch 'systems/:id/add_component', to: 'top50_machines#create_component'
-  
+
   get 'systems/:id/add_any_component', to: 'top50_machines#add_any_component', as:'add_top50_machine_any_component'
   post 'systems/:id/add_any_component', to: 'top50_machines#create_any_component'
-  
+
   get 'objects_by_type', to: 'top50_objects#index_type', as: 'top50_object_tp'
 
   get 'objects_by_type/:tid', to: 'top50_objects#objects_of_type', as: 'top50_object_by_tp'
-  
+
   get 'components/info/:id', to: 'top50_objects#show_info', as:'top50_objects_show_info'
 
   get 'systems/:id/benchmark_results', to: 'top50_machines#benchmark_results', as:'top50_machine_top50_benchmark_results'
