@@ -1,3 +1,27 @@
+
+## Install Top50 inside  docker container (NOT for production)
+Requires: Docker and Docker Composer
+### Installation
+
+1. copy repo `git clone https://github.com/apaokin/top52.git`
+1. execute `cd top52/docker`
+1. build and run containers `docker-compose up`. Add `-d` flag for detached mode: run containers in background.
+1. check status of containers `docker-compose ps`
+1. install database and run seeds rb: `docker-compose exec top bundle exec rake db:setup`
+1. visit `http://localhost:4000/` (login: `admin@octoshell.ru`, password: `123456`)
+### Usage
+
+Here Top50 is run inside isolated container. This introduces difficulties, espcially for inexperienced developers, and can overwhelm advantages of fast and easy installation compared to direct installation. When you run rails server in development environment, you expect some code changes to take effect after next request is sent (F5 driven development). It works here too, thanks to bind mounts: octoshell-v2 directory on the host machine is mounted into a container. Postgres database is saved inside volume, so you can stop and start containers as much as you like without data loss.
+
+But still sometimes you have to run commands inside container. These commands have to be started with `docker-compose exec top` or you can run bash
+`docker-compose exec top bash` when the containers are running. But it can not help when you have to bundle and the app container is turned off. Just write `bundle install` in `docker/entrypoints/docker-entrypoint.sh` instead of `bin/rails server` command.
+
+- Start the containers: `docker-compose up`
+- Stop the containers: `docker-compose down`
+- Read stdout of containers, when in detached mode: `docker-compose logs`
+- Reinstall container: `docker-compose build` (you might need to remove volumes sometimes)
+
+
 ## Установка и запуск
 
 1. `git clone`
