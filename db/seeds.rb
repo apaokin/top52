@@ -4,21 +4,11 @@
 # The data can then be loaded with the rake db:seed (or created alongside the db with db:setup).
 #
 
-<<<<<<< HEAD
-Group.superadmins
-Group.authorized
-admin = User.create!(email: "admin@octoshell.ru",
-                            access_state: 'active',
-                            password: "123456",
-                            password_confirmation: '123456')
-admin.activate!
-admin.groups << Group.superadmins
-=======
-ActiveRecord::Base.connection.tables.each do |table|
-  next if table == 'schema_migrations'
-
-  ActiveRecord::Base.connection.execute("TRUNCATE #{table} CASCADE")
-end
+# ActiveRecord::Base.connection.tables.each do |table|
+#   next if table == 'schema_migrations'
+#
+#   ActiveRecord::Base.connection.execute("TRUNCATE #{table} CASCADE")
+# end
 
 Group.superadmins
 Group.authorized
@@ -171,4 +161,3 @@ Top50AttributeValDbval.create!("attr_id"=> Top50Attribute.find_by!(name_eng: "Na
                                "obj_id"=>prev.id,
                                "value"=>"Top50 preview",
                                "is_valid"=>nil, "comment"=>nil)
->>>>>>> origin/mri
