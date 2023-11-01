@@ -24,7 +24,7 @@ But still sometimes you have to run commands inside container. These commands ha
 
 ## Установка и запуск без докера
 ### Окружение development.
-В большинстве случаев этого окружения достаточно для студентов. Докер контейнеры (cм выше) ставятся быстрее и в автоматическом режиме. Установить приложение с помощью этой инструкции может быть полезно для лучшего понимания зависимостей проекта.  
+В большинстве случаев этого окружения достаточно для студентов. Докер контейнеры (cм выше) ставятся быстрее и в автоматическом режиме. Установить приложение с помощью этой инструкции может быть полезно для лучшего понимания зависимостей проекта.
 1. `git clone <репозиторий>`
 1.  `cd top52`
 2. `sudo apt-get install git curl wget build-essential libssl-dev libreadline-dev zlib1g-dev libpq-dev nodejs`
@@ -43,6 +43,7 @@ But still sometimes you have to run commands inside container. These commands ha
 postgres=# `create user dbuser_dev;`<br />
 postgres=# `\password dbuser_dev`  # Password: `pass`<br />
 postgres=# `alter user dbuser_dev CREATEDB;`
+8. Убедиться, что postgres разрешает подсоединяться Вашему пользователю к базам данных проекта. Для этого надо в pg_hba.conf изменить/добавить строку формата `local all all <something>` на `local all all md5`. После этого перезапустить СУБД:  `sudo systemctl restart postgresql`
 8. `rake db:setup`
 9. Если хотите генерировать сертификаты, подтверждающие положение системы в рейтинге и которые, скорее всего, Вам не понадобится: `sudo apt-get install php7.2 inkscape ghostscript`
 
