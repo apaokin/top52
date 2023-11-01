@@ -19,29 +19,35 @@ But still sometimes you have to run commands inside container. These commands ha
 - Start the containers: `docker-compose up`
 - Stop the containers: `docker-compose down`
 - Read stdout of containers, when in detached mode: `docker-compose logs`
-- Reinstall container: `docker-compose build` (you might need to remove volumes sometimes)
+- Reinstall container: `docker-compose build` (you might need to remove volumes sometimes using the special extra commands)
 
 
-## Установка и запуск
-
-1. `git clone`
-2. `sudo apt-get install php7.2`
-2. `sudo apt-get install inkscape`
-2. `sudo apt-get install ghostscript`
-2. Если используется jruby `sudo apt-get install openjdk-8-jdk` (найти текущую версию OpenJDK из `sudo apt-cache search openjdk`)
-2. Если используется ruby 2.4.5 `sudo apt-get install git curl wget build-essential libssl-dev libreadline-dev zlib1g-dev libpq-dev nodejs`
-3. `sudo apt-get install postgresql-9.6` (найти текущую версию Postgres из `sudo apt-cache search postgresql`)
-4. Поставить rbenv
-    1. jruby: rbenv install jruby-9.1.10.0
-    2. MRI: rbenv  install 2.4.5
-4. rbenv local при переключении версии
+## Установка и запуск без докера
+### Окружение development.
+В большинстве случаев этого окружения достаточно для студентов. Докер контейнеры (cм выше) ставятся быстрее и в автоматическом режиме. Установить приложение с помощью этой инструкции может быть полезно для лучшего понимания зависимостей проекта.  
+1. `git clone <репозиторий>`
+1.  `cd top52`
+2. `sudo apt-get install git curl wget build-essential libssl-dev libreadline-dev zlib1g-dev libpq-dev nodejs`
+3. `sudo apt-get install postgresql` (найти текущую версию Postgres из `sudo apt-cache search postgresql`)
+4. Поставить rbenv: `curl https://raw.githubusercontent.com/rbenv/rbenv-installer/master/bin/rbenv-installer | bash`
+1. Добавить эти строки  ~/.bashrc для автоматической загрузки rbenv и перезапустить терминал:
+    ```
+      export PATH=~/.rbenv/bin:$PATH
+      eval "$(rbenv init -)"
+    ```
+5. rbenv  install 2.4.5
 5. Установить bundler в папке с проектом: `gem install bundler -v $(cat Gemfile.lock | grep -A1 "BUNDLED WITH" | tail -n 1 | xargs)`
+5. rbenv rehash
 6. `bundle install`.
 7. `sudo -u postgres psql`<br />
 postgres=# `create user dbuser_dev;`<br />
 postgres=# `\password dbuser_dev`  # Password: `pass`<br />
 postgres=# `alter user dbuser_dev CREATEDB;`
 8. `rake db:setup`
+9. Если хотите генерировать сертификаты, подтверждающие положение системы в рейтинге и которые, скорее всего, Вам не понадобится: `sudo apt-get install php7.2 inkscape ghostscript`
+
+### Production
+1. Повторить шаги для окружения development.
 9. Аналогично создать пользователя БД postgres для production
 10. Установить плагин rbenv-vars для rbenv
 11. В папке с проектом создать и заполнить файл .rbenv-vars:<br />
