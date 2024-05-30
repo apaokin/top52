@@ -206,6 +206,8 @@ Octoshell::Application.routes.draw do
   root 'newsfeed#index'
   #root :to => redirect('/newsfeed')
 
+  get "/duplicates/machines", to: "top50_machines#duplicates", as: "top50_machines_duplicates"
+
   namespace :admin do
     mount Sidekiq::Web => "/sidekiq", :constraints => AdminConstraint.new
 

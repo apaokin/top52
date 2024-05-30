@@ -6,6 +6,42 @@ class Top50MachinesController < Top50BaseController
     @top50_machines = Top50Machine.all
   end
 
+  def duplicates
+    @top50_machines = Top50Machine.all
+    @added_machines_ids = Set.new
+    @modifications_branches = Hash.new
+
+    @top50_machines.to_a.each do |machine|
+      if @added_machines_ids.include?(machine.id)
+        next
+      end
+      
+      chain = create_chain(machine)
+      @modifications_branches[machine.id] = chain
+    end
+
+    @max_chain = 0
+    @modifications_branches.each do |id, branch|
+      if branch.size > @max_chain
+        @max_chain = branch.size
+      end
+    end
+
+  end
+
+  def create_chain(machine)
+    chain = [machine]
+    @added_machines_ids.add(machine.id)
+    mod = machine.modification
+    while nil != mod do
+      @added_machines_ids.add(mod.id)
+      chain = chain + [mod]
+      mod = mod.modification
+    end
+
+    return chain
+  end
+
   def download_certificate
     if params[:path] and params[:path].start_with?("public/cert_create/certificates")
       send_file params[:path], filename: "Certificate.pdf", type:"application/pdf"

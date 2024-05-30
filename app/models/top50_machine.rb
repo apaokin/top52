@@ -1,3 +1,5 @@
+MODIFICATION = 2
+
 class Top50Machine < ActiveRecord::Base
 
   self.primary_key = "id"
@@ -54,6 +56,17 @@ class Top50Machine < ActiveRecord::Base
       self.top50_contact.confirm
     end
     self.top50_object.confirm
+  end
+
+  def modification
+    id = self.id
+  
+    modification_relation = Top50Relation.find_by(prim_obj_id: id, type_id: MODIFICATION)
+    if nil == modification_relation
+      return nil
+    end
+    next_mod = Top50Machine.find_by(id: modification_relation.sec_obj_id)
+    return next_mod
   end
 
   # validates :cond, acceptance: { message: 'Для подачи заявки необходимо подтвердить согласие на обработку данных.' }

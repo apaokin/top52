@@ -1,0 +1,23 @@
+h1
+  = "Граф модификаций систем"
+table class="table table-responsive"
+    tr
+      - for i in 1..@max_chain
+        - title = "Уровень %d" %[i]
+        th
+          =title
+
+    - @modifications_branches.each do |id, branch|
+      tr class = "tr-new-m"
+        - i = 0
+        - branch.each do |machine|
+          - classname = "col-1"
+          td class=classname
+            = machine.id
+            = "\n"
+            = machine.name
+            = "\n"
+            - i = i+1
+
+
+<br>
