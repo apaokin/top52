@@ -1,23 +1,78 @@
 h1
-  = "Граф модификаций систем"
-table class="table table-responsive"
+  = "Таблица модификаций систем, разбитых по сходству"
+div align="center"
+
+    - @clusters.each do |root, cluster|
+      - if cluster.size == 1
+        - next
+      table width="740" class="table duplicate_table"
+      table class="table duplicate_table"
+        center  
+          tr align="left"
+            - max_chain = get_max_branch_size(cluster)
+            - for i in 1..@max_chain
+              th class = "col-custom"
+          - cluster_branches = []
+          - cluster.each do |id|
+            - cluster_branches = cluster_branches + [@modifications_branches[id]]
+          - cluster_branches = cluster_branches.sort_by{|branch| [-branch.size]}
+
+          - cluster_branches.each do |branch|
+            - if branch[0].is_valid == 0
+                - classname = "error"
+            - elsif branch[0].is_valid == 1
+                - classname = "info"
+            - else
+                - classname = "tr-new-m"
+            tr class="info" align="left"
+              - branch.each do |machine|
+                
+                td 
+                  div class="colored_line title_cell_line"
+                    = "Номер: %d" % machine.id
+                  div class="colored_line"
+                    = link_to "#{machine.name}", "/systems/#{machine.id}"
+                  div class="colored_line dark_cell_line"
+                    = "Контакт: "
+                    = get_contact_str(machine)
+                  div class="colored_line"
+                    = get_org_name(machine)
+
+                  div class="colored_line dark_cell_line"
+                    = get_vendors_names(machine)
+                  - classname = "colored_line " + get_status_classname(machine)
+                  div class=classname
+                    = "Состояние: #{format_valid_flag(machine)}"
+                  div class="colored_line dark_cell_line"
+                    li
+                      = link_to "Удалить систему", "/duplicates/delete_modification_node/%d" % [machine.id]
+table width="740" class="table duplicate_table"
+  center  
+    h1
+      = "Системы, не имеющие схожих "
     tr
       - for i in 1..@max_chain
-        - title = "Уровень %d" %[i]
-        th
-          =title
-
-    - @modifications_branches.each do |id, branch|
-      tr class = "tr-new-m"
-        - i = 0
+        th class = "col-custom"
+    - @single_clusters_branches.each do |branch|
+      tr class="info"
         - branch.each do |machine|
-          - classname = "col-1"
-          td class=classname
-            = machine.id
-            = "\n"
-            = machine.name
-            = "\n"
-            - i = i+1
+                
+          td 
+            div class="colored_line title_cell_line"
+              = "Номер: %d" % machine.id
+            div class="colored_line"
+              = link_to "#{machine.name}", "/systems/#{machine.id}"
+            div class="colored_line dark_cell_line"
+              = "Контакт: "
+              = get_contact_str(machine)
+            div class="colored_line"
+              = get_org_name(machine)
 
-
-<br>
+            div class="colored_line dark_cell_line"
+              = get_vendors_names(machine)
+            - classname = "colored_line " + get_status_classname(machine)
+            div class=classname
+              = "Состояние: #{format_valid_flag(machine)}"
+            div class="colored_line dark_cell_line"
+              li
+                = link_to "Удалить систему", "/duplicates/delete_modification_node/%d" % [machine.id]

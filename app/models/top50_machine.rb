@@ -69,5 +69,14 @@ class Top50Machine < ActiveRecord::Base
     return next_mod
   end
 
+  def is_modification
+    id = self.id
+    if nil != Top50Relation.find_by(sec_obj_id: id, type_id: MODIFICATION)
+      return true
+    else
+      return false
+    end
+  end
+
   # validates :cond, acceptance: { message: 'Для подачи заявки необходимо подтвердить согласие на обработку данных.' }
 end

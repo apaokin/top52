@@ -8,4 +8,11 @@ class Top50DictionaryElem < ActiveRecord::Base
     { id: id, text: name }
   end
 
+  def replace(replacing_id)
+    Top50AttributeValDict.where(dict_elem_id: self.id).each do |val_dict|
+      val_dict.dict_elem_id = replacing_id
+      val_dict.save
+    end
+  end
+
 end

@@ -1,3 +1,23 @@
+div align="right"
+  p
+    = "Счётчик статусов объектов:"
+  p
+    = "Не рассмотрено: #{@objects_statuses_count[2]}" 
+  p
+    = "Принято: #{@objects_statuses_count[1]}" 
+  p
+    = "Отклонено: #{@objects_statuses_count[0]}" 
+  br
+  br
+  p
+    = "Счётчик статусов строковых аттрибутов:"
+  p
+    = "Не рассмотрено: #{@elems_statuses_count[2]}" 
+  p
+    = "Принято: #{@elems_statuses_count[1]}" 
+  p
+    = "Отклонено: #{@elems_statuses_count[0]}" 
+
 h3 Links
 br
 p
@@ -39,6 +59,10 @@ h3 Удаление дубликатов
 br
 p
   = link_to "Системы", "/duplicates/machines"
+p
+  = link_to "Процессоры", "/duplicates/cpu"
+p
+  = link_to "Графические карты", "/duplicates/gpu"
 p
   = "Вендоры"
 p

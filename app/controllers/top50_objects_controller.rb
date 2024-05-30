@@ -1,10 +1,78 @@
 class Top50ObjectsController < Top50BaseController
   skip_before_filter :require_login, only: [:show_info]
   skip_before_filter :require_admin_rights, only: [:show_info]
+
+  Cpu = Struct.new(:id, :model, :family, :gen, :manufacturer, :cores_count, :frequency, :is_valid)
+
+  # Type of attributes for CPU
+  CPU = 6
+  FAMILY = 27
+  GEN = 29
+  MODEL = 15
+  MANUFACTURER = 20
+  CORES = 4
+  FREQUENCY = 25
+
   def index
     @top50_objects = Top50Object.all
   end
   
+  def cpu_duplicates
+    @top50_objects = Top50Object.all
+    @cpu_table_titles = ["ID", "Модель", "Семейство", "Поколение", "Состояние", "Действия"]
+    @manufacturers_table_titles = ["ID", "Производитель", "Статус", "Заменить на производителя с другим id:"]
+    @families_table_titles = ["ID", "Семейство", "Статус", "Заменить на семейство с другим id:"]
+    @gens_table_titles = ["ID", "Поколение", "Статус", "Заменить на поколение с другим id:"]
+    @dict_elem = Top50DictionaryElem
+    @cpus = construct_cpus_array()
+    @cursed_cpus = get_cursed_cpus(@cpus)
+    @families = @families.sort_by{|id| @dict_elem.find_by(id: id).name}
+    @families_clusters = get_attribute_clusters(@families)
+    @gens = @gens.sort_by{|id| @dict_elem.find_by(id: id).name}
+    @gens_clusters = get_attribute_clusters(@gens)
+  end
+
+  def replace_cpu_attribute
+    object_to_delete = Top50DictionaryElem.find_by(id: params[:id_to_delete])
+    if object_to_delete == nil
+      @wrong_id = true
+      redirect_to(:back)
+    end
+
+    object_to_delete.replace(params[:replacing_id])
+    object_to_delete.destroy
+    redirect_to(:back)
+  end
+
+  def get_attribute_clusters(families_array)
+    clusters = Hash.new
+    done = Set.new
+    families = families_array.sort_by{|id| -@dict_elem.find_by(id: id).name.length}
+    families.each do |id1|
+      if done.include?(id1)
+        next
+      end
+      families.each do |id2|
+        if done.include?(id2)
+          next
+        end
+
+        if @dict_elem.find_by(id: id2).name.downcase.include?(@dict_elem.find_by(id: id1).name.downcase) and id2 != id1
+          if clusters.include?(id1)
+            clusters[id1] = clusters[id1] + [id2]
+          else
+            clusters[id1] = [id1, id2]
+          end
+          done.add(id1)
+          done.add(id2)
+        end
+
+      end
+    end
+
+    return clusters
+  end
+
   def index_type
     #top50_obj_gr = Top50Object.all.group(:type_id).count
     #@top50_object_types = Top50ObjectType.all.joins(top50_obj_gr)
@@ -237,6 +305,69 @@ class Top50ObjectsController < Top50BaseController
 
   def top50_relation_params
     params.require(:top50_relation).permit(:type_id, :sec_obj_qty, :is_valid, :sec_obj_id)
+  end
+
+  def construct_cpus_array()
+    cpus = []
+    cpus_objects = Top50Object.where(type_id: CPU).to_a
+    @dict_elems = Top50DictionaryElem
+    @manufacturers = Set.new
+    @gens = Set.new
+    @families = Set.new
+    cpus_objects.each do |obj|
+
+      dict_values = obj.top50_attribute_val_dicts
+      model = nil
+      gen = nil
+      family = nil
+      manufacturer = nil
+      cores_count = nil
+      frequency = nil
+      
+      dict_values.each do |value|
+        attr_name = value.top50_dictionary_elem.name 
+        case value.top50_attribute_dict.top50_attribute.id
+        when FAMILY
+          family = attr_name
+          @families.add(value.top50_dictionary_elem.id)
+        when GEN
+          gen = attr_name
+          @gens.add(value.top50_dictionary_elem.id)
+        when MODEL
+          model = attr_name
+        when MANUFACTURER
+          manufacturer = attr_name
+          @manufacturers.add(value.top50_dictionary_elem.id)
+        end
+      end
+
+      values = obj.top50_attribute_val_dbvals
+      values.each do |value|
+        case value.top50_attribute_dbval.top50_attribute.id
+        when CORES
+          cores_count = value.value
+        when FREQUENCY
+          frequency = value.value
+        end
+      end
+
+      cpus << Cpu.new(obj.id, model, family, gen, manufacturer, cores_count, frequency, obj.is_valid)
+    end
+    return cpus
+  end
+
+  def get_cursed_cpus(cpus)
+    cursed = []
+    cpus.each do |cpu|
+      if cpu.model == nil
+        next
+      end
+      if cpu.model.downcase.include? "ghz"
+        cursed << cpu
+      end
+    end
+
+    return cursed
   end
 
 end
