@@ -356,6 +356,7 @@ class Top50ObjectsController < Top50BaseController
     return cpus
   end
 
+  # Get cpu's with incorrect model name
   def get_cursed_cpus(cpus)
     cursed = []
     cpus.each do |cpu|
