@@ -1,9 +1,140 @@
 # encoding: UTF-8
+MODIFICATION = 2
+SIMILARITY_THRESHOLD=5 # Regulate livenstein metric threshold for clusterization. Bigger -> higher
+
+# Is_valid field enum
+DECLINED = 0
+CONFIRMED = 1
+PENDING = 2
+
 class Top50MachinesController < Top50BaseController
   skip_before_filter :require_login, only: [:list, :get_archive, :get_archive_by_vendor, :get_archive_by_org, :get_archive_by_city, :get_archive_by_country, :get_archive_by_vendor_excl, :get_archive_by_comp, :get_archive_by_comp_attrd, :get_archive_by_attr_dict, :archive, :archive_lists, :archive_by_vendor, :archive_by_org, :archive_by_city, :archive_by_country, :archive_by_vendor_excl, :archive_by_comp, :archive_by_comp_attrd, :archive_by_attr_dict, :show, :stats, :get_ext_stats, :ext_stats, :get_stats_per_list, :stats_per_list, :download_certificate, :app_form_new, :app_form_new_post, :app_form_upgrade, :app_form_upgrade_post, :app_form_step1, :app_form_step1_presave, :app_form_step2_presave, :app_form_step3_presave, :app_form_step4_presave, :app_form_confirm_post, :app_form_finish]
   skip_before_filter :require_admin_rights, only: [:list, :get_archive, :get_archive_by_vendor, :get_archive_by_org, :get_archive_by_city, :get_archive_by_country, :get_archive_by_vendor_excl, :get_archive_by_comp, :get_archive_by_comp_attrd, :get_archive_by_attr_dict, :archive, :archive_lists, :archive_by_vendor, :archive_by_org, :archive_by_city, :archive_by_country, :archive_by_vendor_excl, :archive_by_comp, :archive_by_comp_attrd, :archive_by_attr_dict, :show, :stats, :get_ext_stats, :ext_stats, :get_stats_per_list, :stats_per_list, :download_certificate, :app_form_new, :app_form_new_post, :app_form_upgrade, :app_form_upgrade_post, :app_form_step1, :app_form_step1_presave, :app_form_step2_presave, :app_form_step3_presave, :app_form_step4_presave, :app_form_confirm_post, :app_form_finish]
   def index
     @top50_machines = Top50Machine.all
+  end
+
+
+  # Prepare data structure, describing groups of machine duplicates
+  def get_machine_duplicates
+    @top50_machines = Top50Machine.all
+    @modifications_branches = Hash.new
+    @roots = []
+    @max_chain = 0
+
+    machines = @top50_machines.where("(is_valid = 1 OR is_valid = 1) AND name IS NOT NULL")
+    machines.to_a.each do |machine|
+      if machine.is_modification
+        next
+      end
+
+      chain = create_chain(machine)
+      if chain.size > @max_chain
+        @max_chain = chain.size
+      end
+
+      @modifications_branches[machine.id] = chain
+      @roots = @roots + [machine.id]
+    end
+
+    @clusters = create_machine_clusters(@roots)
+    @single_clusters_branches = []
+    @clusters.each do |key, value|
+      if value.size == 1
+        @single_clusters_branches = @single_clusters_branches + [@modifications_branches[value[0]]]
+      end
+
+    end
+    
+    @single_clusters_branches = @single_clusters_branches.sort_by{|branch| [-branch.size]}
+    render layout: 'application'
+  end
+  
+  # Chain - list of systems, where i+1-th machine is modification of i-th
+  def create_chain(machine)
+    chain = [machine]
+    mod = machine.modification
+    while nil != mod do
+      chain = chain + [mod]
+      mod = mod.modification
+    end
+
+    return chain
+  end
+
+  def create_machine_clusters(roots)
+    len = roots.size
+    done = Set.new
+    clusters = Hash.new
+    for i in 0..len-1
+      m1 = Top50Machine.find_by(id: roots[i])
+      if done.include?(m1.id)
+        next
+      end
+      clusters[m1.id] = [m1.id]
+      
+      for j in i+1...len-1
+        m2 = Top50Machine.find_by(id: roots[j])
+        if done.include?(m2.id)
+          next
+        end
+
+        if (is_same(m1.name, m2.name))
+          clusters[m1.id] = clusters[m1.id] + [m2.id]
+          done.add(m2.id)
+        end
+      end
+      done.add(m1.id)
+    end
+
+    return clusters
+  end 
+
+  # Returns true, if x and y must be in the same cluster
+  def is_same(x, y)
+    metric = livenstein_metric(x, y)
+    threshold = [x.size, y.size].max/SIMILARITY_THRESHOLD
+    return metric < threshold
+  end
+
+  # Helper
+  def livenstein_metric(s, t)
+    v0 = (0..t.length).to_a
+    v1 = []
+  
+    s.chars.each_with_index do |s_ch, i|                                                                                            
+      v1[0] = i + 1                                                                                                                 
+  
+      t.chars.each_with_index do |t_ch, j|                                                                                          
+        cost = s_ch == t_ch ? 0 : 1                                                                                                 
+        v1[j + 1] = [v1[j] + 1, v0[j + 1] + 1, v0[j] + cost].min                                                                    
+      end                                                                                                                           
+      v0 = v1.dup                                                                                                                   
+    end                                                                                                                             
+  
+    v0[t.length]
+  end
+
+
+  # Do complex removal of system, which is modification of other system
+  def delete_modification_node
+    id = params[:id]
+    prev_system_relation = Top50Relation.find_by(sec_obj_id: id, type_id: MODIFICATION)
+    prev_system_id = prev_system_relation.prim_obj_id
+    prev_system = Top50Machine.find_by(id: prev_system_id)
+
+    next_system_relation = Top50Relation.find_by(prim_obj_id: id, type_id: MODIFICATION)
+    next_system_id = next_system_relation.sec_obj_id
+    next_system = Top50Machine.find_by(id: next_system_id)
+
+    prev_system_relation.sec_obj_id = next_system_id
+    prev_system_relation.save
+    next_system_relation.destroy
+    
+    curr_machine = Top50Machine.find_by(id: id)
+    curr_machine.destroy
+    redirect_to(:back)
+    return
   end
 
   def download_certificate
@@ -454,7 +585,33 @@ class Top50MachinesController < Top50BaseController
     return
   end
   
+  # Create variables for viewing for adminz yfg
   def admin_links
+    @objects_statuses_count = Hash.new
+    @objects_statuses_count[DECLINED] = 0
+    @objects_statuses_count[CONFIRMED] = 0
+    @objects_statuses_count[PENDING] = 0
+
+    @elems_statuses_count = Hash.new
+    @elems_statuses_count[DECLINED] = 0
+    @elems_statuses_count[CONFIRMED] = 0
+    @elems_statuses_count[PENDING] = 0
+
+    Top50Object.all.to_a.each do |obj|
+      is_valid = obj.is_valid
+      if is_valid == nil
+        is_valid = PENDING
+      end
+      @objects_statuses_count[is_valid] += 1
+    end
+
+    Top50DictionaryElem.all.to_a.each do |elem|
+      is_valid = elem.is_valid
+      if is_valid == nil
+        is_valid = PENDING
+      end
+      @elems_statuses_count[is_valid] += 1
+    end
   end
 
   def moderate
@@ -1703,6 +1860,15 @@ class Top50MachinesController < Top50BaseController
       if params[:org_id].present? and params[:suborg_id].present?
         if not Top50Relation.where(type_id: get_rel_contain_id, prim_obj_id: params[:org_id].to_i).pluck(:sec_obj_id).include? params[:suborg_id].to_i
           return "Выбранное подразделение не соответствует организации"
+        end
+      end
+      phone = params[:contact][:phone]
+      if phone != nil and phone != ""
+        if phone.count("a-zA-Z") > 0 or phone.include?(" ") or phone.include?("-") or phone.include?("(") or phone.include?(")")
+          return "Номер телефона содержит лишние символы и/или пробел"
+        end
+        if phone.length != 11
+          return "Некорректная длина номера телефона"
         end
       end
       add_vendors = params.select {|k,v| k.starts_with? 'add_vendor_'}
@@ -2956,4 +3122,5 @@ class Top50MachinesController < Top50BaseController
   def top50_node_params
     params.require(:top50_relation).permit(:top50_node => [:sec_obj_qty, :is_valid], :top50_cpu => [:model_dict_elem_id, :sec_obj_qty, :is_valid], :top50_acc => [:model_dict_elem_id, :sec_obj_qty, :is_valid], :top50_ram => [:ram_size, :is_valid])
   end
+
 end

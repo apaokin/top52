@@ -29,7 +29,9 @@ class Top50Contact < ActiveRecord::Base
 
   before_destroy do
     obj = Top50Object.find(self.id)
-    obj.destroy!
+    if obj != nil
+      obj.destroy!
+    end
   end
 
   def confirm

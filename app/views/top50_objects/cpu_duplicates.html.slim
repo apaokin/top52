@@ -1,0 +1,97 @@
+div align="center"
+  h1 
+    = "Процессоры с некорректной моделью"
+  table width="740" class="table duplicate_table"
+  table class="table duplicate_table"
+    center  
+      tr align="left"
+        - for i in 0..5
+          th class = "col-custom"
+            = @cpu_table_titles[i]
+        - @cursed_cpus.each do |cpu|
+          tr align="left"
+          
+            td class="info"
+              = "%d" % cpu.id
+            td class="info"
+              = "#{cpu.model}"
+            td class="info"
+              = cpu.family
+            td class="info"
+              = "#{cpu.gen}"
+            - classname = get_status_classname(cpu)
+            div class=classname
+            td class = classname
+              = "Состояние: #{format_valid_flag(cpu)}"
+            td class="info"
+              = link_to "Удалить модель", "/object/delete/#{cpu.id}", method: :delete
+
+  h1
+    = "Производители"
+  table width="740" class="table duplicate_table"
+  table class="table duplicate_table"
+    center  
+      tr align="left"
+        - for i in 0..3
+          th class = "col-custom"
+            = @manufacturers_table_titles[i]
+        - @manufacturers.each do |id|
+          tr align="left"
+            td class="info"
+              = id   
+            - manufacturer_name = @dict_elems.find_by(id: id).name
+            td class="info"
+              = manufacturer_name
+              - classname = get_status_classname(@dict_elems.find_by(id:id))
+            td class=classname
+              = format_valid_flag(@dict_elems.find_by(id:id))
+            td class="info"
+              = form_tag top50_replace_cpu_manufacturer_path(id), method: :get do
+                = text_field_tag :replacing_id, nil, placeholder: "id"
+                = submit_tag "Заменить"
+  h1
+    = "Семейства разбитые по схожести"
+  - @families_clusters.each do |id1, ids|
+    table width="740" class="table duplicate_table"
+    table class="table duplicate_table"
+        center  
+          tr align="left" font-size="999"
+            - for i in 0..3
+              th class = "col-custom"
+                = @families_table_titles[i]
+            - ids.each do |id|
+              tr align="left"
+                td class="info"
+                  = id
+                td class="info"
+                  = @dict_elems.find_by(id: id).name
+                - classname = get_status_classname(@dict_elems.find_by(id:id))
+                td class=classname
+                  = format_valid_flag(@dict_elems.find_by(id:id))
+                td class="info"
+                  = form_tag top50_replace_cpu_attribute_path(id), method: :get do
+                    = text_field_tag :replacing_id, nil, placeholder: "id"
+                    = submit_tag "Заменить"
+  h1
+    = "Поколения разбитые по схожести"
+  - @gens_clusters.each do |id1, ids|
+    table width="740" class="table duplicate_table"
+    table class="table duplicate_table"
+        center  
+          tr align="left"
+            - for i in 0..3
+              th class = "col-custom"
+                = @gens_table_titles[i]
+            - ids.each do |id|
+              tr align="left"
+                td class="info"
+                  = id
+                td class="info"
+                  = link_to "#{@dict_elems.find_by(id: id).name}", "/top50_dictionary_elems/#{id}/edit"
+                - classname = get_status_classname(@dict_elems.find_by(id:id))
+                td class=classname
+                  = format_valid_flag(@dict_elems.find_by(id:id))
+                td class="info"
+                  = form_tag top50_replace_cpu_attribute_path(id), method: :get do
+                    = text_field_tag :replacing_id, nil, placeholder: "id"
+                    = submit_tag "Заменить"

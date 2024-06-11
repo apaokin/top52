@@ -75,3 +75,41 @@ a.arr-down {
 tr.tr-new-m {
   background-color: #FFFF99
 }
+
+.duplicate_table{
+  margin-left: -300px;
+  margin-right: 200px;
+}
+.col-custom{
+  min-height: 1px;
+  padding-right: 15px;
+  padding-left: 15px;
+  width: 300px;
+}
+
+.colored_line{
+  margin-left: -8px;
+  margin-right: -8px;
+  padding-left: 8px;
+  padding-right: 8px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+.non_valid{
+  background-color: #f4b6b6;
+}
+.valid{
+  background-color: #baf8b4;
+}
+.new {
+  background-color: #83cade;
+}
+.error {
+  background-color: #ff2727;
+}
+.dark_cell_line{
+  background-color: #b8dcee;
+}
+.title_cell_line{
+  background-color: #90b9ce;
+}

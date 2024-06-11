@@ -113,14 +113,14 @@ div class="col-8" id="form-new_machine"
         h4 = "Контактная информация лица, подающего заявку (для связи по поводу уточнения/подтверждения информации по заявке)"
       div class="panel-body col-8"
         = f.fields_for :contact do |c|
-          = c.text_field :surname, label: "Фамилия (*)", value: get_cur2(:contact, :surname)
-          = c.text_field :name, label: "Имя (*)", value: get_cur2(:contact, :name)
+          = c.text_field :surname, label: "Фамилия*", value: get_cur2(:contact, :surname)
+          = c.text_field :name, label: "Имя*", value: get_cur2(:contact, :name)
           = c.text_field :patronymic, label: "Отчество", value: get_cur2(:contact, :patronymic)
-          = c.text_field :phone, label: "Телефон", value: get_cur2(:contact, :phone)
-          = c.text_field :email, label: "Email (*)", type: 'email', value: get_cur2(:contact, :email), confirmation: true
+          = c.text_field :phone, label: "Телефон", type: 'phone', placeholder: "8XXXXXXXXXX", value: get_cur2(:contact, :phone)
+          = c.text_field :email, label: "Email*", value: get_cur2(:contact, :email), confirmation: true
           = c.text_area :extra_info, rows: 4, label: "Дополнительная информация", value: get_cur2(:contact, :extra_info)
     br
-    = f.check_box :cond_accepted, checked: (get_cur(:cond_accepted).to_i != 0), label: "Я разрешаю МГУ им.М.В.Ломоносова обработку моих персональных данных"
+    = f.check_box :cond_accepted, checked: (get_cur(:cond_accepted).to_i != 0), label: "Я разрешаю МГУ имени М.В. Ломоносова обработку моих персональных данных"
     br
     br
     = render "hidden_saved_data"
