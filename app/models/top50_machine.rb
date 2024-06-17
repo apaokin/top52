@@ -11,7 +11,7 @@ class Top50Machine < ActiveRecord::Base
   has_many :top50_benchmark_results, foreign_key: "machine_id"
 
   before_save do
-    if self.new_record? 
+    if self.new_record?
       m_typeid = Top50ObjectType.where(name_eng: "Machine").first.id
       obj = Top50Object.new
       obj[:type_id] = m_typeid
@@ -59,23 +59,14 @@ class Top50Machine < ActiveRecord::Base
   end
 
   def modification
-    id = self.id
-  
     modification_relation = Top50Relation.find_by(prim_obj_id: id, type_id: MODIFICATION)
-    if nil == modification_relation
-      return nil
-    end
-    next_mod = Top50Machine.find_by(id: modification_relation.sec_obj_id)
-    return next_mod
+    return unless modification_relation
+
+    Top50Machine.find_by(id: modification_relation.sec_obj_id)
   end
 
   def is_modification
-    id = self.id
-    if nil != Top50Relation.find_by(sec_obj_id: id, type_id: MODIFICATION)
-      return true
-    else
-      return false
-    end
+    Top50Relation.where(sec_obj_id: id, type_id: MODIFICATION).any?
   end
 
   # validates :cond, acceptance: { message: 'Для подачи заявки необходимо подтвердить согласие на обработку данных.' }
