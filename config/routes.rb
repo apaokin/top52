@@ -94,6 +94,13 @@ Octoshell::Application.routes.draw do
   resources :top50_benchmarks
   resources :top50_attribute_dbvals
   resources :top50_attribute_dicts
+  resources :extratings_entries do
+    collection do
+      get :list_units
+    end
+  end
+  resources :extratings_lists, only: [:new, :create]
+  resources :extratings_units, only: [:new, :create]
 
   get 'list', to: 'top50_machines#list', as:'top50_machines_list'
   get 'archive/:eid', to: 'top50_machines#archive', as:'top50_machines_archive'

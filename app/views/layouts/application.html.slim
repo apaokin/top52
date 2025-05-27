@@ -4,3 +4,7 @@
 - right_bar = render "authentication/menu"
 
 = render "layouts/face/application", { right_bar: right_bar, content: yield }
+= javascript_include_tag 'https://cdn.jsdelivr.net/npm/chart.js'
+= javascript_include_tag 'https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3'
+
+

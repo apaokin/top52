@@ -1,0 +1,43 @@
+.container.mt-4
+  .card
+    .card-header.bg-secondary.text-white
+      h5.mb-0 Новый рейтинг
+
+    .card-body
+      = form_for @extratings_list do |f|
+        .mb-3
+          = f.label :name_ru, "Название (RU)", class: 'form-label'
+          = f.text_field :name_ru, class: 'form-control', required: true
+
+        .mb-3
+          = f.label :name_eng, "Название (EN)", class: 'form-label'
+          = f.text_field :name_eng, class: 'form-control'
+
+        .mb-3
+          = f.label :description_ru, "Описание (RU)", class: 'form-label'
+          = f.text_area :description_ru, class: 'form-control'
+
+        .mb-3
+          = f.label :description_eng, "Описание (EN)", class: 'form-label'
+          = f.text_area :description_eng, class: 'form-control'
+
+        .mb-3
+          = f.label :url, "Ссылка", class: 'form-label'
+          = f.text_field :url, class: 'form-control'
+
+        h5.mt-4 Единица измерения
+
+        = f.fields_for :extratings_list_units do |list_unit_form|
+          .mb-3
+            = list_unit_form.label :priority, "Приоритет", class: 'form-label'
+            = list_unit_form.number_field :priority, class: 'form-control'
+
+          .mb-3
+            = list_unit_form.label :extratings_unit_id, "Выбрать существующую единицу", class: 'form-label'
+            = list_unit_form.collection_select :extratings_unit_id, @existing_units, :id, ->(unit) { "#{unit.name_ru} (#{unit.measure_unit})" }, include_blank: true, class: 'form-select'
+
+            = link_to "Создать новую единицу измерения", new_extratings_unit_path, class: "btn btn-outline-primary mt-2"
+
+        .mt-4
+          = f.submit "Создать", class: 'btn btn-primary'
+          = link_to "Отмена", new_extratings_entry_path, class: "btn btn-outline-secondary ms-2"

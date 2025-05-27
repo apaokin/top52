@@ -1,0 +1,49 @@
+/ Стандартные поля рейтинга
+.mb-3
+  = f.label :name_ru, "Название (RU)", class: 'form-label'
+  = f.text_field :name_ru, class: 'form-control'
+
+.mb-3
+  = f.label :name_eng, "Название (EN)", class: 'form-label'
+  = f.text_field :name_eng, class: 'form-control'
+
+.mb-3
+  = f.label :description_ru, "Описание (RU)", class: 'form-label'
+  = f.text_area :description_ru, class: 'form-control'
+
+.mb-3
+  = f.label :description_eng, "Описание (EN)", class: 'form-label'
+  = f.text_area :description_eng, class: 'form-control'
+
+.mb-3
+  = f.label :url, "Ссылка", class: 'form-label'
+  = f.text_field :url, class: 'form-control'
+
+/ Блок для выбора или создания единицы
+h5.mt-4 Связь с единицей измерения
+
+= f.fields_for :extratings_list_units do |list_unit_form|
+  .mb-3
+    = list_unit_form.label :priority, "Приоритет", class: 'form-label'
+    = list_unit_form.number_field :priority, class: 'form-control'
+
+  .mb-3
+    = list_unit_form.label :extratings_unit_id, "Выбрать существующую единицу", class: 'form-label'
+    = list_unit_form.collection_select :extratings_unit_id, existing_units, :id, :name_ru, include_blank: "— создать новую —", class: 'form-select'
+
+  - unit_fields = list_unit_form.fields_for :extratings_unit
+    .mb-3
+      = unit_fields.label :name_ru, "Название (RU)", class: 'form-label'
+      = unit_fields.text_field :name_ru, class: 'form-control'
+
+    .mb-3
+      = unit_fields.label :name_eng, "Название (EN)", class: 'form-label'
+      = unit_fields.text_field :name_eng, class: 'form-control'
+
+    .mb-3
+      = unit_fields.label :measure_unit, "Обозначение", class: 'form-label'
+      = unit_fields.text_field :measure_unit, class: 'form-control'
+
+    .mb-3
+      = unit_fields.label :base_multiplier, "Коэффициент", class: 'form-label'
+      = unit_fields.number_field :base_multiplier, step: 0.0001, class: 'form-control'

@@ -135,7 +135,121 @@ class Top50MachinesController < Top50BaseController
     @perf_measureid = Top50MeasureUnit.where(name_eng: 'MFlop/s').first.id
     @node_platform_attrid = Top50Attribute.where(name_eng: "Node platform").first.id
     @node_platform_vendor_attrid = Top50Attribute.where(name_eng: "Node platform Vendor").first.id
+
+
+    # @extratings_entries = ExtratingsEntry.where(system_id: 4568)
+    # .includes(:extratings_edition)
+    current_machine_id = params[:id].to_i
+    @related_machine_ids = get_machine_and_predecessors(current_machine_id)
+
     
+
+    @extratings_entries = ExtratingsEntry
+      .where(system_id: @related_machine_ids)
+      .includes(extratings_edition: :extratings_list)
+      .order('extratings_editions.publication_date ASC')
+
+    scores = ExtratingsScore.includes(extratings_list_unit: :extratings_unit)
+      .where(extratings_entry_id: @extratings_entries.pluck(:id))
+
+ 
+    
+    @scores_by_entry_id = scores.group_by(&:extratings_entry_id).transform_values do |scores_array|
+      scores_array.sort_by { |score| score.extratings_list_unit.priority }.map do |score|
+        unit_name = score.extratings_list_unit.extratings_unit.name_ru
+        measure_unit = score.extratings_list_unit.extratings_unit.measure_unit
+        priority = score.extratings_list_unit.priority
+        "#{unit_name}: #{score.score} #{measure_unit}, приоритет: #{priority}"
+      end.join(",\n")
+    end
+
+    priority_1_scores = scores.select { |score| score.extratings_list_unit&.priority == 1 }
+    @heatmap_date_points = @extratings_entries.map do |entry|
+      next unless entry.extratings_edition && entry.position
+
+      score = priority_1_scores.find { |s| s.extratings_entry_id == entry.id }
+      {
+        x: entry.extratings_edition.publication_date.to_time.to_i * 1000,
+        y: entry.position,
+        value: score&.score || 0,
+        tooltip: "Позиция: #{entry.position}, Дата: #{entry.extratings_edition.publication_date.strftime('%d.%m.%Y')}"
+      }
+    end.compact
+
+    # Для второй карты: только записи с priority=1 score
+    @heatmap_score_points = priority_1_scores.map do |score|
+    entry = @extratings_entries.find { |e| e.id == score.extratings_entry_id }
+    next unless entry && entry.position
+
+    {
+      x: score.score,
+      y: entry.position,
+      value: score.score,
+      tooltip: "#{score.extratings_list_unit.extratings_unit.name_ru}: #{score.score} #{score.extratings_list_unit.extratings_unit.measure_unit}, Приоритет: #{score.extratings_list_unit.priority}"
+    }
+    end.compact
+
+    def random_color
+      "rgba(#{rand(255)}, #{rand(255)}, #{rand(255)}, 0.7)"
+    end
+
+    @grouped_heatmap_date_points = @extratings_entries.group_by { |e| e.extratings_edition.extratings_list }.map do |list, entries|
+      {
+        name: list.name_ru,
+        color: random_color,
+        data: entries.map do |entry|
+          score = priority_1_scores.find { |s| s.extratings_entry_id == entry.id }
+          {
+            x: entry.extratings_edition.publication_date.to_time.to_i * 1000,
+            y: entry.position,
+            value: score&.score || 0,
+            tooltip: "Позиция: #{entry.position}, Дата: #{entry.extratings_edition.publication_date.strftime('%d.%m.%Y')}"
+          }
+        end.compact
+      }
+    end
+    
+    grouped_by_list = @extratings_entries.group_by { |e| e.extratings_edition.extratings_list }
+
+# Подготовка данных для графика "Позиция vs Score"
+  @grouped_heatmap_score_points = grouped_by_list.map do |list, entries|
+    {
+      name: list.name_ru,
+      color: random_color,
+      data: entries.map do |entry|
+        score = priority_1_scores.find { |s| s.extratings_entry_id == entry.id }
+        next unless score && entry.position
+
+        {
+          x: score.score,
+          y: entry.position,
+          tooltip: "#{score.extratings_list_unit.extratings_unit.name_ru}: #{score.score} #{score.extratings_list_unit.extratings_unit.measure_unit}, Приоритет: #{score.extratings_list_unit.priority}"
+        }
+      end.compact
+    }
+    end
+    
+  end
+
+  def get_machine_and_predecessors(machine_id)
+    type_id = Top50RelationType.find_by(name_eng: "Precedes")&.id
+    return [machine_id] unless type_id
+  
+    related_ids = [machine_id]
+    queue = [machine_id]
+  
+    while queue.any?
+      current = queue.shift
+      predecessors = Top50Relation.where(type_id: type_id, sec_obj_id: current).pluck(:prim_obj_id)
+      predecessors.each do |pred_id|
+        unless related_ids.include?(pred_id)
+          related_ids << pred_id
+          queue << pred_id
+        end
+      end
+    end
+  
+    related_ids
   end
   
   def prepare_archive(edition_id)
