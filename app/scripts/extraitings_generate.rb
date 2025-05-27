@@ -517,20 +517,20 @@
 #   normalized_score: 897.00
 # )
 
-Green500 = ExtratingsList.find(28)
+# Green500 = ExtratingsList.find(28)
 
-TotalPower = ExtratingsUnit.create(
-  name_ru: "GTEPS",
-  name_eng: "GTEPS",
-  measure_unit: '10^9 дуг/c', # кодовое обозначение
-  base_multiplier: 1.0
-)
+# TotalPower = ExtratingsUnit.create(
+#   name_ru: "GTEPS",
+#   name_eng: "GTEPS",
+#   measure_unit: '10^9 дуг/c', # кодовое обозначение
+#   base_multiplier: 1.0
+# )
 
- power_unit_1 =  ExtratingsListUnit.create!(
-  extratings_list: Green500,
-  extratings_unit: TotalPower,
-  priority: 1
-)
+#  power_unit_1 =  ExtratingsListUnit.create!(
+#   extratings_list: Green500,
+#   extratings_unit: TotalPower,
+#   priority: 1
+# )
 
 
 

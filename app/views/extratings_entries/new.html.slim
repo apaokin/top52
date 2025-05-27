@@ -21,7 +21,8 @@
                         { prompt: "Выберите лист...", class: 'form-select', required: true }
             .invalid-feedback Пожалуйста, выберите лист рейтинга
 
-            = link_to "Добавить новый рейтинг", new_extratings_list_path, class: 'btn btn-outline-primary mt-2'
+            - if current_user and current_user.may_edit_top50?
+              = link_to "Добавить новый рейтинг", new_extratings_list_path, class: 'btn btn-outline-primary mt-2'
 
         .row.mb-4
           .col-md-4.mb-3.mb-md-0
@@ -50,12 +51,58 @@ javascript:
   document.addEventListener("DOMContentLoaded", () => {
     const form = document.querySelector('.needs-validation');
     form.addEventListener('submit', function(event) {
-      if (!form.checkValidity()) {
-        event.preventDefault();
-        event.stopPropagation();
+      event.preventDefault();
+      event.stopPropagation();
+      
+      let isValid = form.checkValidity();
+      
+      const unitsDiv = document.getElementById("units-list");
+      const scoreInputs = unitsDiv.querySelectorAll('input[name^="scores"]');
+      const unitSelects = unitsDiv.querySelectorAll('select[name^="selected_units"]');
+      
+      scoreInputs.forEach(input => {
+        if (input.value.trim() === '') {
+          input.classList.add('is-invalid');
+          isValid = false;
+        } else {
+          input.classList.remove('is-invalid');
+        }
+      });
+      
+      unitSelects.forEach(select => {
+        if (select.value === '') {
+          select.classList.add('is-invalid');
+          isValid = false;
+        } else {
+          select.classList.remove('is-invalid');
+        }
+      });
+      
+      if (isValid) {
+        form.submit();
+      } else {
+        showValidationError('Пожалуйста, заполните все обязательные поля');
       }
+      
       form.classList.add('was-validated');
     }, false);
+    
+    function showValidationError(message) {
+
+      const existingError = document.querySelector('.validation-error-alert');
+      if (existingError) {
+        existingError.remove();
+      }
+      
+      const errorDiv = document.createElement('div');
+      errorDiv.className = 'alert alert-danger validation-error-alert';
+      errorDiv.innerHTML = '<strong>Ошибка валидации:</strong> ' + message;
+      
+      const cardBody = document.querySelector('.card-body');
+      cardBody.insertBefore(errorDiv, cardBody.firstChild);
+      
+      errorDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
 
     const listSelect = document.querySelector('select[name="extratings_list_id"]');
     const unitsDiv = document.getElementById("units-list");

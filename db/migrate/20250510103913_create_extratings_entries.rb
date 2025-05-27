@@ -7,7 +7,5 @@ class CreateExtratingsEntries < ActiveRecord::Migration
 
       t.timestamps
     end
-
-    add_foreign_key :extratings_entries, :top50_relations, column: :system_id, primary_key: :prim_obj_id, name: :fk_entries_top50_relations
-  end
+  end  
 end

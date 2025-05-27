@@ -329,6 +329,8 @@ br
       th.fit Редакция
       th.fit Месяц публикации редакции
       th.fit Показатели производительности
+      - if current_user and current_user.may_edit_top50?
+        th.fit
     - entries.each do |entry|
       tr
         td.fit align="left"
@@ -337,6 +339,9 @@ br
         td.fit align="right" = entry.extratings_edition.edition_number
         td.fit align="right" = entry.extratings_edition.publication_date
         td.fit align="left" = @scores_by_entry_id[entry.id] || "Нет оценки"
+        - if current_user and current_user.may_edit_top50?
+          td.fit align="center"
+            = link_to "Редактировать", edit_extratings_entry_path(entry, format: :js), class: "btn btn-default btn-sm", remote: true, data: { turbo: false, target: "#entryEditModal", toggle: "modal" }
 
 br
 
@@ -452,4 +457,20 @@ javascript:
 
   document.addEventListener('DOMContentLoaded', () => {
     buildHeatmapByDate('heatmapDate', heatmapDateGroups);
+    
+    $(document).on('ajax:success', 'a[data-target="#entryEditModal"]', function(event, data, status, xhr) {
+      console.log('Форма загружена, данные:', data);
+      $('#entryEditModal .modal-content').html(data);
+      $('#entryEditModal').modal('show');
+    });
+    
+    $(document).on('ajax:error', 'a[data-target="#entryEditModal"]', function(event, xhr, status, error) {
+      console.error('Ошибка загрузки формы редактирования:', error);
+      alert('Ошибка загрузки формы редактирования');
+    });
   });
+
+/ Modal container for AJAX edit forms
+div#entryEditModal.modal.fade tabindex="-1" role="dialog"
+  .modal-dialog.modal-lg role="document"
+    .modal-content

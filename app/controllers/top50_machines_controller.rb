@@ -136,9 +136,6 @@ class Top50MachinesController < Top50BaseController
     @node_platform_attrid = Top50Attribute.where(name_eng: "Node platform").first.id
     @node_platform_vendor_attrid = Top50Attribute.where(name_eng: "Node platform Vendor").first.id
 
-
-    # @extratings_entries = ExtratingsEntry.where(system_id: 4568)
-    # .includes(:extratings_edition)
     current_machine_id = params[:id].to_i
     @related_machine_ids = get_machine_and_predecessors(current_machine_id)
 
@@ -176,7 +173,6 @@ class Top50MachinesController < Top50BaseController
       }
     end.compact
 
-    # Для второй карты: только записи с priority=1 score
     @heatmap_score_points = priority_1_scores.map do |score|
     entry = @extratings_entries.find { |e| e.id == score.extratings_entry_id }
     next unless entry && entry.position
@@ -211,7 +207,6 @@ class Top50MachinesController < Top50BaseController
     
     grouped_by_list = @extratings_entries.group_by { |e| e.extratings_edition.extratings_list }
 
-# Подготовка данных для графика "Позиция vs Score"
   @grouped_heatmap_score_points = grouped_by_list.map do |list, entries|
     {
       name: list.name_ru,

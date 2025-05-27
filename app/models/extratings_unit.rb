@@ -3,6 +3,6 @@ class ExtratingsUnit < ActiveRecord::Base
     has_many :extratings_lists, through: :extratings_list_units
   
     validates :name_ru, :name_eng, :measure_unit, presence: true
-    validates :base_multiplier, numericality: true
+    validates :base_multiplier, numericality: { greater_than: 0 }
   end
   

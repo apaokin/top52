@@ -1,0 +1,142 @@
+.modal-header
+  h5.modal-title Редактирование записи рейтинга
+  button.close type="button" data-dismiss="modal" aria-label="Close"
+    span aria-hidden="true" ×
+
+.modal-body
+  .container-fluid
+    = form_for @extratings_entry, html: { class: 'form-horizontal', remote: true } do |f|
+      .form-group
+        = f.label :system_id, "Система", class: 'control-label col-sm-3'
+        .col-sm-9
+          = text_field_tag :system_name, @extratings_entry.system.name, class: 'form-control', disabled: true
+          small.text-muted Система не может быть изменена
+
+      .form-group
+        = label_tag :extratings_list_id, "Лист рейтинга", class: 'control-label col-sm-3'
+        .col-sm-9
+        = select_tag :extratings_list_id,
+                    options_from_collection_for_select(@extratings_lists, :id, :name_eng, @extratings_entry.extratings_edition.extratings_list_id),
+                    { class: 'form-control', required: true, onchange: 'loadUnitsForNewList(this.value)' }
+          small.text-muted Выберите лист рейтинга
+
+      .form-group
+        = label_tag :edition_number, "Номер редакции", class: 'control-label col-sm-3'
+        .col-sm-9
+          = number_field_tag :edition_number, @extratings_entry.extratings_edition.edition_number, class: 'form-control', required: true
+          small.text-muted Введите номер редакции
+
+      .form-group
+        = label_tag :publication_date, "Дата публикации", class: 'control-label col-sm-3'
+        .col-sm-9
+          = date_field_tag :publication_date, @extratings_entry.extratings_edition.publication_date, class: 'form-control', required: true
+          small.text-muted Выберите дату публикации
+
+      .form-group
+        = f.label :position, "Позиция", class: 'control-label col-sm-3'
+        .col-sm-9
+          = f.number_field :position, class: 'form-control', required: true
+
+      #units-list
+        .form-group
+          .control-label.col-sm-3 Параметры оценки
+          .col-sm-9
+            - @extratings_entry.extratings_scores.includes(:extratings_list_unit).each do |score|
+              .form-group
+                .control-label.col-sm-4 = score.extratings_list_unit.extratings_unit.name_eng
+                .col-sm-8
+                  .row
+                    .col-sm-6
+                      = text_field_tag "unit_display_#{score.id}", score.extratings_list_unit.extratings_unit.measure_unit, class: 'form-control', disabled: true
+                      = hidden_field_tag "selected_units[#{score.extratings_list_unit.extratings_unit.name_eng}]", score.extratings_list_unit_id
+                    .col-sm-6
+                      = number_field_tag "scores[#{score.extratings_list_unit.extratings_unit.name_eng}]", score.score, class: 'form-control'
+
+      .form-group
+        .col-sm-offset-3.col-sm-9
+          button.btn.btn-default type="button" data-dismiss="modal" Отмена
+          = f.submit "Сохранить", class: 'btn btn-primary'
+
+javascript:
+  var currentScores = #{raw @current_scores.to_json};
+  
+  function loadUnits(listId, isInitialLoad) {
+    isInitialLoad = isInitialLoad || false; // Для совместимости со старыми браузерами
+    var unitsDiv = $('#units-list .col-sm-9');
+    
+    if (!listId) {
+      unitsDiv.html('<div class="alert alert-info">Выберите лист рейтинга</div>');
+      return;
+    }
+    
+    unitsDiv.html('<div class="text-center"><i class="fa fa-spinner fa-spin"></i> Загрузка параметров рейтинга...</div>');
+
+    $.ajax({
+      url: '/extratings_entries/list_units?list_id=' + listId,
+      method: 'GET',
+      dataType: 'json',
+      success: function(data) {
+        if (data.length === 0) {
+          unitsDiv.html('<div class="alert alert-info">Для выбранного рейтинга нет параметров оценки</div>');
+          return;
+        }
+
+        var unitGroups = {};
+        data.forEach(function(unit) {
+          if (!unitGroups[unit.unit_name]) unitGroups[unit.unit_name] = [];
+          unitGroups[unit.unit_name].push(unit);
+        });
+
+        var html = '';
+
+        Object.keys(unitGroups).forEach(function(name) {
+          var units = unitGroups[name];
+          // Используем старые значения только при первоначальной загрузке
+          var selectedUnitId = '';
+          var scoreValue = '';
+          
+          if (isInitialLoad) {
+            var currentScore = currentScores[name];
+            selectedUnitId = currentScore ? currentScore.unit_id : '';
+            scoreValue = currentScore ? currentScore.value : '';
+          }
+          
+          html += '<div class="form-group">' +
+            '<label class="control-label col-sm-4">' + name + '</label>' +
+            '<div class="col-sm-8">' +
+              '<div class="row">' +
+                '<div class="col-sm-6">' +
+                  '<select class="form-control" name="selected_units[' + name + ']" required>' +
+                    '<option value="">Выберите единицу...</option>' +
+                    units.map(function(u) {
+                      return '<option value="' + u.id + '"' + (u.id == selectedUnitId ? ' selected' : '') + '>' + u.measure_unit + '</option>';
+                    }).join('') +
+                  '</select>' +
+                '</div>' +
+                '<div class="col-sm-6">' +
+                  '<input type="number" name="scores[' + name + ']" class="form-control" placeholder="Введите значение" value="' + scoreValue + '" required>' +
+                '</div>' +
+              '</div>' +
+            '</div>' +
+          '</div>';
+        });
+
+        unitsDiv.html(html);
+      },
+      error: function() {
+        unitsDiv.html('<div class="alert alert-danger">Ошибка загрузки параметров</div>');
+      }
+    });
+  }
+  
+  // Глобальная функция для смены листа рейтинга
+  function loadUnitsForNewList(listId) {
+    console.log('Смена листа рейтинга на ID:', listId);
+    loadUnits(listId, false);
+  }
+  
+  $(document).ready(function() {
+    // Загружаем единицы для текущего листа рейтинга (с сохранением текущих значений)
+    var initialListId = #{@extratings_entry.extratings_edition.extratings_list_id};
+    loadUnits(initialListId, true);
+  });

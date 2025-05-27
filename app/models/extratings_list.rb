@@ -5,5 +5,5 @@ class ExtratingsList < ActiveRecord::Base
   has_many :extratings_units, through: :extratings_list_units
 
   validates :name_ru, :name_eng, presence: true
-  validates :url, presence: true, format: { with: URI::DEFAULT_PARSER.make_regexp(%w[http https]) }, allow_blank: true
+  validates :url, format: { with: URI::DEFAULT_PARSER.make_regexp(%w[http https]) }, allow_blank: true
 end

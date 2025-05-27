@@ -4,7 +4,14 @@
       h5.mb-0 Новый рейтинг
 
     .card-body
-      = form_for @extratings_list do |f|
+      - if @extratings_list.errors.any?
+        .alert.alert-danger
+          h6 Ошибки валидации:
+          ul.mb-0
+            - @extratings_list.errors.full_messages.each do |message|
+              li = message
+
+      = form_for @extratings_list, html: { class: 'needs-validation', novalidate: true } do |f|
         .mb-3
           = f.label :name_ru, "Название (RU)", class: 'form-label'
           = f.text_field :name_ru, class: 'form-control', required: true
@@ -36,8 +43,80 @@
             = list_unit_form.label :extratings_unit_id, "Выбрать существующую единицу", class: 'form-label'
             = list_unit_form.collection_select :extratings_unit_id, @existing_units, :id, ->(unit) { "#{unit.name_ru} (#{unit.measure_unit})" }, include_blank: true, class: 'form-select'
 
-            = link_to "Создать новую единицу измерения", new_extratings_unit_path, class: "btn btn-outline-primary mt-2"
+            - if current_user and current_user.may_edit_top50?
+              = link_to "Создать новую единицу измерения", new_extratings_unit_path, class: "btn btn-outline-primary mt-2"
 
         .mt-4
           = f.submit "Создать", class: 'btn btn-primary'
           = link_to "Отмена", new_extratings_entry_path, class: "btn btn-outline-secondary ms-2"
+
+javascript:
+  document.addEventListener("DOMContentLoaded", function() {
+    const form = document.querySelector('.needs-validation');
+    form.addEventListener('submit', function(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      
+      let isValid = true;
+      
+      const nameRu = document.querySelector('input[name="extratings_list[name_ru]"]');
+      const nameEng = document.querySelector('input[name="extratings_list[name_eng]"]');
+      
+      if (nameRu.value.trim() === '') {
+        nameRu.classList.add('is-invalid');
+        isValid = false;
+      } else {
+        nameRu.classList.remove('is-invalid');
+      }
+      
+      if (nameEng.value.trim() === '') {
+        nameEng.classList.add('is-invalid');
+        isValid = false;
+      } else {
+        nameEng.classList.remove('is-invalid');
+      }
+
+      const unitSelects = document.querySelectorAll('select[name*="extratings_unit_id"]');
+      const unitNameRu = document.querySelector('input[name*="extratings_unit[name_ru]"]');
+      const unitNameEng = document.querySelector('input[name*="extratings_unit[name_eng]"]');
+      const unitMeasure = document.querySelector('input[name*="extratings_unit[measure_unit]"]');
+      
+      let hasValidUnit = false;
+      
+      unitSelects.forEach(select => {
+        if (select.value !== '') {
+          hasValidUnit = true;
+        }
+      });
+      
+      if (unitNameRu && unitNameRu.value.trim() !== '') {
+        hasValidUnit = true;
+        if (unitNameEng.value.trim() === '') {
+          unitNameEng.classList.add('is-invalid');
+          isValid = false;
+        } else {
+          unitNameEng.classList.remove('is-invalid');
+        }
+        
+        if (unitMeasure.value.trim() === '') {
+          unitMeasure.classList.add('is-invalid');
+          isValid = false;
+        } else {
+          unitMeasure.classList.remove('is-invalid');
+        }
+      }
+      
+      if (!hasValidUnit) {
+        alert('Необходимо выбрать существующую единицу измерения или создать новую');
+        isValid = false;
+      }
+      
+      if (isValid) {
+        form.submit();
+      } else {
+        alert('Пожалуйста, заполните все обязательные поля');
+      }
+      
+      form.classList.add('was-validated');
+    });
+  });

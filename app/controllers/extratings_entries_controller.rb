@@ -18,6 +18,54 @@ class ExtratingsEntriesController < Top50BaseController
   end
 
   def create
+
+    errors = []
+    
+    if params[:extratings_list_id].blank?
+      errors << "Не выбран лист рейтинга"
+    end
+    
+    if params[:edition_number].blank?
+      errors << "Не указан номер редакции"
+    end
+    
+    if params[:publication_date].blank?
+      errors << "Не указана дата публикации"
+    end
+    
+    if params[:extratings_entry][:position].blank?
+      errors << "Не указана позиция"
+    end
+    
+    if params[:extratings_entry][:system_id].blank?
+      errors << "Не выбрана система"
+    end
+    
+    scores_params = params[:scores] || {}
+    selected_units = params[:selected_units] || {}
+    
+    if scores_params.empty?
+      errors << "Не указаны показатели производительности"
+    else
+      scores_params.each do |key, score_value|
+        if score_value.blank?
+          errors << "Не указано значение для показателя '#{key}'"
+        end
+        
+        unit_id = selected_units[key]
+        if unit_id.blank?
+          errors << "Не выбрана единица измерения для показателя '#{key}'"
+        end
+      end
+    end
+    
+    if errors.any?
+      flash.now[:alert] = "Ошибки валидации: #{errors.join(', ')}"
+      new
+      render :new
+      return
+    end
+
     ActiveRecord::Base.transaction do
       # Создаём редакцию рейтинга с датой публикации
       edition = ExtratingsEditions.find_or_create_by!(
@@ -38,25 +86,112 @@ class ExtratingsEntriesController < Top50BaseController
         position: params[:extratings_entry][:position]
       )
       @extratings_entry.save!
-
-      # Создаём оценки
-      scores_params = params[:scores] || {}
-      scores_params.each do |list_unit_id, score_value|
+      scores_params.each do |key, score_value|
         next if score_value.blank?
+
+        unit_id_str = selected_units[key]
+        next if unit_id_str.blank?
+
+        unit_id = unit_id_str.to_i
+        next if unit_id.zero?
+
+        unit = ExtratingsListUnit.find_by(id: unit_id)
+        next unless unit
 
         ExtratingsScore.create!(
           extratings_entry: @extratings_entry,
-          extratings_list_unit_id: list_unit_id,
+          extratings_list_unit_id: unit_id,
           score: score_value.to_i
         )
       end
     end
 
     redirect_to @extratings_entry, notice: "Запись рейтинга и оценки успешно созданы."
-      rescue ActiveRecord::RecordInvalid => e
+  rescue ActiveRecord::RecordInvalid => e
     flash.now[:alert] = "Ошибка создания записи: #{e.message}"
     new
     render :new
+  end
+
+  def edit
+    @extratings_entry = ExtratingsEntry.includes(:system, :extratings_edition).find(params[:id])
+    @extratings_lists = ExtratingsList.order(:name_eng)
+    
+    # Получаем текущие оценки для предзаполнения формы
+    @current_scores = {}
+    @extratings_entry.extratings_scores.includes(:extratings_list_unit).each do |score|
+      unit_name = score.extratings_list_unit.extratings_unit.name_eng
+      @current_scores[unit_name] = {
+        value: score.score,
+        unit_id: score.extratings_list_unit_id
+      }
+    end
+  end
+
+  def update
+    @extratings_entry = ExtratingsEntry.find(params[:id])
+    
+    ActiveRecord::Base.transaction do
+      # Обновляем или создаём редакцию рейтинга
+      edition = ExtratingsEditions.find_or_create_by!(
+        extratings_list_id: params[:extratings_list_id],
+        edition_number: params[:edition_number],
+        edition_multiplier: 1
+      ) do |e|
+        e.publication_date = params[:publication_date]
+      end
+      
+      # Обновляем дату публикации если редакция уже существовала
+      if edition.persisted? && edition.publication_date != params[:publication_date]
+        edition.update!(publication_date: params[:publication_date])
+      end
+      
+      @extratings_entry.update!(
+        position: params[:extratings_entry][:position],
+        extratings_edition: edition
+      )
+      
+      @extratings_entry.extratings_scores.destroy_all
+      
+      scores_params = params[:scores] || {}
+      selected_units = params[:selected_units] || {}
+
+      scores_params.each do |key, score_value|
+        next if score_value.blank?
+
+        unit_id_str = selected_units[key]
+        if unit_id_str.blank?
+          Rails.logger.warn "No selected unit for score key=#{key}, params:selected_units=#{selected_units.inspect}"
+          next
+        end
+
+        unit_id = unit_id_str.to_i
+        if unit_id.zero?
+          Rails.logger.warn "Invalid unit id (0) for key=#{key}, raw=#{unit_id_str.inspect}"
+          next
+        end
+
+        unit = ExtratingsListUnit.find_by(id: unit_id)
+        unless unit
+          Rails.logger.warn "ExtratingsListUnit not found for id=#{unit_id} (key=#{key})"
+          next
+        end
+
+        ExtratingsScore.create!(
+          extratings_entry: @extratings_entry,
+          extratings_list_unit_id: unit_id,
+          score: score_value.to_i
+        )
+      end
+    end
+
+    respond_to do |format|
+      format.js { render 'update' }
+    end
+  rescue ActiveRecord::RecordInvalid => e
+    respond_to do |format|
+      format.js { render 'update', locals: { error: e.message } }
+    end
   end
 
   def list_units
