@@ -1,7 +1,7 @@
 # encoding: UTF-8
 class Top50MachinesController < Top50BaseController
-  skip_before_filter :require_login, only: [:list, :get_archive, :get_archive_by_vendor, :get_archive_by_org, :get_archive_by_city, :get_archive_by_country, :get_archive_by_vendor_excl, :get_archive_by_comp, :get_archive_by_comp_attrd, :get_archive_by_attr_dict, :archive, :archive_lists, :archive_by_vendor, :archive_by_org, :archive_by_city, :archive_by_country, :archive_by_vendor_excl, :archive_by_comp, :archive_by_comp_attrd, :archive_by_attr_dict, :show, :stats, :get_ext_stats, :ext_stats, :get_stats_per_list, :stats_per_list, :download_certificate, :app_form_new, :app_form_new_post, :app_form_upgrade, :app_form_upgrade_post, :app_form_step1, :app_form_step1_presave, :app_form_step2_presave, :app_form_step3_presave, :app_form_step4_presave, :app_form_confirm_post, :app_form_finish]
-  skip_before_filter :require_admin_rights, only: [:list, :get_archive, :get_archive_by_vendor, :get_archive_by_org, :get_archive_by_city, :get_archive_by_country, :get_archive_by_vendor_excl, :get_archive_by_comp, :get_archive_by_comp_attrd, :get_archive_by_attr_dict, :archive, :archive_lists, :archive_by_vendor, :archive_by_org, :archive_by_city, :archive_by_country, :archive_by_vendor_excl, :archive_by_comp, :archive_by_comp_attrd, :archive_by_attr_dict, :show, :stats, :get_ext_stats, :ext_stats, :get_stats_per_list, :stats_per_list, :download_certificate, :app_form_new, :app_form_new_post, :app_form_upgrade, :app_form_upgrade_post, :app_form_step1, :app_form_step1_presave, :app_form_step2_presave, :app_form_step3_presave, :app_form_step4_presave, :app_form_confirm_post, :app_form_finish]
+  skip_before_filter :require_login, only: [:list, :get_archive, :get_archive_by_vendor, :get_archive_by_org, :get_archive_by_city, :get_archive_by_country, :get_archive_by_vendor_excl, :get_archive_by_comp, :get_archive_by_comp_attrd, :get_archive_by_attr_dict, :archive, :archive_lists, :archive_by_vendor, :archive_by_org, :archive_by_city, :archive_by_country, :archive_by_vendor_excl, :archive_by_comp, :archive_by_comp_attrd, :archive_by_attr_dict, :show, :stats, :get_ext_stats, :ext_stats, :get_stats_per_list, :stats_per_list, :download_certificate, :app_form_new, :app_form_new_post, :app_form_upgrade, :app_form_upgrade_post, :app_form_step1, :app_form_step1_presave, :app_form_step2_presave, :app_form_step3_presave, :app_form_step4_presave, :app_form_confirm_post, :app_form_finish, :download_archive]
+  skip_before_filter :require_admin_rights, only: [:list, :get_archive, :get_archive_by_vendor, :get_archive_by_org, :get_archive_by_city, :get_archive_by_country, :get_archive_by_vendor_excl, :get_archive_by_comp, :get_archive_by_comp_attrd, :get_archive_by_attr_dict, :archive, :archive_lists, :archive_by_vendor, :archive_by_org, :archive_by_city, :archive_by_country, :archive_by_vendor_excl, :archive_by_comp, :archive_by_comp_attrd, :archive_by_attr_dict, :show, :stats, :get_ext_stats, :ext_stats, :get_stats_per_list, :stats_per_list, :download_certificate, :app_form_new, :app_form_new_post, :app_form_upgrade, :app_form_upgrade_post, :app_form_step1, :app_form_step1_presave, :app_form_step2_presave, :app_form_step3_presave, :app_form_step4_presave, :app_form_confirm_post, :app_form_finish, :download_archive]
   def index
     @top50_machines = Top50Machine.all
   end
@@ -797,7 +797,13 @@ class Top50MachinesController < Top50BaseController
     return Top50Machine.select("top50_machines.*, ed_results.result").
       joins("join top50_benchmark_results ed_results on ed_results.machine_id = top50_machines.id and ed_results.benchmark_id = #{list.id}")
   end
-
+  #1 BEGIN: my code (упрощенная функция сбора списков)
+  def fetch_archive_list_simple(list_id)
+    Top50Machine.select("top50_machines.*, ed_results.result")
+                .joins("JOIN top50_benchmark_results ed_results ON ed_results.machine_id = top50_machines.id")
+                .where("ed_results.benchmark_id = ?", list_id)
+  end  
+  #1 END: my code
   def archive_common(list_id)
     @top50_machines = fetch_archive_list(list_id).
       order("ed_results.result asc").
@@ -816,8 +822,152 @@ class Top50MachinesController < Top50BaseController
     eid = params[:eid].to_i
     archive_common(eid)
   end
-    
-    
+  
+  #2 BEGIN: my code (Скачивание архивов, контроллер)
+  def get_dict_attr(obj_id, attr_name)
+    attr = Top50Attribute.find_by(name_eng: attr_name)
+    return "н/д" unless attr
+  
+    Top50AttributeValDict
+      .includes(:top50_dictionary_elem)
+      .find_by(obj_id: obj_id, attr_id: attr.id)&.top50_dictionary_elem&.name || "н/д"
+  end
+  
+
+  def prepare_csv_data(list_id)
+    machines = fetch_archive_list(list_id)
+  
+    machines.map do |machine|
+      rank_pos = @rated_pos.find_by(machine_id: machine.id)
+      prev_rank_pos = @prev_rated_pos.find_by(machine_id: machine.id)
+  
+      org = machine.top50_organization
+      city = org&.top50_city&.name
+  
+      vendor_names = machine.vendor_ids.map { |v_id| Top50Vendor.find_by(id: v_id)&.name }.compact.join(", ")
+  
+      com_net  = @com_net_attr_vals.find_by(obj_id: machine.id)&.top50_dictionary_elem&.name || "н/д"
+      serv_net = @serv_net_attr_vals.find_by(obj_id: machine.id)&.top50_dictionary_elem&.name || "н/д"
+      tran_net = @tran_net_attr_vals.find_by(obj_id: machine.id)&.top50_dictionary_elem&.name || "н/д"
+  
+      app_area = get_dict_attr(machine.id, "Application area")
+      os = get_dict_attr(machine.id, "Operating System")
+  
+      rmax_record = @rmax_res.find_by(machine_id: machine.id)
+      rpeak_record = @rpeak_attr_vals.find_by(obj_id: machine.id)
+      nmax_val = @nmax_attr_vals.find_by(obj_id: rmax_record&.id)&.value
+  
+      node_rels = Top50Relation.where(prim_obj_id: machine.id, type_id: @rel_contain_id)
+      node_count = node_rels.sum(:sec_obj_qty)
+  
+      cpu_count, gpu_count, cop_count, ram_per_node = 0, 0, 0, nil
+      cpu_info, gpu_info, cop_info = [], [], []
+  
+      node_rels.each do |node_rel|
+        node = Top50Object.find_by(id: node_rel.sec_obj_id)
+        next unless node
+  
+        ram_val = Top50AttributeValDbval.find_by(obj_id: node.id, attr_id: @ram_size_attrid)
+        ram_per_node ||= ram_val&.value.to_f if ram_val.present?
+  
+        child_rels = Top50Relation.where(prim_obj_id: node.id, type_id: @rel_contain_id)
+  
+        child_rels.each do |child_rel|
+          obj = Top50Object.find_by(id: child_rel.sec_obj_id)
+          next unless obj
+  
+          qty = child_rel.sec_obj_qty * node_rel.sec_obj_qty
+  
+          case obj.type_id
+          when @cpu_typeid
+            cpu_count += qty
+            vendor = @l2_attrd_hash[obj.id].find { |x| x.attr_id == @cpu_vendor_attrid }&.elem_name
+            model = @l2_attrd_hash[obj.id].find { |x| x.attr_id == @cpu_model_attrid }&.elem_name
+            core = @l2_attrdb_hash[obj.id].find { |x| x.attr_id == @core_qty_attrid }&.value
+            cpu_info << "#{qty}x #{vendor} #{model} (#{core} cores)"
+          when @gpu_typeid
+            gpu_count += qty
+            vendor = @l2_attrd_hash[obj.id].find { |x| x.attr_id == @gpu_vendor_attrid }&.elem_name
+            model = @l2_attrd_hash[obj.id].find { |x| x.attr_id == @gpu_model_attrid }&.elem_name
+            core = @l2_attrdb_hash[obj.id].find { |x| x.attr_id == @core_qty_attrid }&.value
+            gpu_info << "#{qty}x #{vendor} #{model} (#{core} cores)"
+          when @cop_typeid
+            cop_count += qty
+            vendor = @l2_attrd_hash[obj.id].find { |x| x.attr_id == @cop_vendor_attrid }&.elem_name
+            model = @l2_attrd_hash[obj.id].find { |x| x.attr_id == @cop_model_attrid }&.elem_name
+            core = @l2_attrdb_hash[obj.id].find { |x| x.attr_id == @core_qty_attrid }&.value
+            cop_info << "#{qty}x #{vendor} #{model} (#{core} cores)"
+          end
+        end
+      end
+  
+      dbvals = @mach_attrdb_hash[machine.id].map { |x| "#{x.attr_name}: #{x.value}" }
+      dictvals = @mach_attrd_hash[machine.id].map { |x| "#{x.attr_name}: #{x.elem_name}" }
+  
+      {
+        id: machine.id,
+        name: machine.name,
+        rank: rank_pos&.result&.to_i,
+        previous_rank: prev_rank_pos&.result&.to_i,
+        edition: @bench&.name_eng,
+        start_date: machine.start_date,
+        end_date: machine.end_date,
+        organization: org&.name,
+        city: city,
+        vendors: vendor_names,
+        cpu_count: cpu_count,
+        gpu_count: gpu_count,
+        cop_count: cop_count,
+        node_count: node_count,
+        ram_per_node: ram_per_node,
+        rmax: rmax_record&.result,
+        rpeak: rpeak_record&.value,
+        nmax: nmax_val,
+        benchmark: rmax_record&.top50_benchmark&.name,
+        measure: rmax_record&.top50_benchmark&.top50_measure_unit&.name,
+        cpu_info: cpu_info.join(" / "),
+        gpu_info: gpu_info.join(" / "),
+        cop_info: cop_info.join(" / "),
+        communication_network: com_net,
+        service_network: serv_net,
+        transport_network: tran_net,
+        application_area: app_area,
+        operating_system: os,
+        other_db_attributes: dbvals.join(" | "),
+        other_dictionary_attributes: dictvals.join(" | ")
+      }
+    end
+  end
+  def download_archive
+    year = params[:year]
+    month = params[:month]
+    calc_machine_attrs
+    list_id = get_list_id_by_date(year, month)
+  
+    return redirect_to archive_path, alert: 'Архив не найден.' if list_id.zero?
+    prepare_archive(list_id)
+  
+    csv_data = CSV.generate(headers: true) do |csv|
+      headers = [
+        "ID", "Name", "Rank", "Previous Rank", "Edition", "Start Date", "End Date",
+        "Organization", "City", "Vendors",
+        "CPU Count", "GPU Count", "COP Count", "Node Count", "RAM per Node",
+        "Rmax", "Rpeak", "Nmax", "Benchmark", "Measure",
+        "CPU Info", "GPU Info", "COP Info",
+        "Communication Network", "Service Network", "Transport Network",
+        "Application Area", "Operating System",
+        "Other DB Attributes", "Other Dictionary Attributes"
+      ]
+      csv << headers
+  
+      prepare_csv_data(list_id).each do |row|
+        csv << headers.map { |h| row[h.parameterize.underscore.to_sym] }
+      end
+    end
+  
+    send_data csv_data, filename: "top50_export_#{year}_#{month}.csv", type: 'text/csv; charset=utf-8'
+  end
+#2 END: my code
   def archive_by_vendor_common(list_id)
     @vendor = Top50Vendor.find(params[:vid])
     @top50_machines = fetch_archive_list(list_id).
@@ -1056,6 +1206,7 @@ class Top50MachinesController < Top50BaseController
     @perf_measured_attrs = [@rpeak_attrid]
 
     @top50_lists = get_top50_lists
+    @top50_slists = get_top50_lists_sorted
     list_num_attrs = Top50AttributeDbval.all.joins(:top50_attribute).merge(Top50Attribute.where(name_eng: "Edition number"))
     @list_nums = Top50AttributeValDbval.all.joins(:top50_attribute_dbval).merge(list_num_attrs)
     list_date_attrs = Top50AttributeDbval.all.joins(:top50_attribute).merge(Top50Attribute.where(name_eng: "Edition date"))
@@ -1063,6 +1214,109 @@ class Top50MachinesController < Top50BaseController
     @top50_res = Top50BenchmarkResult.all.joins(:top50_benchmark).merge(@top50_lists)
     @top50_incl = @top50_res.select("top50_benchmark_results.*, encode(top50_attribute_val_dbvals.value, 'escape') as num").joins("join top50_attribute_val_dbvals on top50_attribute_val_dbvals.obj_id = top50_benchmark_results.benchmark_id").joins("join top50_attributes on top50_attributes.id = top50_attribute_val_dbvals.attr_id and top50_attributes.name_eng = 'Edition number'").where("top50_benchmark_results.machine_id IN (#{tree_prec_sql(@top50_machine.id)})").order("cast(encode(top50_attribute_val_dbvals.value, 'escape') as int)")
 
+    #5 BEGIN: my code (Линия жизни на поверхности в разделе расширенной статистики)
+    list_date_attr_id = Top50Attribute.find_by(name_eng: "Edition date").id
+    date_vals_map = Top50AttributeValDbval.where(attr_id: list_date_attr_id, obj_id: @top50_slists.map(&:id)).index_by(&:obj_id)
+    
+    @edition_labels = @top50_slists.map do |list|
+      date_vals_map[list.id]&.value || "??.??.????"
+    end
+    
+    @ranks          = (1..50).to_a
+    @z_data         = Array.new(50) { [] }
+    @machine_names  = Array.new(50) { [] }
+    @machine_ids    = Array.new(50) { [] }
+    @machine_status = Array.new(50) { [] }
+    @life_line_segments = []
+    
+    rmax_bench = Top50Benchmark.find_by(name_eng: "Linpack")
+    rmax_by_machine = Top50BenchmarkResult.where(benchmark_id: rmax_bench.id).index_by(&:machine_id)
+    
+    life_machine_ids = ActiveRecord::Base.connection.execute(tree_prec_sql(@top50_machine.id)).values.flatten.map(&:to_i)
+    
+    precedes_type_id = Top50RelationType.find_by(name_eng: "Precedes")&.id
+    @prec_machines = precedes_type_id ? Top50Relation.where(type_id: precedes_type_id, is_valid: [1, 2]) : []
+    
+    current_segment = { x: [], y: [], z: [], ids: [], update_flags: [], name: @top50_machine.name }
+    previous_idx = nil
+    
+    @top50_slists.each_with_index do |list, idx|
+      machines = fetch_archive_list_simple(list.id)
+    
+      prev_rated_pos_map = {}
+      if idx + 1 < @top50_slists.size
+        prev_list = @top50_slists[idx + 1]
+        prev_machines = fetch_archive_list_simple(prev_list.id)
+        prev_rated_pos_map = prev_machines.index_by(&:id)
+      end
+    
+      machines_with_rmax = machines.map do |machine|
+        rmax = rmax_by_machine[machine.id]
+        status = :new
+    
+        prec_rel = @prec_machines.find { |rel| rel.sec_obj_id == machine.id }
+        if prec_rel
+          prev_machine_id = prec_rel.prim_obj_id
+          if prev_rated_pos_map.key?(prev_machine_id)
+            status = :upgrade
+          elsif prev_rated_pos_map.key?(machine.id)
+            status = :existing
+          end
+        elsif prev_rated_pos_map.key?(machine.id)
+          status = :existing
+        end
+    
+        [machine, rmax&.result.to_f || 0.0001, status]
+      end
+    
+      top50_sorted = machines_with_rmax.sort_by { |_, rmax, _| -rmax }.first(50)
+    
+      rmax_values = top50_sorted.map { |_, rmax, _| (rmax / 1_000_000.0).round(4) }
+      names       = top50_sorted.map { |m, _, _| m.name.presence || m.top50_organization&.name || "н/д" }
+      ids         = top50_sorted.map { |m, _, _| m.id }
+      statuses    = top50_sorted.map { |_, _, status| status.to_s }
+    
+      rmax_values.fill(0.0001, rmax_values.size...50)
+      names.fill("н/д", names.size...50)
+      ids.fill(nil, ids.size...50)
+      statuses.fill("none", statuses.size...50)
+    
+      rmax_values.each_with_index { |val, i| @z_data[i] << val }
+      names.each_with_index      { |val, i| @machine_names[i] << val }
+      ids.each_with_index        { |val, i| @machine_ids[i] << val }
+      statuses.each_with_index  { |val, i| @machine_status[i] << val }
+    
+      top50_sorted.each_with_index do |(machine, rmax, _), i|
+        if life_machine_ids.include?(machine.id)
+          if previous_idx && idx - previous_idx > 1
+            if current_segment[:x].any?
+              @life_line_segments << current_segment
+              current_segment = { x: [], y: [], z: [], ids: [], update_flags: [], name: @top50_machine.name }
+            end
+          end
+    
+          current_segment[:x] << i + 1
+          current_segment[:y] << @edition_labels[idx]
+          current_segment[:z] << (rmax / 1_000_000.0).round(4)
+          current_segment[:ids] << machine.id
+    
+          status = @machine_status[i][idx] rescue nil
+          current_segment[:update_flags] << (status == 'upgrade')
+    
+          previous_idx = idx
+        end
+      end
+    end
+    
+   
+    @life_line_segments << current_segment if current_segment[:x].any?
+    
+
+    @z_data         = @z_data.transpose
+    @machine_names  = @machine_names.transpose
+    @machine_ids    = @machine_ids.transpose
+    @machine_status = @machine_status.transpose
+    
   end
 
   def stats_common
@@ -1094,12 +1348,91 @@ class Top50MachinesController < Top50BaseController
   def stats_per_list
     stats_per_list_common(params[:eid].to_i)
   end
+
+  #4 BEGIN: my code (Дебаг)
+  def debug_attributes_for(obj, level = 0)
+    indent = "  " * level
+    puts "\n#{indent}>>> Объект ID=#{obj.id}, Тип=#{obj.try(:top50_object_type)&.name_eng || 'Top50Machine'}"
+    puts "#{indent}  Название: #{obj.name}" if obj.respond_to?(:name)
+  
+    puts "#{indent}  Start Date: #{obj.start_date}" if obj.respond_to?(:start_date) && obj.start_date
+    puts "#{indent}  End Date: #{obj.end_date}" if obj.respond_to?(:end_date) && obj.end_date
+  
+    if obj.respond_to?(:org_id) && obj.org_id
+      org = Top50Organization.find_by(id: obj.org_id)
+      if org
+        puts "#{indent}  Организация: #{org.name}"
+        puts "#{indent}  Город: #{org.top50_city&.name}" if org.top50_city
+      end
+    end
+  
+    if obj.respond_to?(:vendor_ids)
+      vendors = Top50Vendor.where(id: obj.vendor_ids)
+      puts "#{indent}  Разработчики: #{vendors.map(&:name).join(', ')}"
+    end
+  
+    Top50AttributeValDbval
+      .includes(top50_attribute_dbval: :top50_attribute)
+      .where(obj_id: obj.id)
+      .each do |val|
+        attr = val.top50_attribute_dbval.top50_attribute
+        puts "#{indent}  [DBVAL] #{attr.name_eng}: #{val.value}"
+      end
+
+    Top50AttributeValDict
+      .includes(top50_attribute_dict: :top50_attribute, top50_dictionary_elem: {})
+      .where(obj_id: obj.id)
+      .each do |val|
+        attr = val.top50_attribute_dict.top50_attribute
+        name = val.top50_dictionary_elem&.name || "?"
+        puts "#{indent}  [DICT]  #{attr.name_eng}: #{name}"
+      end
+  
+    Top50BenchmarkResult
+      .includes(:top50_benchmark)
+      .where(machine_id: obj.id)
+      .each do |res|
+        bench = res.top50_benchmark
+        puts "#{indent}  [BENCH] #{bench.name_eng}: #{res.result}"
+      end
+
+    if obj.respond_to?(:id)
+      %w[Communication network Service network Transport network].each do |network_type|
+        attr = Top50Attribute.find_by(name_eng: network_type)
+        next unless attr
+        dict_val = Top50AttributeValDict.find_by(obj_id: obj.id, attr_id: attr.id)
+        net_val = dict_val&.top50_dictionary_elem&.name
+        puts "#{indent}  #{network_type}: #{net_val || 'н/д'}"
+      end
+    end
+  
+    if defined?(@prev_rated_pos)
+      prev = @prev_rated_pos.find { |p| p.machine_id == obj.id }
+      if prev
+        puts "#{indent}  Предыдущее место: #{prev.result}"
+      end
+    end
+  
+    rel_type = Top50RelationType.find_by(name_eng: "Contains")
+    return unless rel_type
+  
+    Top50Relation
+      .includes(:top50_object)
+      .where(prim_obj_id: obj.id, type_id: rel_type.id)
+      .each do |rel|
+        child = rel.top50_object
+        puts "#{indent}  [CONTAINS] ID=#{child.id}, Тип=#{child.top50_object_type&.name_eng || 'N/A'} (кол-во: #{rel.sec_obj_qty})"
+        debug_attributes_for(child, level + 1)
+      end
+  end
+  #4 END: my code
   
   def stats(ext = 0)
     @stat_section = params[:section]
     
     @section_headers = {}
     @section_headers["performance"] = "производительность систем"
+    @section_headers["performance_3d"] = "производительность систем (LINPACK, 3D)"
     @section_headers["area"] = "область применения"
     @section_headers["city"] = "расположение систем"
     @section_headers["type"] = "типы систем"
@@ -1107,12 +1440,17 @@ class Top50MachinesController < Top50BaseController
     @section_headers["hybrid_intra"] = "гибридность систем (наличие ускорителей на узлах)"
     @section_headers["vendors"] = "разработчики вычислительных систем"
     @section_headers["cpu_vendor"] = "производители CPU"
+    @section_headers["cpu_vendor_3d"] = "производители CPU (3D)"
+    @section_headers["acc_vendor_3d"] = "производители ускорителей (3D)"
     @section_headers["cpu_fam"] = "семейства CPU"
     @section_headers["cpu_gen"] = "микроархитектура CPU"
     @section_headers["cpu_cnt"] = "количество CPU"
     @section_headers["core_cnt"] = "количество вычислительных ядер"
     @section_headers["comm_net"] = "семейства коммуникационных сетей"
     @section_headers["comm_net_sep"] = "коммуникационные сети"
+    @section_headers["performance_3d_with_machine_status"] = "обновляемость систем (3D)"
+    @section_headers["heatmap_streaks"] = "количество лет в рейтинге от номера редакции"
+    @section_headers["heatmap_rank_vs_years"] = "количество лет в рейтинге от начальной позиции"
     
     @header_text = "Статистика: " + @section_headers["performance"]
     if @stat_section.present? 
@@ -1230,7 +1568,628 @@ class Top50MachinesController < Top50BaseController
           @top50_cats << _top50_cat.new(cpu_fam.fam_id, cpu_fam.fam_name)
         end
       end
+    #3 BEGIN: my code (Реализация методов представления, контроллер)
+    elsif @stat_section == 'performance_3d'
       
+      # relation = Top50Relation.joins(:top50_relation_type)
+      #   .where(sec_obj_id: 511)
+      #   .where(top50_relation_types: { name_eng: "Precedes" })
+      # puts "=== DEBUG: Precedes relation for machine 511 ==="
+      # puts relation.first&.inspect || "not found"
+      # puts "==============================================="
+      list_date_attr_id = Top50Attribute.where(name_eng: "Edition date").first.id
+      date_vals_map = Top50AttributeValDbval.where(attr_id: list_date_attr_id, obj_id: @top50_slists.map(&:id)).index_by(&:obj_id)
+      @edition_labels = @top50_slists.map do |list|
+        date_val = date_vals_map[list.id]
+        date_val ? date_val.value : "??.??.????"
+      end
+     
+      @edition_labels_for_select = @edition_labels.reverse
+
+      @ranks = (1..50).to_a
+      @z_data = Array.new(50) { [] }
+      @machine_names = Array.new(50) { [] }
+    
+      rmax_bench = Top50Benchmark.find_by(name_eng: "Linpack")
+      all_rmax = Top50BenchmarkResult.where(benchmark_id: rmax_bench.id)
+      rmax_by_machine = all_rmax.index_by(&:machine_id)
+    
+      @top50_slists.each_with_index do |list, idx|
+        machines = fetch_archive_list_simple(list.id)
+    
+        machines_with_rmax = machines.map do |machine|
+          rmax = rmax_by_machine[machine.id]
+          [machine, rmax&.result.to_f || 0.0001]
+        end
+    
+        top50_sorted = machines_with_rmax.sort_by { |_, rmax| -rmax }.first(50)
+    
+        rmax_values = top50_sorted.map { |_, rmax| (rmax / 1_000_000.0).round(4) }
+        names = top50_sorted.map do |machine, _|
+          machine.name.presence || machine.top50_organization&.name || "н/д"
+        end
+    
+        rmax_values.fill(0.0001, rmax_values.size...50)
+        names.fill("н/д", names.size...50)
+    
+        rmax_values.each_with_index { |val, i| @z_data[i] << val }
+        names.each_with_index     { |val, i| @machine_names[i] << val }
+      end
+    
+      @z_data = @z_data.transpose
+      #@machine_names = @machine_names.reverse
+      #@edition_labels = @edition_labels.reverse
+      # puts "==============================================="
+      # puts "==============================================="
+      # puts "==============================================="
+      # puts "Z structure: #{@z_data.size} x #{@z_data.first.size}"
+      # puts "Names structure: #{@machine_names.size} x #{@machine_names.first.size}"
+      # puts "==============================================="
+      # puts "==============================================="
+      # puts "==============================================="
+
+    elsif @stat_section == 'heatmap_streaks'
+      require 'set'
+      @top50_slists = get_top50_lists_sorted
+
+      ed_num_attr_id = Top50Attribute.find_by(name_eng: "Edition number")&.id
+      @ed_num_attrid = ed_num_attr_id
+      ed_num_vals = Top50AttributeValDbval.where(attr_id: ed_num_attr_id, obj_id: @top50_slists.map(&:id)).index_by(&:obj_id)
+
+      list_date_attr_id = Top50Attribute.find_by(name_eng: "Edition date")&.id
+      date_vals_map = Top50AttributeValDbval.where(attr_id: list_date_attr_id, obj_id: @top50_slists.map(&:id)).index_by(&:obj_id)
+
+      @top50_slists = @top50_slists.sort_by { |ed| ed_num_vals[ed.id]&.value.to_i || 0 }
+      @ed_num_map = @top50_slists.map { |ed| [ed.id, ed_num_vals[ed.id]&.value.to_i] }.to_h
+
+      @x_labels = @top50_slists.map do |list|
+        raw_date = date_vals_map[list.id]&.value
+        if raw_date && raw_date.match?(/^\d{2}\.\d{2}\.\d{4}$/)
+          raw_date.slice(3..-1)
+        else
+          "??.????"
+        end
+      end
+      
+
+      precedes_type_id = Top50RelationType.find_by(name_eng: "Precedes")&.id
+      @prec_machines = precedes_type_id ? Top50Relation.where(type_id: precedes_type_id, is_valid: [1, 2]) : []
+      precedes_map = @prec_machines.pluck(:sec_obj_id, :prim_obj_id).to_h
+
+      def find_root_machine(machine_id, precedes_map)
+        while precedes_map[machine_id]
+          machine_id = precedes_map[machine_id]
+        end
+        machine_id
+      end
+
+      all_results = Top50BenchmarkResult.where(benchmark_id: @ed_num_map.keys)
+      machines_by_edition = Hash.new { |h, k| h[k] = [] }
+
+      all_results.each do |res|
+        ed_num = @ed_num_map[res.benchmark_id]
+        next unless ed_num
+        root_id = find_root_machine(res.machine_id, precedes_map)
+        machines_by_edition[ed_num] << { machine_id: res.machine_id, root_id: root_id }
+      end
+
+      ed_num_to_index = {}
+      ed_num_to_date = {}
+      @top50_slists.each_with_index do |ed, idx|
+        ed_num = ed_num_vals[ed.id]&.value.to_i
+        ed_num_to_index[ed_num] = idx
+        ed_date_str = date_vals_map[ed.id]&.value
+        ed_num_to_date[ed_num] = Date.parse(ed_date_str) rescue nil
+      end
+
+      machine_first_appearance = {}
+      current_streaks = Hash.new(0)
+      matrix_years = Array.new(@top50_slists.size) { Hash.new(0) }
+
+      @top50_slists.each_with_index do |ed, idx|
+        ed_num = ed_num_vals[ed.id]&.value.to_i
+        ed_date = ed_num_to_date[ed_num]
+        next unless ed_date
+
+        machines = machines_by_edition[ed_num] || []
+        seen_roots = Set.new
+
+        machines.group_by { |m| m[:root_id] }.each do |root_id, group|
+          seen_roots << root_id
+
+          machine_first_appearance[root_id] ||= ed_date
+          start_date = machine_first_appearance[root_id]
+
+          years_in_list = ed_date.year - start_date.year
+          years_in_list -= 1 if ed_date.month < start_date.month
+          years_in_list = [years_in_list, 0].max
+
+          group.each do |_machine|
+            matrix_years[idx][years_in_list] += 1
+          end
+
+          current_streaks[root_id] += 1
+        end
+
+        current_streaks.keys.each do |root_id|
+          current_streaks[root_id] = 0 unless seen_roots.include?(root_id)
+        end
+      end
+
+      max_years = matrix_years.flat_map(&:keys).max || 0
+      @y_labels = (0..max_years).to_a
+      @z_data = matrix_years.map { |row| @y_labels.map { |y| row[y] || 0 } }
+
+      # puts "\n===== DEBUG: Z-DATA (Edition Index → Years in List Count) ====="
+      # {
+      #   first: 0,
+      #   second: 1,
+      #   last: @x_labels.size - 1
+      # }.each do |label, idx|
+      #   ed_label = @x_labels[idx]
+      #   puts "Edition #{idx} (#{label}, date #{ed_label}): #{@z_data[idx].inspect}"
+      # end
+
+      # puts "\n===== DEBUG: Присутствие машин по root_id ====="
+      # puts "x_labels.size = #{@x_labels.size}"
+      # puts "z_data.size   = #{@z_data.size}"
+
+      # root_to_editions = Hash.new { |h, k| h[k] = Set.new }
+      # machines_by_edition.each do |ed_num, machines|
+      #   machines.each { |m| root_to_editions[m[:root_id]] << ed_num }
+      # end
+
+      # root_to_editions.each do |root_id, editions|
+      #   puts "Machine #{root_id}: editions #{editions.to_a.sort.inspect}"
+      # end
+    
+    elsif @stat_section == 'heatmap_rank_vs_years'
+      require 'set'
+      @top50_slists = get_top50_lists_sorted
+    
+      ed_num_attr_id = Top50Attribute.find_by(name_eng: "Edition number")&.id
+      date_attr_id   = Top50Attribute.find_by(name_eng: "Edition date")&.id
+    
+      ed_num_vals   = Top50AttributeValDbval.where(attr_id: ed_num_attr_id, obj_id: @top50_slists.map(&:id)).index_by(&:obj_id)
+      date_vals_map = Top50AttributeValDbval.where(attr_id: date_attr_id,   obj_id: @top50_slists.map(&:id)).index_by(&:obj_id)
+    
+      @top50_slists = @top50_slists.sort_by { |ed| ed_num_vals[ed.id]&.value.to_i || 0 }
+
+    
+      ed_num_to_date = {}
+      @top50_slists.each do |ed|
+        ed_num = ed_num_vals[ed.id]&.value.to_i
+        ed_date_str = date_vals_map[ed.id]&.value
+        ed_num_to_date[ed_num] = Date.parse(ed_date_str) rescue nil
+      end
+    
+      precedes_type_id = Top50RelationType.find_by(name_eng: "Precedes")&.id
+      precedes_map = Top50Relation.where(type_id: precedes_type_id, is_valid: [1, 2]).pluck(:sec_obj_id, :prim_obj_id).to_h
+    
+      def find_root(machine_id, precedes_map)
+        while precedes_map[machine_id]
+          machine_id = precedes_map[machine_id]
+        end
+        machine_id
+      end
+    
+      rmax_bench = Top50Benchmark.find_by(name_eng: "Linpack")
+      all_rmax = Top50BenchmarkResult.where(benchmark_id: rmax_bench.id)
+      rmax_by_machine = all_rmax.index_by(&:machine_id)
+    
+      appearances = Hash.new { |h, k| h[k] = [] }
+    
+      @top50_slists.each do |ed|
+        ed_num = ed_num_vals[ed.id]&.value.to_i
+        ed_date = ed_num_to_date[ed_num]
+        next unless ed_date
+    
+        machines = fetch_archive_list_simple(ed.id)
+    
+        sorted_machines = machines.sort_by do |machine|
+          -(rmax_by_machine[machine.id]&.result.to_f || 0.0)
+        end
+    
+        sorted_machines.each_with_index do |machine, rank|
+          root_id = find_root(machine.id, precedes_map)
+          appearances[root_id] << {
+            ed_num: ed_num,
+            ed_date: ed_date,
+            rank: rank + 1,
+            machine_id: machine.id,
+            name: machine.name.presence || machine.top50_organization&.name || "н/д"
+          }
+        end
+      end
+    
+      matrix = Hash.new { |h, k| h[k] = Hash.new(0) }
+      @series_by_cell = Hash.new { |h, k| h[k] = [] }
+    
+      appearances.each do |root_id, records|
+        records = records.sort_by { |r| r[:ed_num] }
+        streaks = []
+        current_streak = []
+    
+        records.each_with_index do |entry, idx|
+          if idx == 0 || (entry[:ed_num] - records[idx - 1][:ed_num] <= 1)
+            current_streak << entry
+          else
+            streaks << current_streak
+            current_streak = [entry]
+          end
+        end
+        streaks << current_streak unless current_streak.empty?
+    
+        streaks.each do |streak|
+          next if streak.empty?
+          start = streak.first
+          stop  = streak.last
+    
+          years = stop[:ed_date].year - start[:ed_date].year
+          years -= 1 if stop[:ed_date].month < start[:ed_date].month
+          years = [years, 0].max
+    
+          rank = start[:rank]
+          matrix[rank][years] += 1
+    
+          last_machine_id = stop[:machine_id]
+          last_name = stop[:name] || "н/д"
+    
+          @series_by_cell[[rank, years]] << {
+            root_id: root_id,
+            rank: rank,
+            years: years,
+            start: start[:ed_date].to_s,
+            end: stop[:ed_date].to_s,
+            name: last_name,
+            machine_id: last_machine_id
+          }
+        end
+      end
+    
+      all_ranks = matrix.keys.sort
+      all_years = matrix.values.flat_map(&:keys).uniq.sort
+    
+      @x_labels = all_ranks.map(&:to_s)
+      @y_labels = all_years
+      @z_data = all_ranks.map { |rank| @y_labels.map { |y| matrix[rank][y] || 0 } }.transpose
+    
+      @series_by_cell_js = @series_by_cell.transform_keys { |(rank, years)| "#{rank}-#{years}" }
+    
+    
+    elsif @stat_section == 'cpu_vendor_3d'
+      list_date_attr_id = Top50Attribute.find_by(name_eng: "Edition date")&.id
+      date_vals_map = Top50AttributeValDbval.where(attr_id: list_date_attr_id, obj_id: @top50_slists.map(&:id)).index_by(&:obj_id)
+
+      @edition_labels = @top50_slists.map do |list|
+        date_vals_map[list.id]&.value || "??.??.????"
+      end
+
+      @edition_labels_for_select = @edition_labels.reverse
+
+      @ranks = (1..50).to_a
+      @z_data = Array.new(50) { [] }
+      @vendor_data = Array.new(50) { [] }
+      @machine_names = Array.new(50) { [] }
+      @machine_ids = Array.new(50) { [] }
+
+      cpu_vendor_dict_id = Top50Dictionary.find_by(name_eng: 'CPU Vendor')&.id
+      cop_vendor_dict_id = Top50Dictionary.find_by(name_eng: 'Coprocessor Vendor')&.id
+      rel_contain_id = Top50RelationType.find_by(name_eng: "Contains")&.id
+
+      vendor_by_machine = Hash.new { |h, k| h[k] = [] }
+
+      @mach_x_cpuvendors = Top50DictionaryElem
+        .select("top50_dictionary_elems.id, top50_dictionary_elems.name, top50_machines.id AS mach_id")
+        .joins("JOIN top50_attribute_val_dicts ON top50_attribute_val_dicts.dict_elem_id = top50_dictionary_elems.id")
+        .joins("JOIN top50_machines ON EXISTS (
+                  SELECT 1 FROM top50_relations ar
+                  JOIN top50_relations br ON br.prim_obj_id = ar.sec_obj_id
+                  WHERE ar.prim_obj_id = top50_machines.id
+                  AND br.sec_obj_id = top50_attribute_val_dicts.obj_id
+                  AND ar.type_id = #{rel_contain_id}
+                  AND br.type_id = #{rel_contain_id}
+                )")
+        .where("top50_dictionary_elems.dict_id = ?", cpu_vendor_dict_id)
+
+      @mach_x_cpuvendors.each do |rec|
+        vendor_by_machine[rec["mach_id"]] << rec["name"]
+      end
+
+      @mach_x_copvendors = Top50DictionaryElem
+        .select("top50_dictionary_elems.id, top50_dictionary_elems.name, top50_machines.id AS mach_id")
+        .joins("JOIN top50_attribute_val_dicts ON top50_attribute_val_dicts.dict_elem_id = top50_dictionary_elems.id")
+        .joins("JOIN top50_machines ON EXISTS (
+                  SELECT 1 FROM top50_relations ar
+                  JOIN top50_relations br ON br.prim_obj_id = ar.sec_obj_id
+                  WHERE ar.prim_obj_id = top50_machines.id
+                  AND br.sec_obj_id = top50_attribute_val_dicts.obj_id
+                  AND ar.type_id = #{rel_contain_id}
+                  AND br.type_id = #{rel_contain_id}
+                )")
+        .where("top50_dictionary_elems.dict_id = ?", cop_vendor_dict_id)
+
+      @mach_x_copvendors.each do |rec|
+        if vendor_by_machine[rec["mach_id"]].empty?
+          vendor_by_machine[rec["mach_id"]] << rec["name"]
+        end
+      end
+
+      machine_vendor_map = {}
+      vendor_by_machine.each do |mach_id, vendors|
+        uniq_vendors = vendors.uniq
+        machine_vendor_map[mach_id] = uniq_vendors.size == 1 ? uniq_vendors.first : "Hybrid"
+      end
+
+      vendor_indices = {}
+      vendor_counter = 0
+
+      rmax_bench = Top50Benchmark.find_by(name_eng: "Linpack")
+      all_rmax = Top50BenchmarkResult.where(benchmark_id: rmax_bench.id)
+      rmax_by_machine = all_rmax.index_by(&:machine_id)
+
+      @top50_slists.each_with_index do |list, idx|
+        machines = fetch_archive_list_simple(list.id)
+
+        machines_with_rmax = machines.map do |machine|
+          rmax = rmax_by_machine[machine.id]
+          [machine, rmax&.result.to_f || 0.0001]
+        end
+
+        top50_sorted = machines_with_rmax.sort_by { |_, rmax| -rmax }.first(50)
+
+        rmax_values = top50_sorted.map { |_, rmax| (rmax / 1_000_000.0).round(4) }
+        names = top50_sorted.map { |m, _| m.name.presence || m.top50_organization&.name || "н/д" }
+
+        vendor_values = top50_sorted.map do |machine, _|
+          vendor = machine_vendor_map[machine.id] || "Unknown"
+          vendor_indices[vendor] ||= vendor_counter
+          vendor_counter += 1 if vendor_indices[vendor] == vendor_counter
+          vendor_indices[vendor]
+        end
+
+        ids = top50_sorted.map { |m, _| m.id }
+
+        rmax_values.fill(0.0001, rmax_values.size...50)
+        names.fill("н/д", names.size...50)
+        vendor_values.fill(vendor_indices["Unknown"], vendor_values.size...50)
+        ids.fill(nil, ids.size...50)
+
+        rmax_values.each_with_index { |val, i| @z_data[i] << val }
+        vendor_values.each_with_index { |val, i| @vendor_data[i] << val }
+        names.each_with_index       { |val, i| @machine_names[i] << val }
+        ids.each_with_index         { |val, i| @machine_ids[i] << val }
+      end
+
+      @z_data = @z_data.transpose
+      @vendor_data = @vendor_data.transpose
+      @machine_names = @machine_names.transpose
+      @machine_ids = @machine_ids.transpose
+      @vendor_labels = vendor_indices.invert
+
+    
+    elsif @stat_section == 'acc_vendor_3d'
+
+      list_date_attr_id = Top50Attribute.find_by(name_eng: "Edition date")&.id
+      date_vals_map = Top50AttributeValDbval
+                        .where(attr_id: list_date_attr_id, obj_id: @top50_slists.map(&:id))
+                        .index_by(&:obj_id)
+
+      @edition_labels = @top50_slists.map do |list|
+        date_vals_map[list.id]&.value || "??.??.????"
+      end
+
+      @edition_labels_for_select = @edition_labels.reverse
+
+      @ranks = (1..50).to_a
+      @z_data = Array.new(50) { [] }
+      @vendor_data = Array.new(50) { [] }
+      @machine_names = Array.new(50) { [] }
+      @machine_ids   = Array.new(50) { [] }
+
+      rel_contain_id = Top50RelationType.find_by(name_eng: "Contains")&.id
+      gpu_vendor_dict_id = Top50Dictionary.find_by(name_eng: "GPU Vendor")&.id
+      cop_vendor_dict_id = Top50Dictionary.find_by(name_eng: "Coprocessor Vendor")&.id
+
+      if rel_contain_id.nil?
+        Rails.logger.warn("Relation type 'Contains' not found")
+        @vendor_labels = {}
+        return
+      end
+
+      gpu_by_machine = Hash.new { |h, k| h[k] = [] }
+
+      if gpu_vendor_dict_id
+        Top50DictionaryElem
+          .select("top50_dictionary_elems.id, top50_dictionary_elems.name, top50_machines.id AS mach_id")
+          .joins("JOIN top50_attribute_val_dicts ON top50_attribute_val_dicts.dict_elem_id = top50_dictionary_elems.id")
+          .joins("JOIN top50_machines ON EXISTS (
+                    SELECT 1 FROM top50_relations ar
+                    JOIN top50_relations br ON br.prim_obj_id = ar.sec_obj_id
+                    WHERE ar.prim_obj_id = top50_machines.id
+                    AND br.sec_obj_id = top50_attribute_val_dicts.obj_id
+                    AND ar.type_id = #{rel_contain_id}
+                    AND br.type_id = #{rel_contain_id}
+                  )")
+          .where("top50_dictionary_elems.dict_id = ?", gpu_vendor_dict_id)
+          .each do |rec|
+            gpu_by_machine[rec["mach_id"]] << rec["name"]
+          end
+      end
+
+      if cop_vendor_dict_id
+        Top50DictionaryElem
+          .select("top50_dictionary_elems.id, top50_dictionary_elems.name, top50_machines.id AS mach_id")
+          .joins("JOIN top50_attribute_val_dicts ON top50_attribute_val_dicts.dict_elem_id = top50_dictionary_elems.id")
+          .joins("JOIN top50_machines ON EXISTS (
+                    SELECT 1 FROM top50_relations ar
+                    JOIN top50_relations br ON br.prim_obj_id = ar.sec_obj_id
+                    WHERE ar.prim_obj_id = top50_machines.id
+                    AND br.sec_obj_id = top50_attribute_val_dicts.obj_id
+                    AND ar.type_id = #{rel_contain_id}
+                    AND br.type_id = #{rel_contain_id}
+                  )")
+          .where("top50_dictionary_elems.dict_id = ?", cop_vendor_dict_id)
+          .each do |rec|
+            gpu_by_machine[rec["mach_id"]] << rec["name"] if gpu_by_machine[rec["mach_id"]].empty?
+          end
+      end
+
+      machine_vendor_map = {}
+      gpu_by_machine.each do |mach_id, vendors|
+        uniq_vendors = vendors.uniq
+        machine_vendor_map[mach_id] = uniq_vendors.size == 1 ? uniq_vendors.first : "Hybrid"
+      end
+
+      vendor_indices = {}
+      vendor_counter = 0
+
+      rmax_bench = Top50Benchmark.find_by(name_eng: "Linpack")
+      rmax_by_machine = Top50BenchmarkResult
+                          .where(benchmark_id: rmax_bench.id)
+                          .index_by(&:machine_id)
+
+      @top50_slists.each_with_index do |list, idx|
+        machines = fetch_archive_list_simple(list.id)
+
+        machines_with_rmax = machines.map do |machine|
+          rmax = rmax_by_machine[machine.id]
+          [machine, rmax&.result.to_f || 0.0001]
+        end
+
+        top50_sorted = machines_with_rmax.sort_by { |_, rmax| -rmax }.first(50)
+
+        rmax_values = top50_sorted.map { |_, rmax| (rmax / 1_000_000.0).round(4) }
+        names = top50_sorted.map { |m, _| m.name.presence || m.top50_organization&.name || "н/д" }
+        ids   = top50_sorted.map { |m, _| m.id }
+
+        vendor_values = top50_sorted.map do |machine, _|
+          vendor = machine_vendor_map[machine.id] || "Unknown"
+          vendor_indices[vendor] ||= vendor_counter
+          vendor_counter += 1 if vendor_indices[vendor] == vendor_counter
+          vendor_indices[vendor]
+        end
+
+        rmax_values.fill(0.0001, rmax_values.size...50)
+        vendor_values.fill(vendor_indices["Unknown"], vendor_values.size...50)
+        names.fill("н/д", names.size...50)
+        ids.fill(nil, ids.size...50)
+
+        rmax_values.each_with_index { |val, i| @z_data[i] << val }
+        vendor_values.each_with_index { |val, i| @vendor_data[i] << val }
+        names.each_with_index       { |val, i| @machine_names[i] << val }
+        ids.each_with_index         { |val, i| @machine_ids[i] << val }
+      end
+
+      @z_data = @z_data.transpose
+      @vendor_data = @vendor_data.transpose
+      @machine_names = @machine_names.transpose
+      @machine_ids = @machine_ids.transpose
+      @vendor_labels = vendor_indices.invert
+
+    elsif @stat_section == 'performance_3d_with_machine_status'
+      precedes_type_id = Top50RelationType.find_by(name_eng: "Precedes")&.id
+      @prec_machines = precedes_type_id ? Top50Relation.where(type_id: precedes_type_id, is_valid: [1, 2]) : []
+    
+      list_date_attr_id = Top50Attribute.find_by(name_eng: "Edition date")&.id
+      date_vals_map = Top50AttributeValDbval
+                        .where(attr_id: list_date_attr_id, obj_id: @top50_slists.map(&:id))
+                        .index_by(&:obj_id)
+    
+      @edition_labels = @top50_slists.map do |list|
+        date_vals_map[list.id]&.value || "??.??.????"
+      end
+
+      @edition_labels_for_select = @edition_labels.reverse
+    
+      @ranks = (1..50).to_a
+      @z_data = Array.new(50) { [] }
+      @machine_names = Array.new(50) { [] }
+      @machine_status = Array.new(50) { [] }
+      @machine_ids = Array.new(50) { [] }
+    
+      rmax_bench_id = Top50Benchmark.find_by(name_eng: "Linpack")&.id
+      all_rmax = Top50BenchmarkResult.where(benchmark_id: rmax_bench_id)
+      rmax_by_machine = all_rmax.index_by(&:machine_id)
+    
+      @debug_machine = nil
+    
+      @top50_slists.each_with_index do |list, idx|
+        machines = fetch_archive_list_simple(list.id)
+    
+        prev_rated_pos_map = {}
+        if idx + 1 < @top50_slists.size
+          prev_list = @top50_slists[idx + 1]
+          prev_rated_pos = Top50BenchmarkResult.where(benchmark_id: prev_list.id)
+          prev_rated_pos_map = prev_rated_pos.index_by(&:machine_id)
+        end
+    
+        machines_with_rmax = machines.map do |machine|
+          rmax = rmax_by_machine[machine.id]
+          status = :new
+    
+          prec_rel = @prec_machines.find_by(sec_obj_id: machine.id)
+          if prec_rel.present?
+            prev_machine_id = prec_rel.prim_obj_id
+            if prev_rated_pos_map[prev_machine_id].present?
+              status = :upgrade
+            elsif prev_rated_pos_map[machine.id].present?
+              status = :existing
+            end
+          elsif prev_rated_pos_map[machine.id].present?
+            status = :existing
+          end
+    
+          [machine, rmax&.result.to_f || 0.0001, status]
+        end
+    
+        top50_sorted = machines_with_rmax.sort_by { |_, rmax, _| -rmax }.first(50)
+    
+        # if @edition_labels[idx] == "31.03.2015" && top50_sorted[4]
+        #   m, r, s = top50_sorted[4]
+        #   @debug_machine = {
+        #     name: m.name,
+        #     id: m.id,
+        #     rmax: r,
+        #     status: s,
+        #     date: @edition_labels[idx],
+        #     rank: 5
+        #   }
+        # end
+    
+        rmax_values = top50_sorted.map { |_, rmax, _| (rmax / 1_000_000.0).round(4) }
+        names   = top50_sorted.map { |machine, _, _| machine.name.presence || machine.top50_organization&.name || "н/д" }
+        statuses = top50_sorted.map { |_, _, status| status.to_s }
+        ids     = top50_sorted.map { |machine, _, _| machine.id }
+    
+        rmax_values.fill(0.0001, rmax_values.size...50)
+        names.fill("н/д", names.size...50)
+        statuses.fill("none", statuses.size...50)
+        ids.fill(nil, ids.size...50)
+    
+        rmax_values.each_with_index { |val, i| @z_data[i] << val }
+        names.each_with_index       { |val, i| @machine_names[i] << val }
+        statuses.each_with_index   { |val, i| @machine_status[i] << val }
+        ids.each_with_index        { |val, i| @machine_ids[i] << val }
+      end
+    
+      @z_data = @z_data.transpose
+      @machine_names = @machine_names.transpose
+      @machine_status = @machine_status.transpose
+      @machine_ids = @machine_ids.transpose
+    
+      # if @debug_machine
+      #   puts "== DEBUG MACHINE INFO =="
+      #   puts "Date: #{@debug_machine[:date]}"
+      #   puts "Rank: #{@debug_machine[:rank]}"
+      #   puts "Machine ID: #{@debug_machine[:id]}"
+      #   puts "Name: #{@debug_machine[:name]}"
+      #   puts "Rmax: #{@debug_machine[:rmax]}"
+      #   puts "Status: #{@debug_machine[:status]}"
+      # else
+      #   puts "DEBUG: @debug_machine is still nil!"
+      # end
+    #3 END: my code  
     elsif @stat_section.present? and @stat_section[0..6] == 'vendors'
       @vendors_headers = {}
       @vendors_headers["vendors"] = "Количество систем"

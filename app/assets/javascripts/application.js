@@ -25,3 +25,4 @@
 //= require ckeditor/init
 //= require_tree .
 //= require d3js/d3.min.js
+//= require plotly-3.0.1.js

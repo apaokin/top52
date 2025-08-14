@@ -107,6 +107,7 @@ Octoshell::Application.routes.draw do
   get 'archive/:eid/spec/:aid/:elid', to: 'top50_machines#archive_by_attr_dict', as:'top50_machines_archive_attr_dict'
 
   get 'archive/:year/:month', to: 'top50_machines#get_archive', as:'get_archive'
+  get 'archive/download/:year/:month', to: 'top50_machines#download_archive', as:'download_archive'
   get 'archive/:year/:month/vendor/:vid', to: 'top50_machines#get_archive_by_vendor', as:'get_archive_vendor'
   get 'archive/:year/:month/vendor/:vid/exclusive', to: 'top50_machines#get_archive_by_vendor_excl', as:'get_archive_vendor_excl'
   get 'archive/:year/:month/organization/:oid', to: 'top50_machines#get_archive_by_org', as:'get_archive_org'
