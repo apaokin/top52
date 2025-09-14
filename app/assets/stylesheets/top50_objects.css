@@ -1,4 +1,16 @@
 /*
-  Place all the styles related to the matching controller here.
+  Place all the styles related to the matching controller here
   They will automatically be included in application.css.
 */
+non_valid{
+  background-color: #f4b6b6;
+}
+valid{
+  background-color: #baf8b4;
+}
+new {
+  background-color: #83cade;
+}
+error {
+  background-color: #ff2727;
+}
