@@ -6,6 +6,7 @@
 .modal-body
   .container-fluid
     = form_for @extratings_entry, html: { class: 'form-horizontal', remote: true } do |f|
+      = hidden_field_tag :authenticity_token, form_authenticity_token
       .form-group
         = f.label :system_id, "Система", class: 'control-label col-sm-3'
         .col-sm-9
@@ -58,6 +59,16 @@
           = f.submit "Сохранить", class: 'btn btn-primary'
 
 javascript:
+  // Добавляем CSRF токен для AJAX запросов
+  var token = document.querySelector('meta[name="csrf-token"]');
+  if (token) {
+    $.ajaxSetup({
+      beforeSend: function(xhr) {
+        xhr.setRequestHeader('X-CSRF-Token', token.getAttribute('content'));
+      }
+    });
+  }
+  
   var currentScores = #{raw @current_scores.to_json};
   
   function loadUnits(listId, isInitialLoad) {

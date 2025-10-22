@@ -456,6 +456,16 @@ javascript:
 
 
   document.addEventListener('DOMContentLoaded', () => {
+    // Добавляем CSRF токен для AJAX запросов
+    const token = document.querySelector('meta[name="csrf-token"]');
+    if (token) {
+      $.ajaxSetup({
+        beforeSend: function(xhr) {
+          xhr.setRequestHeader('X-CSRF-Token', token.getAttribute('content'));
+        }
+      });
+    }
+    
     buildHeatmapByDate('heatmapDate', heatmapDateGroups);
     
     $(document).on('ajax:success', 'a[data-target="#entryEditModal"]', function(event, data, status, xhr) {

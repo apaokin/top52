@@ -1,4 +1,6 @@
 class ExtratingsEntriesController < Top50BaseController
+  protect_from_forgery with: :exception, unless: -> { request.format.json? }
+  
   def new
     @extratings_entry = ExtratingsEntry.new
     @systems = Top50Relation.joins("JOIN top50_machines ON top50_relations.prim_obj_id = top50_machines.id")
@@ -106,11 +108,16 @@ class ExtratingsEntriesController < Top50BaseController
       end
     end
 
-    redirect_to @extratings_entry, notice: "Запись рейтинга и оценки успешно созданы."
+    redirect_to top50_machines_show_path(@extratings_entry.system_id), notice: "Запись рейтинга и оценки успешно созданы."
   rescue ActiveRecord::RecordInvalid => e
     flash.now[:alert] = "Ошибка создания записи: #{e.message}"
     new
     render :new
+  end
+
+  def show
+    @extratings_entry = ExtratingsEntry.includes(:system, :extratings_edition, :extratings_scores).find(params[:id])
+    redirect_to top50_machines_show_path(@extratings_entry.system_id)
   end
 
   def edit
