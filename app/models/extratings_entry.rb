@@ -4,4 +4,8 @@ class ExtratingsEntry < ActiveRecord::Base
     has_many :extratings_scores, foreign_key: :extratings_entry_id
   
     validates :system_id, presence: true
+    
+    def machine
+      Top50Machine.find(system_id) if system_id
+    end
   end

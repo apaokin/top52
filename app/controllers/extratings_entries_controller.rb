@@ -120,11 +120,36 @@ class ExtratingsEntriesController < Top50BaseController
     redirect_to top50_machines_show_path(@extratings_entry.system_id)
   end
 
+  def destroy
+    @extratings_entry = ExtratingsEntry.find(params[:id])
+    system_id = @extratings_entry.system_id
+    
+    begin
+      ActiveRecord::Base.transaction do
+      
+        @extratings_entry.extratings_scores.destroy_all
+        
+        @extratings_entry.destroy!
+      end
+      
+      respond_to do |format|
+        format.js { render 'destroy' }
+        format.html { redirect_to top50_machines_show_path(system_id), notice: 'Запись успешно удалена' }
+      end
+    rescue => e
+      Rails.logger.error "Ошибка при удалении записи #{@extratings_entry.id}: #{e.message}"
+      respond_to do |format|
+        format.js { render 'destroy', locals: { error: 'Ошибка при удалении записи: ' + e.message } }
+        format.html { redirect_to top50_machines_show_path(system_id), alert: 'Ошибка при удалении записи: ' + e.message }
+      end
+    end
+  end
+
   def edit
-    @extratings_entry = ExtratingsEntry.includes(:system, :extratings_edition).find(params[:id])
+    @extratings_entry = ExtratingsEntry.find(params[:id])
     @extratings_lists = ExtratingsList.order(:name_eng)
     
-    # Получаем текущие оценки для предзаполнения формы
+  
     @current_scores = {}
     @extratings_entry.extratings_scores.includes(:extratings_list_unit).each do |score|
       unit_name = score.extratings_list_unit.extratings_unit.name_eng
@@ -139,7 +164,7 @@ class ExtratingsEntriesController < Top50BaseController
     @extratings_entry = ExtratingsEntry.find(params[:id])
     
     ActiveRecord::Base.transaction do
-      # Обновляем или создаём редакцию рейтинга
+    
       edition = ExtratingsEditions.find_or_create_by!(
         extratings_list_id: params[:extratings_list_id],
         edition_number: params[:edition_number],

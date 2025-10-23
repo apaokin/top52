@@ -4,7 +4,8 @@ class ExtratingsListUnit < ActiveRecord::Base
   
     has_many :extratings_scores, foreign_key: :extratings_list_unit_id, dependent: :destroy
   
-    validates :extratings_list, :extratings_unit, presence: true
+    validates :extratings_unit, presence: true
+    validates :extratings_list_id, presence: true, on: :update
     validates :priority, numericality: { only_integer: true }, allow_nil: true
 end
   

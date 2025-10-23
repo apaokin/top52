@@ -9,6 +9,7 @@ class ExtratingsListsController < ApplicationController
     def create
         @extratings_list = ExtratingsList.new(extratings_list_params)
         
+        # Валидация основных полей
         if @extratings_list.name_ru.blank?
             @extratings_list.errors.add(:name_ru, "не может быть пустым")
         end
@@ -17,6 +18,7 @@ class ExtratingsListsController < ApplicationController
             @extratings_list.errors.add(:name_eng, "не может быть пустым")
         end
         
+        # Валидация единиц измерения только если они есть
         if @extratings_list.extratings_list_units.any?
             @extratings_list.extratings_list_units.each do |unit|
                 if unit.extratings_unit_id.blank? && unit.extratings_unit.blank?
@@ -39,8 +41,14 @@ class ExtratingsListsController < ApplicationController
             end
         end
         
-        if @extratings_list.errors.empty? && @extratings_list.save
-            redirect_to new_extratings_entry_path, notice: "Рейтинг успешно создан"
+        # Сохраняем только если нет ошибок
+        if @extratings_list.errors.empty?
+            if @extratings_list.save
+                redirect_to new_extratings_entry_path, notice: "Рейтинг успешно создан"
+            else
+                @existing_units = ExtratingsUnit.all
+                render :new
+            end
         else
             @existing_units = ExtratingsUnit.all
             render :new

@@ -309,176 +309,180 @@ table class="table fit"
 br
 br
 br
-h3 Позиция vs Дата публикации
-canvas#heatmapDate width="800" height="400"
-br
-br
-br
-strong Позиции в мировых суперкомпьютерных рейтинах
-br
-br
+- if @extratings_entries.any?
+  h3 Позиция vs Дата публикации
+  canvas#heatmapDate width="800" height="400"
+  br
+  br
+  br
+  strong Позиции в мировых суперкомпьютерных рейтинах
+  br
+  br
 
-- grouped_by_list = @extratings_entries.group_by { |e| e.extratings_edition.extratings_list }
+  - grouped_by_list = @extratings_entries.group_by { |e| e.extratings_edition.extratings_list }
 
-- grouped_by_list.each do |list, entries|
-  h4 = list.name_ru
-  table.table.fit
-    tr
-      th.fit Рейтинг
-      th.fit Позиция
-      th.fit Редакция
-      th.fit Месяц публикации редакции
-      th.fit Показатели производительности
-      - if current_user and current_user.may_edit_top50?
-        th.fit
-    - entries.each do |entry|
+  - grouped_by_list.each do |list, entries|
+    h4 = list.name_ru
+    table.table.fit
       tr
-        td.fit align="left"
-          = link_to entry.extratings_edition.extratings_list.name_ru, entry.extratings_edition.extratings_list.url, title: entry.extratings_edition.extratings_list.description_ru, target: "_blank", rel: "noopener"
-        td.fit align="right" title=(@scores_by_entry_id[entry.id] || "Нет оценки") = entry.position
-        td.fit align="right" = entry.extratings_edition.edition_number
-        td.fit align="right" = entry.extratings_edition.publication_date
-        td.fit align="left" = @scores_by_entry_id[entry.id] || "Нет оценки"
+        th.fit Рейтинг
+        th.fit Позиция
+        th.fit Редакция
+        th.fit Месяц публикации редакции
+        th.fit Показатели производительности
         - if current_user and current_user.may_edit_top50?
-          td.fit align="center"
-            = link_to "Редактировать", edit_extratings_entry_path(entry, format: :js), class: "btn btn-default btn-sm", remote: true, data: { turbo: false, target: "#entryEditModal", toggle: "modal" }
+          th.fit
+      - entries.each do |entry|
+        tr id="entry-#{entry.id}"
+          td.fit align="left"
+            = link_to entry.extratings_edition.extratings_list.name_ru, entry.extratings_edition.extratings_list.url, title: entry.extratings_edition.extratings_list.description_ru, target: "_blank", rel: "noopener"
+          td.fit align="right" title=(@scores_by_entry_id[entry.id] || "Нет оценки") = entry.position
+          td.fit align="right" = entry.extratings_edition.edition_number
+          td.fit align="right" = entry.extratings_edition.publication_date
+          td.fit align="left" = @scores_by_entry_id[entry.id] || "Нет оценки"
+          - if current_user and current_user.may_edit_top50?
+            td.fit align="center"
+              = link_to "Редактировать", edit_extratings_entry_path(entry, format: :js), class: "btn btn-default btn-sm", remote: true, data: { turbo: false, target: "#entryEditModal", toggle: "modal" }
+              = " "
+              = link_to "Удалить", extratings_entry_path(entry), method: :delete, class: "btn btn-danger btn-sm", remote: true, data: { turbo: false, confirm: "Вы уверены, что хотите удалить эту запись?" }
 
-br
+  br
 
-javascript:
-  const heatmapScoreGroups = #{raw @grouped_heatmap_score_points.to_json};
-  const heatmapDateGroups = #{raw @grouped_heatmap_date_points.to_json};
+- if @extratings_entries.any?
+  javascript:
+    const heatmapScoreGroups = #{raw @grouped_heatmap_score_points.to_json};
+    const heatmapDateGroups = #{raw @grouped_heatmap_date_points.to_json};
 
-  function buildHeatmapByDate(ctxId, groups) {
-    const ctx = document.getElementById(ctxId).getContext('2d');
+    function buildHeatmapByDate(ctxId, groups) {
+      const ctx = document.getElementById(ctxId).getContext('2d');
 
-    const datasets = groups.map(group => ({
-      label: group.name,
-      data: group.data.map(d => ({x: d.x, y: d.y})),
-      backgroundColor: group.color,
-      borderColor: group.color,
-      pointRadius: 4,
-      pointHoverRadius: 8
-    }));
+      const datasets = groups.map(group => ({
+        label: group.name,
+        data: group.data.map(d => ({x: d.x, y: d.y})),
+        backgroundColor: group.color,
+        borderColor: group.color,
+        pointRadius: 4,
+        pointHoverRadius: 8
+      }));
 
-    new Chart(ctx, {
-      type: 'line',
-      data: { datasets },
-      options: {
-        parsing: false,
-        responsive: true,
-        plugins: {
-          legend: {
-            display: true,
-            labels: {
-              usePointStyle: true
-            }
-          },
-          tooltip: {
-            callbacks: {
-              label: ctx => {
-                const point = ctx.raw;
-                const group = groups.find(g => g.name === ctx.dataset.label);
-                const item = group.data.find(d => d.x === point.x && d.y === point.y);
-                return item?.tooltip || `Позиция: ${point.y}, Дата: ${new Date(point.x).toLocaleDateString()}`;
+      new Chart(ctx, {
+        type: 'line',
+        data: { datasets },
+        options: {
+          parsing: false,
+          responsive: true,
+          plugins: {
+            legend: {
+              display: true,
+              labels: {
+                usePointStyle: true
               }
-            }
-          }
-        },
-        scales: {
-          x: {
-            type: 'time',
-            time: {
-              unit: 'month',
-              displayFormats: { month: 'MMM yyyy' }
             },
-            title: { display: true, text: 'Дата публикации' }
-          },
-          y: {
-            reverse: true,
-            beginAtZero: false,
-            title: { display: true, text: 'Позиция в рейтинге' }
-          }
-        }
-      }
-    });
-  }
-  function buildHeatmapByScore(ctxId, groups) {
-    const ctx = document.getElementById(ctxId).getContext('2d');
-
-    const datasets = groups.map(group => ({
-      label: group.name,
-      data: group.data.map(d => ({x: d.x, y: d.y})),
-      backgroundColor: group.color,
-      borderColor: group.color,
-      pointRadius: 4,
-      pointHoverRadius: 8
-    }));
-
-    new Chart(ctx, {
-      type: 'line',
-      data: { datasets },
-      options: {
-        parsing: false,
-        responsive: true,
-        plugins: {
-          legend: {
-            display: true,
-            labels: {
-              usePointStyle: true
-            }
-          },
-          tooltip: {
-            callbacks: {
-              label: ctx => {
-                const point = ctx.raw;
-                const group = groups.find(g => g.name === ctx.dataset.label);
-                const item = group.data.find(d => d.x === point.x && d.y === point.y);
-                return item?.tooltip || `Позиция: ${point.y}, Score: ${point.x}`;
+            tooltip: {
+              callbacks: {
+                label: ctx => {
+                  const point = ctx.raw;
+                  const group = groups.find(g => g.name === ctx.dataset.label);
+                  const item = group.data.find(d => d.x === point.x && d.y === point.y);
+                  return item?.tooltip || `Позиция: ${point.y}, Дата: ${new Date(point.x).toLocaleDateString()}`;
+                }
               }
             }
-          }
-        },
-        scales: {
-          x: {
-            type: 'linear',
-            title: { display: true, text: 'Score (priority=1)' }
           },
-          y: {
-            reverse: true,
-            beginAtZero: false,
-            title: { display: true, text: 'Позиция в рейтинге' }
+          scales: {
+            x: {
+              type: 'time',
+              time: {
+                unit: 'month',
+                displayFormats: { month: 'MMM yyyy' }
+              },
+              title: { display: true, text: 'Дата публикации' }
+            },
+            y: {
+              reverse: true,
+              beginAtZero: false,
+              title: { display: true, text: 'Позиция в рейтинге' }
+            }
           }
-        }
-      }
-    });
-  }
-
-
-  document.addEventListener('DOMContentLoaded', () => {
-    // Добавляем CSRF токен для AJAX запросов
-    const token = document.querySelector('meta[name="csrf-token"]');
-    if (token) {
-      $.ajaxSetup({
-        beforeSend: function(xhr) {
-          xhr.setRequestHeader('X-CSRF-Token', token.getAttribute('content'));
         }
       });
     }
-    
-    buildHeatmapByDate('heatmapDate', heatmapDateGroups);
-    
-    $(document).on('ajax:success', 'a[data-target="#entryEditModal"]', function(event, data, status, xhr) {
-      console.log('Форма загружена, данные:', data);
-      $('#entryEditModal .modal-content').html(data);
-      $('#entryEditModal').modal('show');
+    function buildHeatmapByScore(ctxId, groups) {
+      const ctx = document.getElementById(ctxId).getContext('2d');
+
+      const datasets = groups.map(group => ({
+        label: group.name,
+        data: group.data.map(d => ({x: d.x, y: d.y})),
+        backgroundColor: group.color,
+        borderColor: group.color,
+        pointRadius: 4,
+        pointHoverRadius: 8
+      }));
+
+      new Chart(ctx, {
+        type: 'line',
+        data: { datasets },
+        options: {
+          parsing: false,
+          responsive: true,
+          plugins: {
+            legend: {
+              display: true,
+              labels: {
+                usePointStyle: true
+              }
+            },
+            tooltip: {
+              callbacks: {
+                label: ctx => {
+                  const point = ctx.raw;
+                  const group = groups.find(g => g.name === ctx.dataset.label);
+                  const item = group.data.find(d => d.x === point.x && d.y === point.y);
+                  return item?.tooltip || `Позиция: ${point.y}, Score: ${point.x}`;
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              type: 'linear',
+              title: { display: true, text: 'Score (priority=1)' }
+            },
+            y: {
+              reverse: true,
+              beginAtZero: false,
+              title: { display: true, text: 'Позиция в рейтинге' }
+            }
+          }
+        }
+      });
+    }
+
+
+    document.addEventListener('DOMContentLoaded', () => {
+      // Добавляем CSRF токен для AJAX запросов
+      const token = document.querySelector('meta[name="csrf-token"]');
+      if (token) {
+        $.ajaxSetup({
+          beforeSend: function(xhr) {
+            xhr.setRequestHeader('X-CSRF-Token', token.getAttribute('content'));
+          }
+        });
+      }
+      
+      buildHeatmapByDate('heatmapDate', heatmapDateGroups);
+      
+      $(document).on('ajax:success', 'a[data-target="#entryEditModal"]', function(event, data, status, xhr) {
+        console.log('Форма загружена, данные:', data);
+        $('#entryEditModal .modal-content').html(data);
+        $('#entryEditModal').modal('show');
+      });
+      
+      $(document).on('ajax:error', 'a[data-target="#entryEditModal"]', function(event, xhr, status, error) {
+        console.error('Ошибка загрузки формы редактирования:', error);
+        alert('Ошибка загрузки формы редактирования');
+      });
     });
-    
-    $(document).on('ajax:error', 'a[data-target="#entryEditModal"]', function(event, xhr, status, error) {
-      console.error('Ошибка загрузки формы редактирования:', error);
-      alert('Ошибка загрузки формы редактирования');
-    });
-  });
 
 / Modal container for AJAX edit forms
 div#entryEditModal.modal.fade tabindex="-1" role="dialog"
