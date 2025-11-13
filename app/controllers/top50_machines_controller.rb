@@ -1,7 +1,8 @@
 # encoding: UTF-8
+require 'matrix'
 class Top50MachinesController < Top50BaseController
-  skip_before_filter :require_login, only: [:list, :get_archive, :get_archive_by_vendor, :get_archive_by_org, :get_archive_by_city, :get_archive_by_country, :get_archive_by_vendor_excl, :get_archive_by_comp, :get_archive_by_comp_attrd, :get_archive_by_attr_dict, :archive, :archive_lists, :archive_by_vendor, :archive_by_org, :archive_by_city, :archive_by_country, :archive_by_vendor_excl, :archive_by_comp, :archive_by_comp_attrd, :archive_by_attr_dict, :show, :stats, :get_ext_stats, :ext_stats, :get_stats_per_list, :stats_per_list, :download_certificate, :app_form_new, :app_form_new_post, :app_form_upgrade, :app_form_upgrade_post, :app_form_step1, :app_form_step1_presave, :app_form_step2_presave, :app_form_step3_presave, :app_form_step4_presave, :app_form_confirm_post, :app_form_finish, :download_archive]
-  skip_before_filter :require_admin_rights, only: [:list, :get_archive, :get_archive_by_vendor, :get_archive_by_org, :get_archive_by_city, :get_archive_by_country, :get_archive_by_vendor_excl, :get_archive_by_comp, :get_archive_by_comp_attrd, :get_archive_by_attr_dict, :archive, :archive_lists, :archive_by_vendor, :archive_by_org, :archive_by_city, :archive_by_country, :archive_by_vendor_excl, :archive_by_comp, :archive_by_comp_attrd, :archive_by_attr_dict, :show, :stats, :get_ext_stats, :ext_stats, :get_stats_per_list, :stats_per_list, :download_certificate, :app_form_new, :app_form_new_post, :app_form_upgrade, :app_form_upgrade_post, :app_form_step1, :app_form_step1_presave, :app_form_step2_presave, :app_form_step3_presave, :app_form_step4_presave, :app_form_confirm_post, :app_form_finish, :download_archive]
+  skip_before_filter :require_login, only: [:list, :get_archive, :get_archive_by_vendor, :get_archive_by_org, :get_archive_by_city, :get_archive_by_country, :get_archive_by_vendor_excl, :get_archive_by_comp, :get_archive_by_comp_attrd, :get_archive_by_attr_dict, :archive, :archive_lists, :archive_by_vendor, :archive_by_org, :archive_by_city, :archive_by_country, :archive_by_vendor_excl, :archive_by_comp, :archive_by_comp_attrd, :archive_by_attr_dict, :show, :stats, :get_ext_stats, :ext_stats, :get_stats_per_list, :stats_per_list, :download_certificate, :app_form_new, :app_form_new_post, :app_form_upgrade, :app_form_upgrade_post, :app_form_step1, :app_form_step1_presave, :app_form_step2_presave, :app_form_step3_presave, :app_form_step4_presave, :app_form_confirm_post, :app_form_finish, :download_archive, :export_extratings_csv]
+  skip_before_filter :require_admin_rights, only: [:list, :get_archive, :get_archive_by_vendor, :get_archive_by_org, :get_archive_by_city, :get_archive_by_country, :get_archive_by_vendor_excl, :get_archive_by_comp, :get_archive_by_comp_attrd, :get_archive_by_attr_dict, :archive, :archive_lists, :archive_by_vendor, :archive_by_org, :archive_by_city, :archive_by_country, :archive_by_vendor_excl, :archive_by_comp, :archive_by_comp_attrd, :archive_by_attr_dict, :show, :stats, :get_ext_stats, :ext_stats, :get_stats_per_list, :stats_per_list, :download_certificate, :app_form_new, :app_form_new_post, :app_form_upgrade, :app_form_upgrade_post, :app_form_step1, :app_form_step1_presave, :app_form_step2_presave, :app_form_step3_presave, :app_form_step4_presave, :app_form_confirm_post, :app_form_finish, :download_archive, :export_extratings_csv]
   def index
     @top50_machines = Top50Machine.all
   end
@@ -1426,6 +1427,147 @@ class Top50MachinesController < Top50BaseController
     @machine_ids    = @machine_ids.transpose
     @machine_status = @machine_status.transpose
     
+    # BEGIN: Histogram data calculation (Процент производительности системы от общей производительности TOP50)
+    @histogram_data = []
+    
+    # Получаем ID бенчмарка Linpack (Rmax - достигнутая производительность)
+    rmax_bench = Top50Benchmark.find_by(name_eng: "Linpack")
+    rpeak_attr = Top50Attribute.find_by(name_eng: "Rpeak (MFlop/s)")
+    
+    if rmax_bench.present? && rpeak_attr.present? && @top50_slists.any?
+      # Для каждой редакции TOP50 (российский рейтинг)
+      @top50_slists.each_with_index do |list, idx|
+        list_date = @edition_labels[idx]
+        
+        # Получаем все машины в списке TOP50 для этой редакции
+        machines_in_list = fetch_archive_list_simple(list.id)
+        machine_ids = machines_in_list.pluck(:id)
+        
+        # Получаем результаты Rmax (достигнутая производительность) для всех машин в списке TOP50
+        rmax_results = Top50BenchmarkResult.where(
+          benchmark_id: rmax_bench.id, 
+          machine_id: machine_ids
+        ).index_by(&:machine_id)
+        
+        # Получаем Rpeak (пиковая производительность) для всех машин в списке TOP50
+        rpeak_results = Top50AttributeValDbval.where(
+          attr_id: rpeak_attr.id,
+          obj_id: machine_ids
+        ).index_by(&:obj_id)
+        
+        # Вычисляем общую достигнутую производительность (Rmax) всех машин в TOP50
+        total_rmax_top50 = rmax_results.values.sum { |result| result.result.to_f }
+        
+        # Вычисляем общую пиковую производительность (Rpeak) всех машин в TOP50
+        total_rpeak_top50 = rpeak_results.values.sum { |result| result.value.to_f }
+        
+        # Находим производительность нашей системы (Rmax и Rpeak)
+        our_machine_ids = life_machine_ids
+        our_rmax = 0
+        our_rpeak = 0
+        
+        our_machine_ids.each do |machine_id|
+          our_rmax += rmax_results[machine_id].result.to_f if rmax_results[machine_id]
+          our_rpeak += rpeak_results[machine_id].value.to_f if rpeak_results[machine_id]
+        end
+        
+        # Вычисляем проценты от достигнутой производительности TOP50
+        rmax_from_rmax_percentage = total_rmax_top50 > 0 ? (our_rmax / total_rmax_top50 * 100).round(2) : 0
+        # Вычисляем проценты от пиковой производительности TOP50
+        rpeak_from_rpeak_percentage = total_rpeak_top50 > 0 ? (our_rpeak / total_rpeak_top50 * 100).round(2) : 0
+        
+        # Добавляем данные для гистограммы только если есть данные и система участвовала в этой редакции
+        if (our_rmax > 0 || our_rpeak > 0)
+          # Получаем номер редакции
+          edition_number = @list_nums.find { |ln| ln.obj_id == list.id }&.value || "?"
+          
+          @histogram_data << {
+            date: list_date,
+            edition_number: edition_number,
+            rmax_from_rmax_percentage: rmax_from_rmax_percentage,
+            rpeak_from_rpeak_percentage: rpeak_from_rpeak_percentage,
+            our_rmax: our_rmax,
+            our_rpeak: our_rpeak,
+            total_rmax: total_rmax_top50,
+            total_rpeak: total_rpeak_top50,
+            list_id: list.id
+          }
+        end
+      end
+      
+      # Данные уже отсортированы в хронологическом порядке (от новых к старым)
+      # Переворачиваем для отображения от старых к новым
+      @histogram_data.reverse!
+    end
+    # END: Histogram data calculation
+    
+  end
+
+  def export_extratings_csv
+    # Получаем данные для экспорта
+    if current_user and current_user.may_preview?
+      @top50_machine = Top50Machine.find(params[:id])
+    else
+      @top50_machine = Top50Machine.where(is_valid: 1).find(params[:id])
+    end
+    
+    current_machine_id = params[:id].to_i
+    @related_machine_ids = get_machine_and_predecessors(current_machine_id)
+    
+    @extratings_entries = ExtratingsEntry
+      .where(system_id: @related_machine_ids)
+      .includes(extratings_edition: :extratings_list)
+      .order('extratings_editions.publication_date ASC')
+    
+    scores = ExtratingsScore.includes(extratings_list_unit: :extratings_unit)
+      .where(extratings_entry_id: @extratings_entries.pluck(:id))
+    
+    @scores_by_entry_id = scores.group_by(&:extratings_entry_id).transform_values do |scores_array|
+      scores_array.sort_by { |score| score.extratings_list_unit.priority }.map do |score|
+        unit_name = score.extratings_list_unit.extratings_unit.name_ru
+        measure_unit = score.extratings_list_unit.extratings_unit.measure_unit
+        priority = score.extratings_list_unit.priority
+        "#{unit_name}: #{score.score} #{measure_unit}, приоритет: #{priority}"
+      end.join(",\n")
+    end
+    
+    # Генерируем CSV
+    require 'csv'
+    
+    csv_data = CSV.generate(headers: true, encoding: 'UTF-8', col_sep: ';') do |csv|
+      # Заголовки
+      csv << ['Рейтинг', 'Позиция', 'Редакция', 'Месяц публикации редакции', 'Показатели производительности']
+      
+      # Группируем по рейтингам
+      grouped_by_list = @extratings_entries.group_by { |e| e.extratings_edition.extratings_list }
+      
+      grouped_by_list.each do |list, entries|
+        # Добавляем разделитель с названием рейтинга
+        csv << []
+        csv << [list.name_ru]
+        csv << []
+        
+        # Данные для каждого рейтинга
+        entries.each do |entry|
+          csv << [
+            entry.extratings_edition.extratings_list.name_ru,
+            entry.position,
+            entry.extratings_edition.edition_number,
+            entry.extratings_edition.publication_date.strftime('%d.%m.%Y'),
+            @scores_by_entry_id[entry.id] || "Нет оценки"
+          ]
+        end
+      end
+    end
+    
+    # Добавляем BOM для корректного отображения кириллицы в Excel
+    csv_data = "\uFEFF" + csv_data
+    
+    # Отправляем файл
+    send_data csv_data,
+      filename: "extratings_#{@top50_machine.name}_#{Date.today}.csv",
+      type: 'text/csv; charset=utf-8',
+      disposition: 'attachment'
   end
 
   def stats_common
@@ -1558,6 +1700,7 @@ class Top50MachinesController < Top50BaseController
     @section_headers["comm_net"] = "семейства коммуникационных сетей"
     @section_headers["comm_net_sep"] = "коммуникационные сети"
     @section_headers["performance_3d_with_machine_status"] = "обновляемость систем (3D)"
+    @section_headers["top50intop500"] = "анализ вхождений участников Top50 в рейтинг Top500"
     @section_headers["heatmap_streaks"] = "количество лет в рейтинге от номера редакции"
     @section_headers["heatmap_rank_vs_years"] = "количество лет в рейтинге от начальной позиции"
     
@@ -2287,17 +2430,10 @@ class Top50MachinesController < Top50BaseController
       @machine_status = @machine_status.transpose
       @machine_ids = @machine_ids.transpose
     
-      # if @debug_machine
-      #   puts "== DEBUG MACHINE INFO =="
-      #   puts "Date: #{@debug_machine[:date]}"
-      #   puts "Rank: #{@debug_machine[:rank]}"
-      #   puts "Machine ID: #{@debug_machine[:id]}"
-      #   puts "Name: #{@debug_machine[:name]}"
-      #   puts "Rmax: #{@debug_machine[:rmax]}"
-      #   puts "Status: #{@debug_machine[:status]}"
-      # else
-      #   puts "DEBUG: @debug_machine is still nil!"
-      # end
+      prepare_top500_lifelines
+    
+    elsif @stat_section == 'top50intop500'
+      prepare_top500_lifelines
     #3 END: my code  
     elsif @stat_section.present? and @stat_section[0..6] == 'vendors'
       @vendors_headers = {}
@@ -4012,6 +4148,180 @@ class Top50MachinesController < Top50BaseController
 
   
   private
+  def prepare_top500_lifelines
+    return if defined?(@top500_lifelines_prepared) && @top500_lifelines_prepared
+
+    top500_entries = ExtratingsEntry
+      .joins(extratings_edition: :extratings_list)
+      .where(extratings_lists: { name_eng: 'Top 500' })
+      .includes(extratings_edition: :extratings_list, extratings_scores: { extratings_list_unit: :extratings_unit })
+      .order('extratings_editions.publication_date')
+
+    system_ids = top500_entries.map(&:system_id).compact.uniq
+    machines_map = Top50Machine.where(id: system_ids).index_by(&:id)
+    descendants_cache = {}
+    top500_systems_data = {}
+
+    top500_entries.each do |entry|
+      machine = machines_map[entry.system_id]
+      next unless machine
+
+      descendants = descendants_cache[entry.system_id] ||= get_machine_and_predecessors(entry.system_id)
+
+      system_key = machine.name.presence || machine.name_eng.presence || "System #{entry.system_id}"
+      existing = top500_systems_data[system_key]
+      if existing.nil? || descendants.size > existing[:descendants_count]
+        existing = {
+          name: system_key,
+          machine_ids: descendants,
+          descendants_count: descendants.size,
+          entries: []
+        }
+        top500_systems_data[system_key] = existing
+      end
+
+      next unless existing[:machine_ids].include?(entry.system_id)
+
+      publication_date = entry.extratings_edition&.publication_date
+      next unless publication_date
+
+      position = entry.position
+      next unless position
+
+      performance_record = entry.extratings_scores.find { |score| score.extratings_list_unit&.priority == 1 }
+      performance_score = performance_record&.score
+      release_slot = publication_date.month <= 6 ? 0 : 1
+      slot_numeric = publication_date.year + (release_slot.zero? ? 0.25 : 0.75)
+      slot_label = "#{publication_date.year} #{release_slot.zero? ? 'I' : 'II'}"
+      slot_key = "#{publication_date.year}-#{release_slot}"
+      date_iso = publication_date.to_date.iso8601
+      date_label = publication_date.strftime('%d.%m.%Y')
+      existing[:entries] << {
+        year: publication_date.year,
+        date_iso: date_iso,
+        date_label: date_label,
+        slot_numeric: slot_numeric,
+        slot_label: slot_label,
+        slot_key: slot_key,
+        slot_order: release_slot,
+        position: position,
+        performance: performance_score,
+        edition_number: entry.extratings_edition.edition_number,
+        publication_date: publication_date
+      }
+    end
+
+    top500_unique_systems = top500_systems_data.values.map do |data|
+      data[:entries].uniq! { |e| [e[:slot_key], e[:position], e[:performance]] }
+      data[:entries].sort_by! { |e| [e[:slot_numeric], e[:publication_date], e[:position]] }
+      data
+    end
+
+    @top500_2d_data = top500_unique_systems.map do |system|
+      {
+        name: system[:name],
+        points: system[:entries].map do |e|
+          {
+            x_value: e[:slot_numeric],
+            x_label: e[:slot_label],
+            y: e[:position],
+            label: "#{e[:date_label]} • позиция #{e[:position]}"
+          }
+        end
+      }
+    end
+
+    @top500_3d_data = top500_unique_systems.map do |system|
+      {
+        name: system[:name],
+        points: system[:entries].map do |e|
+          performance = e[:performance]
+          {
+            x: e[:slot_numeric],
+            x_label: e[:slot_label],
+            y: e[:position],
+            z: performance ? performance.to_f : 0,
+            tooltip: "#{system[:name]}<br>Год: #{e[:year]}<br>Позиция: #{e[:position]}<br>Производительность: #{performance ? performance.round(2) : 'н/д'}"
+          }
+        end
+      }
+    end
+
+    plane_points = top500_unique_systems.flat_map do |system|
+      system[:entries].map do |e|
+        {
+          x: e[:slot_numeric].to_f,
+          label: e[:slot_label],
+          y: e[:position].to_f,
+          z: e[:performance] ? e[:performance].to_f : 0.0
+        }
+      end
+    end
+
+    sorted_dates = top500_unique_systems.flat_map { |s| s[:entries] }.
+      map { |e| { numeric: e[:slot_numeric].to_f, label: e[:slot_label] } }.
+      uniq { |h| h[:numeric] }.
+      sort_by { |h| h[:numeric] }
+
+    sorted_positions = top500_unique_systems.flat_map { |s| s[:entries].map { |e| e[:position].to_f } }.
+      uniq.sort
+
+    design_matrix_rows = plane_points.map { |p| [p[:x], p[:y], 1.0] }
+    z_vector_rows = plane_points.map { |p| [p[:z]] }
+
+    if plane_points.size >= 3
+      design_matrix = Matrix.rows(design_matrix_rows)
+      z_vector = Matrix.rows(z_vector_rows)
+      begin
+        coefficients = (design_matrix.transpose * design_matrix).inverse * design_matrix.transpose * z_vector
+        a, b, c = coefficients.column(0).to_a
+      rescue StandardError
+        average_z = plane_points.sum { |p| p[:z] } / plane_points.size.to_f
+        a = 0.0
+        b = 0.0
+        c = average_z
+      end
+    else
+      average_z = plane_points.sum { |p| p[:z] } / [plane_points.size, 1].max.to_f
+      a = 0.0
+      b = 0.0
+      c = average_z
+    end
+
+    plane_x = sorted_dates.map { |d| d[:numeric] }
+    plane_x_labels = sorted_dates.map { |d| d[:label] }
+    plane_y = sorted_positions
+
+    plane_z = plane_y.map do |pos|
+      plane_x.map do |date|
+        (a * date) + (b * pos) + c
+      end
+    end
+
+    heatmap_matrix = plane_y.map do |pos|
+      plane_x.map do |date|
+        entries = @top500_3d_data.flat_map { |system|
+          system[:points].select { |pt| pt[:x] == date && pt[:y] == pos }
+        }
+        entries.first ? entries.first[:z] : nil
+      end
+    end
+
+    @top500_plane = {
+      x: plane_x,
+      x_labels: plane_x_labels,
+      y: plane_y,
+      z: plane_z
+    }
+
+    @top500_heatmap = {
+      x: plane_x_labels,
+      y: plane_y,
+      z: heatmap_matrix
+    }
+
+    @top500_lifelines_prepared = true
+  end
   
   def top50machine_params
     params.require(:top50_machine).permit(:name, :name_eng, :website, :type_id, :org_id, :vendor_id, :vendor_ids, :contact_id, :installation_date, :start_date, :end_date, :is_valid, :comment)

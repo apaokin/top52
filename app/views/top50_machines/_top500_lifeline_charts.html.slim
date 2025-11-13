@@ -1,0 +1,213 @@
+- if @top500_2d_data.present?
+  h3.mt-5 Линии жизни участников TOP500
+  #top500-2d-chart style="height: 600px; width: 100%; margin-bottom: 40px;"
+
+- if @top500_3d_data.present?
+  h3.mt-5 Линии жизни участников TOP500 с производительностью (3D)
+  #top500-3d-chart style="height: 700px; width: 100%; margin-bottom: 40px;"
+
+- if @top500_plane.present?
+  h3.mt-5 Поверхность производительности участников TOP500
+  #top500-3d-surface style="height: 700px; width: 100%; margin-bottom: 40px;"
+
+- if @top500_heatmap.present?
+  h3.mt-5 Тепловая карта участия TOP500 (Дата × Позиция)
+  #top500-heatmap style="height: 500px; width: 100%; margin-bottom: 40px;"
+
+javascript:
+  document.addEventListener("DOMContentLoaded", function () {
+    var top500_2d_data = #{raw @top500_2d_data.to_json};
+    var top500_2d_container = document.getElementById('top500-2d-chart');
+
+    if (top500_2d_container && top500_2d_data && top500_2d_data.length > 0) {
+      var tickMap2d = {};
+      top500_2d_data.forEach(function(system) {
+        system.points.forEach(function(point) {
+          tickMap2d[point.x_value] = point.x_label;
+        });
+      });
+      var tickVals2d = Object.keys(tickMap2d).map(Number).sort(function(a, b) { return a - b; });
+      var tickText2d = tickVals2d.map(function(val) { return tickMap2d[val]; });
+
+      var traces_2d = top500_2d_data.map(function(system) {
+        return {
+          x: system.points.map(function(p) { return p.x_value; }),
+          y: system.points.map(function(p) { return p.y; }),
+          mode: 'lines+markers',
+          name: system.name,
+          text: system.points.map(function(p) { return p.label; }),
+          hoverinfo: 'text+name',
+          line: { width: 2, shape: 'spline', smoothing: 1.3 },
+          marker: { size: 6 }
+        };
+      });
+
+      var layout_2d = {
+        xaxis: {
+          title: 'Период публикации',
+          tickmode: 'array',
+          tickvals: tickVals2d,
+          ticktext: tickText2d,
+          nticks: tickVals2d.length,
+          showgrid: true,
+          zeroline: false
+        },
+        yaxis: {
+          title: 'Позиция в рейтинге',
+          autorange: 'reversed',
+          dtick: 50
+        },
+        hovermode: 'closest',
+        height: 600,
+        showlegend: true,
+        legend: {
+          orientation: 'h',
+          yanchor: 'top',
+          y: -0.2,
+          xanchor: 'center',
+          x: 0.5
+        },
+        margin: { l: 80, r: 20, t: 20, b: 120 }
+      };
+
+      Plotly.newPlot(top500_2d_container, traces_2d, layout_2d, { displayModeBar: false });
+    }
+
+    var top500_3d_data = #{raw @top500_3d_data.to_json};
+    var top500_3d_container = document.getElementById('top500-3d-chart');
+
+    if (top500_3d_container && top500_3d_data && top500_3d_data.length > 0) {
+      var traces_3d = top500_3d_data.map(function(system) {
+        return {
+          x: system.points.map(function(p) { return p.x; }),
+          y: system.points.map(function(p) { return p.y; }),
+          z: system.points.map(function(p) { return p.z; }),
+          mode: 'lines+markers',
+          type: 'scatter3d',
+          name: system.name,
+          text: system.points.map(function(p) { return p.tooltip; }),
+          hoverinfo: 'text',
+          line: { width: 4 },
+          marker: { size: 4 }
+        };
+      });
+
+      var tickMap3d = {};
+      top500_3d_data.forEach(function(system) {
+        system.points.forEach(function(point) {
+          if (tickMap3d[point.x] === undefined) {
+            tickMap3d[point.x] = point.x_label;
+          }
+        });
+      });
+
+      var tickVals3d = Object.keys(tickMap3d).map(Number).sort(function(a, b) { return a - b; });
+      var tickText3d = tickVals3d.map(function(value) { return tickMap3d[value]; });
+
+      var layout_3d = {
+        scene: {
+          xaxis: {
+            title: 'Период публикации',
+            tickvals: tickVals3d,
+            ticktext: tickText3d,
+            tickmode: 'array'
+          },
+          yaxis: {
+            title: 'Позиция в рейтинге',
+            autorange: 'reversed',
+            dtick: 50
+          },
+          zaxis: { title: 'Производительность (score)' }
+        },
+        height: 700,
+        showlegend: true,
+        legend: {
+          orientation: 'h',
+          yanchor: 'top',
+          y: -0.2,
+          xanchor: 'center',
+          x: 0.5
+        },
+        margin: { l: 0, r: 0, t: 0, b: 80 }
+      };
+
+      Plotly.newPlot(top500_3d_container, traces_3d, layout_3d, { displayModeBar: false });
+    }
+
+    var top500_plane = #{raw @top500_plane.to_json};
+    var top500_surface_container = document.getElementById('top500-3d-surface');
+
+    if (top500_surface_container && top500_plane && top500_plane.z && top500_plane.z.length > 0) {
+      var planeTrace = {
+        type: 'surface',
+        x: top500_plane.x,
+        y: top500_plane.y,
+        z: top500_plane.z,
+        opacity: 0.45,
+        colorscale: 'Blues',
+        showscale: false
+      };
+
+      var surfaceLineTraces = top500_3d_data.map(function(system) {
+        return {
+          x: system.points.map(function(p) { return p.x; }),
+          y: system.points.map(function(p) { return p.y; }),
+          z: system.points.map(function(p) { return p.z; }),
+          mode: 'lines+markers',
+          type: 'scatter3d',
+          name: system.name,
+          text: system.points.map(function(p) { return p.tooltip; }),
+          hoverinfo: 'text',
+          line: { width: 4 },
+          marker: { size: 3 }
+        };
+      });
+
+      var surfaceLayout = {
+        scene: {
+          xaxis: {
+            title: 'Период публикации',
+            tickvals: top500_plane.x,
+            ticktext: top500_plane.x_labels,
+            tickmode: 'array'
+          },
+          yaxis: { title: 'Позиция в рейтинге', autorange: 'reversed' },
+          zaxis: { title: 'Производительность (score)' }
+        },
+        height: 700,
+        showlegend: false,
+        margin: { l: 0, r: 0, t: 0, b: 0 }
+      };
+
+      var surfaceData = [planeTrace].concat(surfaceLineTraces);
+      Plotly.newPlot(top500_surface_container, surfaceData, surfaceLayout, { displayModeBar: false });
+    }
+
+    var top500_heatmap = #{raw @top500_heatmap.to_json};
+    var top500_heatmap_container = document.getElementById('top500-heatmap');
+
+    if (top500_heatmap_container && top500_heatmap && top500_heatmap.z && top500_heatmap.z.length > 0) {
+      var heatmapTrace = {
+        type: 'heatmap',
+        x: top500_heatmap.x,
+        y: top500_heatmap.y,
+        z: top500_heatmap.z,
+        colorscale: 'Viridis',
+        reversescale: true,
+        hoverongaps: false
+      };
+
+      var heatmapLayout = {
+        xaxis: { title: 'Период публикации', tickmode: 'array' },
+        yaxis: {
+          title: 'Позиция в рейтинге',
+          autorange: 'reversed'
+        },
+        height: 500,
+        margin: { l: 80, r: 20, t: 20, b: 80 }
+      };
+
+      Plotly.newPlot(top500_heatmap_container, [heatmapTrace], heatmapLayout, { displayModeBar: false });
+    }
+  });
+

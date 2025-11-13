@@ -296,9 +296,6 @@ br
 
         updatePlot();
       });
-
-
-
 - elsif @stat_section == "cpu_vendor_3d"
   .container-fluid
     .menu-container
@@ -526,8 +523,6 @@ br
           }
         });
     });
-
-
 - elsif @stat_section == "acc_vendor_3d"
   .container-fluid
     .menu-container
@@ -612,7 +607,6 @@ br
           rankStart.value = endIdx;
         }
       }
-
       function updatePlot() {
         updateEditionEndOptions();
         updateEditionStartOptions();
@@ -782,7 +776,6 @@ br
       });
     });
 
-    
 - elsif @stat_section == 'heatmap_streaks'
   .container-fluid
 
@@ -924,7 +917,6 @@ br
           width: 1000,
           margin: { l: 50, b: 120, r: 0, t: 0 }
         };
-
         Plotly.newPlot('heatmap-rank-years-chart', data, layout, { displayModeBar: false });
 
         document.getElementById('heatmap-rank-years-chart').on('plotly_click', function(eventData) {
@@ -1082,7 +1074,6 @@ br
         const newEditions = editions.slice(start, end + 1);
         const newRanks = ranks.slice(rs, re + 1);
 
-
         var surface = {
           z: newZ,
           x: newRanks,
@@ -1219,7 +1210,11 @@ br
         }
       });
     });
-//3 END: my code
+
+  = render 'top50_machines/top500_lifeline_charts'
+
+- elsif @stat_section == "top50intop500"
+  = render 'top50_machines/top500_lifeline_charts'
 
 - elsif @stat_section == "cpu_vendor"
   - hlist_chart_data = {}
@@ -1566,8 +1561,6 @@ br
         draw_type(data, "chart", name, "Редакция (ММ.ГГ)", "Количество систем", COLORS)
       /= area_chart @achart_data, max: 50, stacked: true, height: "750px"
       br
-      
-      
 - elsif @stat_section == "comm_net" || @stat_section == "comm_net_sep"
   - chart_data_by_tp = {}
   - chart_data_by_per = {}
@@ -1904,7 +1897,6 @@ br
         draw_performance(data, "chart", "Суммарная производительность Rmax", "Редакция (ММ.ГГ)", "ПФлоп/с", COLORS)
       /= line_chart @achart_data, height: "500px"
       br
-  
 - elsif @stat_section == "vendors_rpeak"
   - chart_data_by_tp = {}
   - chart_data_by_tp2 = {}
@@ -2337,3 +2329,229 @@ br
       /= line_chart @achart_data, :title => "Максимальная, средняя и минимальная производительности систем (ПФлоп/с) в редакциях Top50", height: "800px", max: global_max
       br
 
+  - if @top500_plane.present?
+    h3.mt-5 Поверхность производительности участников TOP500
+    #top500-3d-surface style="height: 700px; width: 100%; margin-bottom: 40px;"
+  - if @top500_heatmap.present?
+    h3.mt-5 Тепловая карта участия TOP500 (Дата × Позиция)
+    #top500-heatmap style="height: 500px; width: 100%; margin-bottom: 40px;"
+
+  javascript:
+    document.addEventListener("DOMContentLoaded", function () {
+      var z = #{raw @z_data.to_json};
+      var editions = #{raw @edition_labels.to_json};
+      var machines = #{raw @machine_names.to_json};
+      var statuses = #{raw @machine_status.to_json};
+      var machineIds = #{raw @machine_ids.to_json};
+      var ranks = Array.from({length: 50}, (_, i) => i + 1);
+
+      const editionStart = document.getElementById("edition-start");
+      const editionEnd = document.getElementById("edition-end");
+      const rankStart = document.getElementById("rank-start");
+      const rankEnd = document.getElementById("rank-end");
+
+      function reverseIndex(i, size) {
+        return size - 1 - i;
+      }
+
+      function updateEditionEndOptions() {
+        const startIdx = parseInt(editionStart.value);
+        for (let i = 0; i < editionEnd.options.length; i++) {
+          editionEnd.options[i].hidden = i < startIdx;
+        }
+        if (parseInt(editionEnd.value) < startIdx) {
+          editionEnd.value = startIdx;
+        }
+      }
+
+      function updateEditionStartOptions() {
+        const endIdx = parseInt(editionEnd.value);
+        for (let i = 0; i < editionStart.options.length; i++) {
+          editionStart.options[i].hidden = i > endIdx;
+        }
+        if (parseInt(editionStart.value) > endIdx) {
+          editionStart.value = endIdx;
+        }
+      }
+
+      function updateRankEndOptions() {
+        const startIdx = parseInt(rankStart.value);
+        for (let i = 0; i < rankEnd.options.length; i++) {
+          rankEnd.options[i].hidden = i < startIdx;
+        }
+        if (parseInt(rankEnd.value) < startIdx) {
+          rankEnd.value = startIdx;
+        }
+      }
+
+      function updateRankStartOptions() {
+        const endIdx = parseInt(rankEnd.value);
+        for (let i = 0; i < rankStart.options. length; i++) {
+          rankStart.options[i].hidden = i > endIdx;
+        }
+        if (parseInt(rankStart.value) > endIdx) {
+          rankStart.value = endIdx;
+        }
+      }
+
+      function updatePlot() {
+        updateEditionEndOptions();
+        updateEditionStartOptions();
+        updateRankEndOptions();
+        updateRankStartOptions();
+
+        const es_menu = parseInt(editionStart.value);
+        const ee_menu = parseInt(editionEnd.value);
+        const rs = parseInt(rankStart.value);
+        const re = parseInt(rankEnd.value);
+
+        const size = editions.length;
+        const es = reverseIndex(es_menu, size);
+        const ee = reverseIndex(ee_menu, size);
+        const start = Math.min(es, ee);
+        const end = Math.max(es, ee);
+
+        const newZ = z.slice(start, end + 1).map(row => row.slice(rs, re + 1));
+        const newMachines = machines.slice(start, end + 1).map(row => row.slice(rs, re + 1));
+        const newStatuses = statuses.slice(start, end + 1).map(row => row.slice(rs, re + 1));
+        const newIds = machineIds.slice(start, end + 1).map(row => row.slice(rs, re + 1));
+        const newEditions = editions.slice(start, end + 1);
+        const newRanks = ranks.slice(rs, re + 1);
+
+
+        var surface = {
+          z: newZ,
+          x: newRanks,
+          y: newEditions,
+          type: 'surface',
+          colorscale: [[0, 'lightgray'], [1, 'lightgray']],
+          opacity: 0.5,
+          showscale: false,
+          hoverinfo: 'skip'
+        };
+
+        var scatterTraces = {
+          new:     { x: [], y: [], z: [], text: [], ids: [], color: 'green',  name: 'Новые' },
+          upgrade: { x: [], y: [], z: [], text: [], ids: [], color: 'orange', name: 'Обновленные' }
+        };
+
+        for (let i = 0; i < newZ.length; i++) {
+          for (let j = 0; j < newZ[i].length; j++) {
+            let status = (newStatuses[i][j] || "existing").toLowerCase();
+            if (newMachines[i][j] !== "н/д" && scatterTraces[status]) {
+              let trace = scatterTraces[status];
+              trace.x.push(newRanks[j]);
+              trace.y.push(newEditions[i]);
+              trace.z.push(newZ[i][j]);
+              trace.text.push(newMachines[i][j]);
+              trace.ids.push(newIds[i][j]);
+            }
+          }
+        }
+
+        var data = [surface];
+        const isFirefox = navigator.userAgent.toLowerCase().includes('firefox');
+        const pointSize = isFirefox ? 4 : 6;
+
+        Object.entries(scatterTraces).forEach(([_, trace]) => {
+          data.push({
+            x: trace.x,
+            y: trace.y,
+            z: trace.z,
+            text: trace.text,
+            customdata: trace.ids,
+            mode: 'markers',
+            type: 'scatter3d',
+            name: trace.name,
+            legendgroup: trace.name,
+            showlegend: false,
+            marker: {
+              size: pointSize,
+              color: trace.color,
+              opacity: 0.95,
+              symbol: 'circle',
+              line: { width: 1, color: '#000' }
+            },
+            hovertemplate:
+              "<b>Система</b>: %{text}<br>" +
+              "<b>Rmax</b>: %{z:.2f} ТФлопс<br>" +
+              "<b>Позиция</b>: %{x}<br>" +
+              "<b>Редакция</b>: %{y}<extra></extra>"
+          });
+        });
+
+        Object.entries(scatterTraces).forEach(([_, trace]) => {
+          data.push({
+            x: [null], y: [null], z: [null],
+            type: 'scatter3d',
+            mode: 'markers',
+            marker: {
+              color: trace.color,
+              size: 10,
+              symbol: 'circle',
+              opacity: 1,
+              line: { width: 1, color: '#000000' }
+            },
+            name: trace.name,
+            legendgroup: trace.name,
+            showlegend: true
+          });
+        });
+
+        var layout = {
+          scene: {
+            xaxis: {
+              title: { text: 'Позиция', font: { size: 20 } },
+              tickmode: 'linear',
+              dtick: 10
+            },
+            yaxis: {
+              title: { text: 'Дата редакции', font: { size: 18 }, standoff: 20 },
+              tickmode: 'array',
+              tickvals: newEditions.filter((_, i) => i % 4 === 0),
+              ticktext: newEditions.filter((_, i) => i % 4 === 0).map(date => {
+                const parts = date.split('.');
+                return `${parts[1]}.${parts[2]}`;
+              }),
+              tickangle: -60,
+              automargin: true
+            },
+            zaxis: {
+              title: { text: 'Rmax (ТФлопс)', font: { size: 20 } },
+              type: 'log',
+              autorange: true
+            },
+            camera: { eye: { x: 1.25, y: 1.25, z: 1.25 } },
+            hovermode: 'closest',
+            hoverdistance: 20
+          },
+          margin: { l: 0, r: 0, b: 0, t: 0 },
+          legend: {
+            x: 0.85,
+            y: 0.95,
+            traceorder: "normal",
+            font: { size: 14 },
+            bgcolor: 'rgba(255,255,255,0.6)',
+            bordercolor: '#444',
+            borderwidth: 1
+          }
+        };
+
+        Plotly.react('plotly-3d', data, layout, { displayModeBar: false });
+      }
+
+      ["rank-start", "rank-end", "edition-start", "edition-end"].forEach(id => {
+        document.getElementById(id).addEventListener("change", updatePlot);
+      });
+
+      updatePlot();
+      var plot = document.getElementById('plotly-3d');
+      plot.on('plotly_click', function(eventData) {
+        var point = eventData.points?.[0];
+        var machineId = point?.customdata;
+        if (machineId) {
+          window.open("/systems/" + machineId, "_blank");
+        }
+      });
+    });
+    });
