@@ -1719,3 +1719,534 @@ $ ->
             text: data.text
 
     select.select2 options
+
+drawLegend = (svg, colorScale, minLag, maxLag, width, height) ->
+  # Размеры легенды
+  legendWidth = 300
+  legendHeight = 20
+  legendX = width / 2 - legendWidth / 2
+  legendY = height + 50
+
+  # Добавляем градиент в SVG
+  defs = svg.append("defs")
+  linearGradient = defs.append("linearGradient")
+    .attr("id", "legend-gradient")
+    .attr("x1", "0%")
+    .attr("x2", "100%")
+    .attr("y1", "0%")
+    .attr("y2", "0%")
+
+  # Добавляем цветовые остановки (стопы)
+  stops = [
+    { offset: "0%", color: "#00FF00" }  # Зелёный
+    { offset: "20%", color: "#FFFF00" } # Жёлтый
+    { offset: "40%", color: "#FFA500" } # Оранжевый
+    { offset: "60%", color: "#FF0000" } # Красный
+    { offset: "80%", color: "#0000FF" } # Синий
+    { offset: "100%", color: "#800080" }# Фиолетовый
+  ]
+
+  for stop in stops
+    linearGradient.append("stop")
+      .attr("offset", stop.offset)
+      .attr("stop-color", stop.color)
+
+  # Рисуем прямоугольник с градиентом
+  legend = svg.append("g")
+    .attr("class", "legend")
+    .attr("transform", "translate(#{legendX}, #{legendY})")
+
+  legend.append("rect")
+    .attr("width", legendWidth)
+    .attr("height", legendHeight)
+    .style("fill", "url(#legend-gradient)")
+
+  # Добавляем текст для интервалов
+  legend.append("g")
+    .selectAll("text")
+    .data([minLag, maxLag])
+    .enter()
+    .append("text")
+    .attr("x", (d, i) -> i * legendWidth) # Левый и правый край
+    .attr("y", legendHeight + 15)
+    .attr("text-anchor", (d, i) -> if i == 0 then "start" else "end")
+    .style("font-size", "12px")
+    .text((d) -> d3.format(".2f")(d))
+
+drawHeatmap = (data, containerId, title) ->
+  # Очищаем контейнер
+  d3.select("##{containerId}").selectAll("*").remove()
+
+  # Размеры графика
+  margin = { top: 20, right: 20, bottom: 80, left: 60 }
+  width = 1000 - margin.left - margin.right
+  height = 600 - margin.top - margin.bottom
+
+  # Уникальные значения редакций и рангов
+  editions = Array.from(new Set(data.map((d) -> d.edition))).sort((a, b) -> b - a)
+  ranks = Array.from({ length: 50 }, (_, i) -> 50 - i)
+
+  # Определяем минимальное и максимальное значение lag
+  minLag = d3.min(data, (d) -> d.lag)
+  maxLag = d3.max(data, (d) -> d.lag)
+
+  # Создаём цветовую шкалу
+  colorScale = d3.scaleSequential((d3.interpolateRgbBasis(["#00FF00", "#FFFF00", "#FFA500", "#FF0000", "#0000FF", "#800080"])))
+    .domain([minLag, maxLag])
+
+  # Шкалы
+  x = d3.scaleBand().range([width, 0]).domain(editions).padding(0.05)
+  y = d3.scaleBand().range([height, 0]).domain(ranks).padding(0.05)
+
+  # Контейнер SVG
+  svg = d3.select("##{containerId}").append("svg")
+    .attr("width", width + margin.left + margin.right)
+    .attr("height", height + margin.top + margin.bottom + 50)
+    .append("g")
+    .attr("transform", "translate(#{margin.left}, #{margin.top})")
+
+  # Оси
+  svg.append("g")
+    .attr("transform", "translate(0, #{height})")
+    .call(d3.axisBottom(x))
+    .selectAll("text")
+    .attr("transform", "rotate(-45)")
+    .style("text-anchor", "end")
+
+  svg.append("g").call(d3.axisLeft(y))
+
+  # Клетки
+  svg.selectAll(".cell")
+    .data(data.filter((d) -> d.lag != null))
+    .enter().append("rect")
+    .attr("class", "cell")
+    .attr("x", (d) -> x(d.edition))
+    .attr("y", (d) -> y(d.rank))
+    .attr("width", x.bandwidth())
+    .attr("height", y.bandwidth())
+    .attr("fill", (d) -> colorScale(d.lag))
+    .attr("stroke", "#000")
+    .attr("stroke-width", 0.5)
+    .append("title")
+    .text((d) -> "#{title}\nРедакция: #{d.edition}, Место: #{d.rank}, Отставание: #{d.lag}")
+
+
+  # Рисуем легенду
+  drawLegend(svg, colorScale, minLag, maxLag, width, height)
+
+# Обновление графиков
+@updateHeatmaps = (scale, dataSets, containerIds, titles, colorScales) ->
+  for i in [0...dataSets.length]
+    drawHeatmap(dataSets[i][scale], containerIds[i], titles[i], colorScales[i])
+
+# Инициализация
+document.addEventListener("DOMContentLoaded", ->
+  scaleSelector = document.getElementById("scale-selector")
+
+  # Данные и настройки
+  dataSets = [cpuDataSets, gpuDataSets, combinedDataSets]
+  containerIds = ["cpu_heatmap", "gpu_heatmap", "combined_heatmap"]
+  titles = ["CPU Отставание", "GPU Отставание", "Общее Отставание (CPU + GPU)"]
+  colorScales = [
+    d3.scaleLinear().domain([0, 1]).range(["#b3ffb3", "#ff4d4d"]),
+    d3.scaleLinear().domain([0, 1]).range(["#b3ffb3", "#ff4d4d"]),
+    d3.scaleLinear().domain([0, 1]).range(["#b3ffb3", "#ff4d4d"])
+  ]
+
+  # Рисуем по умолчанию
+  updateHeatmaps("linear", dataSets, containerIds, titles, colorScales)
+
+  # Обработчик переключения шкалы
+  scaleSelector.addEventListener("change", (event) ->
+    scale = event.target.value
+    updateHeatmaps(scale, dataSets, containerIds, titles, colorScales)
+  )
+)
+
+@draw_new_vs_upgraded_new = (data, src_id, title, x_label, y_label) ->
+  # Подготовка данных
+  for i in [0..data.length - 1]
+    for j in [0..data[i].data.length - 1]
+      s = data[i].data[j][0].split("-")
+      data[i].data[j][0] = new Date(+s[0], +s[1] - 1)
+
+  # Функция загрузки
+  func = () ->
+    width = document.getElementById(src_id).offsetWidth # Увеличиваем ширину на 50%
+    height = 550
+
+    margin =
+      top: 10
+      bottom: 100
+      right: 10
+      left: 80
+
+    container = d3.selectAll("div").filter(() -> d3.select(this).attr("id") == src_id)
+
+    # Заголовок
+    container.append("div")
+              .text(title)
+              .style("font-family", "Arial")
+              .style("font-size", "24px")
+              .style("font-weight", "500")
+              .style("text-align", "center")
+              .style("margin-bottom", "20px")
+
+    # Кнопки для переключения
+    buttons = container.append("div").style("margin-bottom", "10px")
+    data.forEach((dataset, i) ->
+      buttons.append("button")
+             .text(dataset.name)
+             .style("background-color", dataset.color)
+             .style("color", "white")
+             .style("border", "2px solid #000")
+             .style("border-radius", "5px")
+             .style("padding", "5px 10px")
+             .style("margin-right", "10px")
+             .style("cursor", "pointer")
+             .style("font-weight", "bold")
+             .attr("class", "toggle-btn-" + i)
+             .on("click", () ->
+               d3.selectAll(".layer-" + i)
+                 .classed("hidden", (d, j, nodes) ->
+                   !d3.select(nodes[j]).classed("hidden")
+                 )
+               # Меняем прозрачность кнопки в зависимости от состояния
+               btn = d3.select(".toggle-btn-" + i)
+               isHidden = d3.select(".layer-" + i).classed("hidden")
+               btn.style("opacity", if isHidden then 0.5 else 1)
+             )
+    )
+
+    svg = container.append("svg")
+                   .attr("style", "width:" + width + "px; height:" + height + "px")
+                   .attr("id", "svg_" + src_id)
+
+    # Шкалы
+    x_scale = d3.scaleBand()
+                .domain(data[0].data.map((d) -> d[0]).sort((a, b) -> a - b))
+                .range([margin.left, width - margin.right])
+                .padding(0.2) # Увеличиваем отступы между столбцами
+
+    y_scale = d3.scaleLinear()
+                .domain([0, d3.max(data, (dataset) -> d3.max(dataset.data, (d) -> d[1]))])
+                .range([height - margin.bottom, margin.top])
+
+    # Оси
+    x_axis = d3.axisBottom(x_scale).tickFormat(d3.timeFormat("%m.%Y"))
+    y_axis = d3.axisLeft(y_scale)
+
+    svg.append("g")
+       .attr("transform", "translate(0," + (height - margin.bottom) + ")")
+       .call(x_axis)
+       .selectAll("text")
+       .style("text-anchor", "end")
+       .attr("transform", "rotate(-45)")
+       .style("font-size", "12px")
+
+    svg.append("g")
+       .attr("transform", "translate(" + margin.left + ",0)")
+       .call(y_axis)
+
+    # Подпись для оси X
+    svg.append("text")
+       .attr("transform", "translate(" + (width / 2) + "," + (height - margin.bottom + 70) + ")")
+       .style("text-anchor", "middle")
+       .style("font-family", "Arial")
+       .style("font-size", "14px")
+       .text("Дата (ММ.ГГ)")
+
+    # Подпись для оси Y
+    svg.append("text")
+       .attr("transform", "rotate(-90)")
+       .attr("y", margin.left - 50)
+       .attr("x", 0 - (height / 2))
+       .attr("dy", "1em")
+       .style("text-anchor", "middle")
+       .style("font-family", "Arial")
+       .style("font-size", "14px")
+       .text("Количество систем")
+
+    # Добавляем столбцы и точки
+    data.forEach((dataset, i) ->
+      if dataset.name == "Новые и обновлённые системы"
+        # Рисуем точку для суммарного показателя
+        svg.selectAll(".dot-" + i)
+           .data(dataset.data)
+           .enter()
+           .append("circle")
+           .attr("cx", (d) -> x_scale(d[0]) + x_scale.bandwidth() / 2) # Центр точки над датой
+           .attr("cy", (d) -> y_scale(d[1]))
+           .attr("r", 5)
+           .attr("fill", dataset.color)
+           .attr("stroke", "black")
+           .attr("stroke-width", "1px")
+           .attr("class", "layer-" + i)
+      else if dataset.name == "Новые системы"
+        # Рисуем столбцы новых систем слева от даты
+        svg.selectAll(".bar-new-" + i)
+           .data(dataset.data)
+           .enter()
+           .append("rect")
+           .attr("x", (d) -> x_scale(d[0]) + x_scale.bandwidth() * 0.1) # Смещаем влево
+           .attr("y", (d) -> y_scale(d[1]))
+           .attr("width", x_scale.bandwidth() * 0.3) # Уменьшаем ширину
+           .attr("height", (d) -> height - margin.bottom - y_scale(d[1]))
+           .attr("fill", dataset.color)
+           .attr("stroke", "black")
+           .attr("stroke-width", "1px")
+           .attr("class", "layer-" + i)
+      else if dataset.name == "Обновлённые системы"
+        # Рисуем столбцы обновлённых систем справа от даты
+        svg.selectAll(".bar-upg-" + i)
+           .data(dataset.data)
+           .enter()
+           .append("rect")
+           .attr("x", (d) -> x_scale(d[0]) + x_scale.bandwidth() * 0.6) # Смещаем вправо
+           .attr("y", (d) -> y_scale(d[1]))
+           .attr("width", x_scale.bandwidth() * 0.3) # Уменьшаем ширину
+           .attr("height", (d) -> height - margin.bottom - y_scale(d[1]))
+           .attr("fill", dataset.color)
+           .attr("stroke", "black")
+           .attr("stroke-width", "1px")
+           .attr("class", "layer-" + i)
+    )
+
+  # Добавляем обработчик загрузки
+  window.onload = func
+
+
+@drawMatrix = (data, containerId, title) ->
+  # Очищаем контейнер
+  d3.select("##{containerId}").selectAll("*").remove()
+
+  # Размеры графика
+  margin = { top: 20, right: 20, bottom: 80, left: 70 }
+  width = 1000 - margin.left - margin.right
+  height = 600 - margin.top - margin.bottom
+
+  # Уникальные значения для редакций (с номерами)
+  editions = Array.from(new Set(data.map((d) -> d.edition))).sort()
+  editionNumbers = editions.map((edition, index) -> { edition, number: index + 1 })
+
+  # Добавляем номера редакций в данные
+  data = data.map((d) ->
+    editionObj = editionNumbers.find((e) -> e.edition == d.edition)
+    d.editionNumber = editionObj.number
+    d
+  )
+
+  # Уникальные ранги
+  ranks = Array.from(new Set(data.map((d) -> d.rank))).sort((a, b) -> a - b)
+
+  # Цветовая шкала для статусов
+  statusColors =
+    new: "blue"
+    updated: "#FFA500"
+    moved_up: "green"
+    moved_down: "#B22222"
+
+
+  # Русские названия статусов
+  statusLabels =
+    new: "Новая"
+    updated: "Обновленная"
+    moved_up: "Поднялась"
+    moved_down: "Опустилась"
+
+  # Шкалы
+  x = d3.scaleBand().range([0, width]).domain(editionNumbers.map((e) -> e.number)).padding(0.05)
+  y = d3.scaleBand().range([0, height]).domain(ranks).padding(0.05)
+
+  # Контейнер
+  container = d3.select("##{containerId}")
+
+  # Заголовок
+  container.append("div")
+    .text(title)
+    .style("font-family", "Arial")
+    .style("font-size", "24px")
+    .style("font-weight", "500")
+    .style("text-align", "center")
+    .style("margin-bottom", "20px")
+
+  # Кнопки для фильтрации
+  activeFilters = { new: true, updated: true, moved_up: true, moved_down: true }
+  buttons = container.append("div").style("margin-bottom", "10px")
+
+  Object.keys(statusColors).forEach((status) ->
+    buttons.append("button")
+      .text(statusLabels[status])  # Используем русские названия
+      .style("background-color", statusColors[status])
+      .style("color", "white")
+      .style("border", "2px solid #000")
+      .style("border-radius", "5px")
+      .style("padding", "5px 10px")
+      .style("margin-right", "10px")
+      .style("cursor", "pointer")
+      .style("font-weight", "bold")
+      .attr("class", "toggle-btn-" + status)
+      .on("click", ->
+        activeFilters[status] = !activeFilters[status]
+        # Обновляем прозрачность кнопки
+        btn = d3.select(".toggle-btn-" + status)
+        btn.style("opacity", if activeFilters[status] then 1 else 0.5)
+
+        # Обновляем видимость и окрашивание клеток
+        container.selectAll(".cell").each((d, i, nodes) ->
+          cellGroup = d3.select(nodes[i])
+
+          # Проверяем активные статусы
+          leftActive = d.new_upd_status and activeFilters[d.new_upd_status]
+          rightActive = d.pos_status and activeFilters[d.pos_status]
+
+          cellWidth = x.bandwidth()
+          cellHeight = y.bandwidth()
+
+          if (leftActive) and (rightActive)
+            # Оба статуса активны: клетка разделена
+            cellGroup.select(".left-half")
+              .attr("x", x(d.editionNumber))
+              .attr("width", cellWidth / 2)
+              .attr("fill", statusColors[d.new_upd_status])
+              .attr("visibility", "visible")
+
+            cellGroup.select(".right-half")
+              .attr("x", x(d.editionNumber) + cellWidth / 2)
+              .attr("width", cellWidth / 2)
+              .attr("fill", statusColors[d.pos_status])
+              .attr("visibility", "visible")
+          else if leftActive
+            # Только левый статус активен: закрасить всю клетку в левый цвет
+            cellGroup.select(".left-half")
+              .attr("x", x(d.editionNumber))
+              .attr("width", cellWidth)
+              .attr("fill", statusColors[d.new_upd_status])
+              .attr("visibility", "visible")
+
+            cellGroup.select(".right-half")
+              .attr("visibility", "hidden")
+          else if rightActive
+            # Только правый статус активен: закрасить всю клетку в правый цвет
+            cellGroup.select(".left-half")
+              .attr("x", x(d.editionNumber))
+              .attr("width", cellWidth)
+              .attr("fill", statusColors[d.pos_status])
+              .attr("visibility", "visible")
+
+            cellGroup.select(".right-half")
+              .attr("visibility", "hidden")
+          else
+            # Ни один статус не активен: скрыть клетку
+            cellGroup.selectAll("rect")
+              .attr("visibility", "hidden")
+        )
+      )
+  )
+
+  # Контейнер SVG
+  svg = container.append("svg")
+    .attr("width", width + margin.left + margin.right)
+    .attr("height", height + margin.top + margin.bottom)
+    .append("g")
+    .attr("transform", "translate(#{margin.left}, #{margin.top})")
+
+  # Добавляем оси
+  svg.append("g")
+    .attr("transform", "translate(0, #{height})")
+    .call(d3.axisBottom(x).tickFormat((d) -> d))
+    .selectAll("text")
+    .attr("transform", "rotate(-45)")
+    .style("text-anchor", "end")
+
+  svg.append("g")
+    .call(d3.axisLeft(y))
+
+  # Рисуем клетки матрицы
+  svg.selectAll(".cell")
+    .data(data)
+    .enter()
+    .append("g")
+    .attr("class", "cell")
+    .each((d, i, nodes) ->
+      cellGroup = d3.select(nodes[i])
+      cellWidth = x.bandwidth()
+      cellHeight = y.bandwidth()
+
+      # Всегда создаем две половины клетки
+      # Левая половина
+      cellGroup.append("rect")
+        .attr("class", "left-half")
+        .attr("x", x(d.editionNumber))
+        .attr("y", y(d.rank))
+        .attr("height", cellHeight)
+        .attr("stroke", "black")
+        .attr("stroke-width", 0.4)
+
+      # Правая половина
+      cellGroup.append("rect")
+        .attr("class", "right-half")
+        .attr("x", x(d.editionNumber) + cellWidth / 2)
+        .attr("y", y(d.rank))
+        .attr("height", cellHeight)
+        .attr("stroke", "black")
+        .attr("stroke-width", 0.4)
+
+      # Устанавливаем цвета и видимость
+      leftActive = d.new_upd_status and activeFilters[d.new_upd_status]
+      rightActive = d.pos_status and activeFilters[d.pos_status]
+
+      if (leftActive) and (rightActive)
+        # Оба статуса активны: клетка разделена
+        cellGroup.select(".left-half")
+          .attr("width", cellWidth / 2)
+          .attr("fill", statusColors[d.new_upd_status])
+          .attr("visibility", "visible")
+
+        cellGroup.select(".right-half")
+          .attr("width", cellWidth / 2)
+          .attr("fill", statusColors[d.pos_status])
+          .attr("visibility", "visible")
+      else if leftActive
+        # Только левый статус активен: закрасить всю клетку в левый цвет
+        cellGroup.select(".left-half")
+          .attr("x", x(d.editionNumber))
+          .attr("width", cellWidth)
+          .attr("fill", statusColors[d.new_upd_status])
+          .attr("visibility", "visible")
+
+        cellGroup.select(".right-half")
+          .attr("visibility", "hidden")
+      else if rightActive
+        # Только правый статус активен: закрасить всю клетку в правый цвет
+        cellGroup.select(".left-half")
+          .attr("x", x(d.editionNumber))
+          .attr("width", cellWidth)
+          .attr("fill", statusColors[d.pos_status])
+          .attr("visibility", "visible")
+
+        cellGroup.select(".right-half")
+          .attr("visibility", "hidden")
+      else
+        # Ни один статус не активен: скрыть клетку
+        cellGroup.selectAll("rect")
+          .attr("visibility", "hidden")
+
+      # Добавляем подсказку
+      cellGroup.append("title")
+        .text((d) ->
+          tags = []
+
+          if d.new_upd_status
+            tags.push(statusLabels[d.new_upd_status])  # Используем русские названия
+          if d.pos_status == "moved_up"
+            tags.push("▲ #{d.rank_change || 'N/A'}")
+          else if d.pos_status == "moved_down"
+            tags.push("▽ #{Math.abs(d.rank_change) || 'N/A'}")
+
+          tagsText = if tags.length > 0 then tags.join(", ") else "Без тегов"
+
+          "Редакция: #{d.editionNumber}\nМесто: #{d.rank}\n" +
+          "Теги: #{tagsText}"
+        )
+    )

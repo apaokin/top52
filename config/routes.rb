@@ -195,7 +195,11 @@ Octoshell::Application.routes.draw do
   patch '/newsfeed_local/:id', to: 'newsfeed_local#update', as: 'patch_newsfeed_local'
   put '/newsfeed_local/:id', to: 'newsfeed_local#update', as: 'put_newsfeed_local'
   get '/newsfeed_local/:id', to: 'newsfeed_local#show', as: 'show_newsfeed_local'
-
+  
+  # delishakov
+  get '/top50_components', to: 'top50_components#show'
+  #
+  
   resources :newsfeed_edit_local, only: [:index]
   resources :newsfeed_import, only: [:index]
   resources :newsfeed_edit_import, only: [:index]

@@ -15,14 +15,18 @@
     = link_to t("Разопубликовать"), top50_machines_unpublish_list_path(@bench.id), class: "btn btn-default"
   br
   br
-
+/delishakov
 - date_attr = @date_vals.find_by(obj_id: @bench.id)
-- ldate = date_attr.value
+- ldate = date_attr.value if date_attr.present?
 - num_attr = @num_vals.find_by(obj_id: @bench.id)
-- lnum = ""
-- if num_attr.present?
-  - lnum = num_attr.value
+- lnum = num_attr.value if num_attr.present?
+- if ldate
+  - ldate_transformed = Date.strptime(ldate, '%d.%m.%Y').strftime('%Y-%m-%d')
+  - count_by_date_mentioned = ComponentInfo.where(date_mentioned: ldate_transformed).count
+- else
+  - count_by_date_mentioned = 0
 
 h4 =  "Редакция №#{lnum} списка Top50 от #{ldate}"
+/h4 Количество новых компонент: #{count_by_date_mentioned}
 br
 = render "print_list"

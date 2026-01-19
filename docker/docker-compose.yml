@@ -20,6 +20,8 @@ services:
     entrypoint: ./docker/entrypoints/docker-entrypoint.sh
   top_database:
     image: postgres:12.1
+    ports: 
+      - "8000:5432"
     volumes:
       - top_db_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql

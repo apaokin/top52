@@ -24,7 +24,6 @@ table
               li = link_to header, top50_stats_path(section)
 
 br
-              
 - if @stat_section == "hybrid_intra"
   - hlist_chart_data = {}
   - hlist_dates = {}
@@ -2192,6 +2191,184 @@ br
         draw_type(data, "chart_1", "Типы систем", "Дата (ММ.ГГ)", "Количество систем")
       /= area_chart achart_data, max: 50, stacked: true, height: "500px"
   
+- elsif @stat_section == "freshest_components_lag"
+  head
+    title Тепловые карты отставания самых свежих компонент
+    style
+      | .cell { stroke-width: 1; }
+      | .tooltip { position: absolute; visibility: hidden; background: #fff; border: 1px solid #ccc; padding: 5px; border-radius: 5px; }
+      | .width-col { width: 60px; }
+
+  body
+    h1 Тепловые карты отставания самых свежих компонент
+    / Выпадающий список для выбора шкалы
+    div
+      label for="scale-selector" Выберите шкалу:
+      select#scale-selector
+        option value="linear" Линейная шкала
+        option value="log_shifted" Логарифмическая шкала
+        option value="bidirectional" Двунаправленная шкала
+        option value="sqrt" Квадратный корень
+
+    / Контейнеры для тепловых карт
+    h2 CPU Тепловая карта
+    #cpu_heatmap
+    h2 GPU Тепловая карта  
+    #gpu_heatmap
+    h2 Общая Тепловая карта (CPU + GPU)
+    #combined_heatmap
+
+    / Передача данных в JavaScript
+    script
+      | const cpuDataSets = {
+      |   linear: #{raw @cpu_data_linear.to_json},
+      |   log_shifted: #{raw @cpu_data_log_shifted.to_json},
+      |   bidirectional: #{raw @cpu_data_bidirectional.to_json},
+      |   sqrt: #{raw @cpu_data_sqrt.to_json}
+      | };
+      | const gpuDataSets = {
+      |   linear: #{raw @gpu_data_linear.to_json},
+      |   log_shifted: #{raw @gpu_data_log_shifted.to_json},
+      |   bidirectional: #{raw @gpu_data_bidirectional.to_json},
+      |   sqrt: #{raw @gpu_data_sqrt.to_json}
+      | };
+      | const combinedDataSets = {
+      |   linear: #{raw @combined_data_linear.to_json},
+      |   log_shifted: #{raw @combined_data_log_shifted.to_json},
+      |   bidirectional: #{raw @combined_data_bidirectional.to_json},
+      |   sqrt: #{raw @combined_data_sqrt.to_json}
+      | };
+
+
+  - total_editions = @all_ratings_data.size
+  - total_ranks = @all_ratings_data[0][:machines].size
+
+
+  h3 Таблица значений отставания CPU
+  table class="table table-hover"
+  table.heatmap-table
+    tr
+      th Ранг / Редакция
+      - (1..total_editions).each do |edition|
+        th.width-col= edition
+    - (1..total_ranks).each do |rank|
+      tr
+        td= rank
+        - (1..total_editions).each do |edition|
+          - lag_value = @cpu_data.find { |entry| entry[:edition] == edition && entry[:rank] == rank }&.dig(:lag)
+          td.width-col= lag_value.nil? ? "—" : lag_value
+
+  h3 Таблица значений отставания GPU
+  table class="table table-hover"
+  table.heatmap-table
+    tr
+      th Ранг / Редакция
+      - (1..total_editions).each do |edition|
+        th.width-col= edition
+    - (1..total_ranks).each do |rank|
+      tr
+        td= rank
+        - (1..total_editions).each do |edition|
+          - lag_value = @gpu_data.find { |entry| entry[:edition] == edition && entry[:rank] == rank }&.dig(:lag)
+          td.width-col= lag_value.nil? ? "—" : lag_value
+
+  h3 Таблица значений комбинированного отставания (CPU + GPU)
+  table class="table table-hover"
+  table.heatmap-table
+    tr
+      th Ранг / Редакция
+      - (1..total_editions).each do |edition|
+        th.width-col= edition
+    - (1..total_ranks).each do |rank|
+      tr
+        td= rank
+        - (1..total_editions).each do |edition|
+          - lag_value = @combined_data.find { |entry| entry[:edition] == edition && entry[:rank] == rank }&.dig(:lag)
+          td.width-col= lag_value.nil? ? "—" : lag_value
+
+- elsif @stat_section == "common_lag"
+  head
+    title Тепловые карты общего отставания компонентов
+  body
+    h1 Тепловые карты общего отставания компонент
+    - @unique_machines.each do |machine|
+      strong Машина:
+      = machine.name
+      = " "
+      = machine.id
+      = " "
+      = link_to machine.name, top50_machines_show_path(machine.id)
+      - if machine.website.present? and machine.website.length > 0
+        p
+          strong = "Веб-сайт: "
+          = link_to nil, ext_url(machine.website)
+      br
+- elsif @stat_section == "new_upg"
+  div id="chart_new_vs_upgraded"
+
+  javascript:
+    var chartData = JSON.parse("#{@ratings_chart_data.to_json}".replace(/&quot;/g, '"'));
+
+  coffee:
+    draw_new_vs_upgraded_new(chartData, "chart_new_vs_upgraded", "Новые и обновлённые системы по редакциям", "Дата (ММ.ГГ)", "Количество систем")
+    
+  table class="table table-hover" style="width: 1400px; margin: 0 auto; table-layout: fixed;"
+    thead
+      tr
+        th style="text-align: center;" Редакция
+        th style="text-align: center;" Новые машины
+        th style="text-align: center;" Обновлённые машины
+        th style="text-align: center;" Новые и обновлённые машины
+        th style="text-align: center;" % Новых машин
+        th style="text-align: center;" % Обновлённых машин
+        th style="text-align: center;" % Новых и обновлённых машин
+        th style="text-align: center;" % Rpeak/Rmax новых машин
+        th style="text-align: center;" % Rpeak/Rmax обновлённых машин
+        th style="text-align: center;" % Rpeak/Rmax новых и обновлённых машин
+    tbody
+      - @ratings_summary.each do |summary|
+        - total_machines = summary[:new_machines] + summary[:upgraded_machines]
+        tr
+          - list_num = summary[:num_vals].find_by(obj_id: summary[:list_id])
+          - date_val = summary[:date_vals].find_by(obj_id: summary[:list_id])
+          - list_year = date_val.value.split(".")[2]
+          - list_month = date_val.value.split(".")[1]
+          td style="text-align: center;"
+            - if list_num.present?
+              = link_to "#{list_num.value}#{8209.chr}я (#{date_val.value})", get_archive_path(list_year, list_month)
+          td style="text-align: right;" = summary[:new_machines]
+          td style="text-align: right;" = summary[:upgraded_machines]
+          td style="text-align: right;" = total_machines
+          td style="text-align: right;" = (summary[:new_machines].to_f / @all_ratings_data[0][:machines].size * 100).round(2).to_s + '%'
+          td style="text-align: right;" = (summary[:upgraded_machines].to_f / @all_ratings_data[0][:machines].size * 100).round(2).to_s + '%'
+          td style="text-align: right;" = ((summary[:new_machines].to_f + summary[:upgraded_machines].to_f) / @all_ratings_data[0][:machines].size * 100).round(2).to_s + '%'
+     
+- elsif @stat_section == "debug"
+  div id="matrix_chart"
+    javascript:
+      chartData = #{raw @chart_data};
+    coffee:
+      @drawMatrix(chartData, "matrix_chart", "Эволюция машин в рейтинге")
+
+  h3 Данные для визуализации
+  table
+    thead
+      tr
+        th Редакция
+        th Место
+        th new-upd
+        th rank shift
+        th Изменение позиции
+    tbody
+      - @new_upd_data_2d.each do |edition_data|
+        - edition_data.each do |data|
+          tr
+            td = data[:edition]
+            td = data[:rank]
+            td = data[:new_upd_status]
+            td = data[:pos_status]
+            td = data[:rank_change].present? ? "#{data[:rank_change] > 0 ? '+' : ''}#{data[:rank_change]}" : "-"
+
 - else
   div id="chart_1"
   - chart_data_by_tp = {}

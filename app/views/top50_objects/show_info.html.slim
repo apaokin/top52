@@ -13,3 +13,18 @@ div class="panel panel-default"
         tr
           td class="col-xs-5" = top50_attribute_val.top50_attribute_dict.top50_attribute.name
           td class="col-xs-5" = top50_attribute_val.top50_dictionary_elem.name
+        /delishakov
+      - component_info = ComponentInfo.find_by(component_id: @top50_object.id)
+      - if component_info.present? && component_info.date_announced.present?
+        tr
+          td class="col-xs-5" Дата анонса
+          td class="col-xs-5" = component_info ? component_info.date_announced.strftime("%d-%m-%Y") : "Дата не найдена"
+        tr
+          td class="col-xs-5" Дата первого упоминания
+          td class="col-xs-5"
+            - if component_info.present? && component_info.date_mentioned.present?
+              = component_info.date_mentioned.strftime("%d-%m-%Y")
+            - elsif @first_appearance_date
+              = @first_appearance_date.strftime("%d-%m-%Y")
+            - else
+              = "Не входила в системы рейтинга"

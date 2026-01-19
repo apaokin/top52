@@ -43,7 +43,41 @@ class Top50ObjectsController < Top50BaseController
   
   def show_info
     @top50_object = Top50Object.find(params[:id])
+    @first_appearance_date = fetch_first_appearance_date(@top50_object.id) #delishakov
   end 
+
+  ### delishakov ###
+  
+  def get_rel_contain_id
+    Top50RelationType.find_by(name_eng: 'Contains').id
+  end
+
+  def get_name_eng_attr_id
+    Top50Attribute.find_by(name_eng: "Name(eng)").id
+  end
+
+  def get_bunch_id
+    Top50Object.joins("join top50_object_types on top50_object_types.id = top50_objects.type_id and top50_object_types.name_eng = 'Bunch of benchmarks'")
+               .joins("join top50_attribute_val_dbvals dbv on dbv.obj_id = top50_objects.id and dbv.attr_id = #{get_name_eng_attr_id} and dbv.value = 'Top50 position'")
+               .first.id
+  end
+
+  def fetch_first_appearance_date(component_id)
+    machine_id = Top50Machine.where("exists(select 1 from top50_relations a join top50_relations b on
+                                      b.prim_obj_id = a.sec_obj_id where b.sec_obj_id = #{component_id} and
+                                      a.prim_obj_id = top50_machines.id and a.type_id = #{get_rel_contain_id} and
+                                      b.type_id = #{get_rel_contain_id})").order(:created_at).first.try(:id)
+    return nil unless machine_id
+
+    benchmark = Top50Benchmark.joins("join top50_benchmark_results ed_results on ed_results.machine_id = #{machine_id} and
+    ed_results.benchmark_id = top50_benchmarks.id").select('top50_benchmarks.*')
+                 .joins("join top50_relations on top50_benchmarks.id = top50_relations.sec_obj_id")
+                 .where("top50_relations.prim_obj_id = (?) and top50_relations.type_id = ?", get_bunch_id, get_rel_contain_id)
+                 .order(:created_at).first
+    benchmark.created_at if benchmark
+  end
+
+  ### delishakov ###
 
   def new_attribute_val_dbval
     @top50_object = Top50Object.find(params[:id])

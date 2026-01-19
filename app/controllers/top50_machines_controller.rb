@@ -1445,6 +1445,10 @@ class Top50MachinesController < Top50BaseController
     @section_headers["cpu_fam"] = "семейства CPU"
     @section_headers["cpu_gen"] = "микроархитектура CPU"
     @section_headers["cpu_cnt"] = "количество CPU"
+    @section_headers["freshest_components_lag"] = "обновляемость: отставание самых свежих компонент"
+    @section_headers["new_upg"] = "количество новых и обновлённых систем"
+    @section_headers["common_lag"] = "обновляемость: общее отставание компонент"
+    @section_headers["debug"] = "дебаг"
     @section_headers["core_cnt"] = "количество вычислительных ядер"
     @section_headers["comm_net"] = "семейства коммуникационных сетей"
     @section_headers["comm_net_sep"] = "коммуникационные сети"
@@ -2209,7 +2213,796 @@ class Top50MachinesController < Top50BaseController
       prec_relation = Top50Relation.all.joins(:top50_relation_type).merge(Top50RelationType.where(name_eng: "Precedes"))
       @prec_vendors = prec_relation.joins(:top50_object).merge(Top50Object.joins(:top50_object_type).merge(Top50ObjectType.where(name_eng: "Vendor")))
     elsif  @stat_section == 'type'
-      @top50_mtypes = get_avail_mtypes 
+      @top50_mtypes = get_avail_mtypes
+    elsif @stat_section == 'freshest_components_lag'
+      @all_ratings_data = []
+      top50_slists = get_top50_lists_sorted
+      top_50_dates = []
+    
+      # Получаем список дат для каждой редакции
+      top50_slists.each do |top50_list|
+        list_num = @num_vals.find_by(obj_id: top50_list.id)
+        date_val = @date_vals.find_by(obj_id: top50_list.id)
+        list_year = date_val.value.split(".")[2]
+        list_month = date_val.value.split(".")[1]
+        top_50_dates.push([list_year, list_month])
+      end
+    
+      # Для каждой даты собираем данные
+      top_50_dates.each do |top50_date|
+        top50_machines = fetch_archive_list(get_list_id_by_date(top50_date[0], top50_date[1]))
+        rating_data = {
+          date: top50_date,
+          machines: top50_machines,
+          num_vals: @num_vals.dup,
+          date_vals: @date_vals.dup,
+          rmax_res: @rmax_res.dup,
+          cpu_qty_attr_vals: @cpu_qty_attr_vals.dup,
+          core_qty_attr_vals: @core_qty_attr_vals.dup,
+          rpeak_attr_vals: @rpeak_attr_vals.dup,
+          com_net_attr_vals: @com_net_attr_vals.dup,
+          serv_net_attr_vals: @serv_net_attr_vals.dup,
+          tran_net_attr_vals: @tran_net_attr_vals.dup,
+          app_area_attr_vals: @app_area_attr_vals.dup,
+          ram_size_attr_vals: @ram_size_attr_vals.dup,
+          cpu_model_attr_vals: @cpu_model_attr_vals.dup,
+          cpu_vendor_attr_vals: @cpu_vendor_attr_vals.dup,
+          gpu_model_attr_vals: @gpu_model_attr_vals.dup,
+          gpu_vendor_attr_vals: @gpu_vendor_attr_vals.dup,
+          cop_model_attr_vals: @cop_model_attr_vals.dup,
+          cop_vendor_attr_vals: @cop_vendor_attr_vals.dup,
+          cop_objects: @cop_objects.dup,
+          cpu_objects: @cpu_objects.dup,
+          gpu_objects: @gpu_objects.dup,
+          acc_objects: @acc_objects.dup,
+          comp_model_attr_vals: @comp_model_attr_vals.dup,
+          comp_vendor_attr_vals: @comp_vendor_attr_vals.dup,
+          nmax_attr_vals: @nmax_attr_vals.dup,
+          prec_machines: @prec_machines.dup,
+          node_platform_attr_vals: @node_platform_attr_vals.dup,
+          node_platform_vendor_attr_vals: @node_platform_vendor_attr_vals.dup,
+          microcore_qty_attr_vals: @microcore_qty_attr_vals.dup,
+          mach_l1_hash: @mach_l1_hash.dup,
+          l1_l2_hash: @l1_l2_hash.dup,
+          mach_attrd_hash: @mach_attrd_hash.dup,
+          mach_attrdb_hash: @mach_attrdb_hash.dup,
+          l1_attrd_hash: @l1_attrd_hash.dup,
+          l1_attrdb_hash: @l1_attrdb_hash.dup,
+          l2_attrd_hash: @l2_attrd_hash.dup,
+          l2_attrdb_hash: @l2_attrdb_hash.dup,
+          mach_bench_hash: @mach_bench_hash.dup
+        }
+        @all_ratings_data << rating_data
+      end
+    
+      @cpu_data = []
+      @gpu_data = []
+      @combined_data = []
+    
+      # Заполняем данные для CPU, GPU и комбинированных значений
+      @all_ratings_data.each_with_index do |rating_data, reverse_edition_index|
+        edition = @all_ratings_data.size - reverse_edition_index
+        machines = rating_data[:machines]
+
+        top50_date = rating_data[:date] # Берём дату из структуры
+        list_id = get_list_id_by_date(top50_date[0], top50_date[1]) # Получаем list_id
+        date_val = rating_data[:date_vals].find { |val| val[:obj_id] == list_id }
+        list_date = date_val.value
+
+        machines.each_with_index do |machine, rank_index|
+          newest_cpu_diff = Float::INFINITY
+          newest_gpu_diff = Float::INFINITY
+          cpu_count = 0
+          gpu_count = 0
+        
+          mach_l1_nodes = rating_data[:mach_l1_hash][machine["id"]] || []
+          mach_l1_nodes.each do |node|
+            cpus = rating_data[:l1_l2_hash][node.id].select { |x| x.type_id == @cpu_typeid }
+            gpus = rating_data[:l1_l2_hash][node.id].select { |x| x.type_id == @gpu_typeid }
+        
+            cpus.each do |cpu|
+              component_info = ComponentInfo.find_by(component_id: cpu.id)
+              if component_info&.date_announced && component_info&.date_mentioned
+                # Вычисляем используемую дату (упоминания или анонса)
+                used_date = component_info.date_mentioned < component_info.date_announced ? 
+                            component_info.date_mentioned : 
+                            component_info.date_announced
+                # Вычисляем разницу с текущей датой
+                diff = (Date.parse(list_date) - used_date).to_i
+                #diff = (Date.today - used_date).to_i
+                newest_cpu_diff = [newest_cpu_diff, diff].min
+                cpu_count += cpu.cnt
+              end
+            end
+        
+            gpus.each do |gpu|
+              component_info = ComponentInfo.find_by(component_id: gpu.id)
+              if component_info&.date_announced && component_info&.date_mentioned
+                # Вычисляем используемую дату (упоминания или анонса)
+                used_date = component_info.date_mentioned < component_info.date_announced ? 
+                            component_info.date_mentioned : 
+                            component_info.date_announced
+                # Вычисляем разницу с текущей датой
+                diff = (Date.parse(list_date) - used_date).to_i
+                #diff = (Date.today - used_date).to_i
+                newest_gpu_diff = [newest_gpu_diff, diff].min
+                gpu_count += gpu.cnt
+              end
+            end
+          end
+        
+          newest_cpu_diff = nil if newest_cpu_diff == Float::INFINITY
+          newest_gpu_diff = nil if newest_gpu_diff == Float::INFINITY
+        
+          combined_diff = if newest_cpu_diff && newest_gpu_diff && cpu_count > 0 && gpu_count > 0
+                            ((newest_cpu_diff * cpu_count) + (newest_gpu_diff * gpu_count)) / (cpu_count + gpu_count)
+                          end
+        
+          @cpu_data << { edition: edition, rank: rank_index + 1, lag: newest_cpu_diff }
+          @gpu_data << { edition: edition, rank: rank_index + 1, lag: newest_gpu_diff }
+          @combined_data << { edition: edition, rank: rank_index + 1, lag: combined_diff }
+        end
+      end
+    
+      def transform_data(data, method)
+        transformed_data = data.map(&:dup)
+        case method
+        when :linear
+          transformed_data
+        when :log_shifted
+          min = transformed_data.map { |d| d[:lag] }.compact.min
+          transformed_data.each { |d| d[:lag] = d[:lag] ? Math.log(d[:lag] + 1) : nil }
+        when :bidirectional
+          transformed_data.each do |d|
+            next if d[:lag].nil?
+            d[:lag] = d[:lag] > 0 ? Math.log(d[:lag] + 1) : -Math.log(d[:lag].abs + 1)
+          end
+        when :sqrt
+          transformed_data.each do |d|
+            next if d[:lag].nil?
+            d[:lag] = Math.sqrt(d[:lag].abs) * (d[:lag].negative? ? -1 : 1)
+          end
+        end
+      
+        transformed_data
+      end
+      
+      @cpu_data_linear = @cpu_data
+      @cpu_data_log_shifted = transform_data(@cpu_data, :log_shifted)
+      @cpu_data_bidirectional = transform_data(@cpu_data, :bidirectional)
+      @cpu_data_sqrt = transform_data(@cpu_data, :sqrt)
+      
+      @gpu_data_linear = @gpu_data
+      @gpu_data_log_shifted = transform_data(@gpu_data, :log_shifted)
+      @gpu_data_bidirectional = transform_data(@gpu_data, :bidirectional)
+      @gpu_data_sqrt = transform_data(@gpu_data, :sqrt)
+      
+      @combined_data_linear = @combined_data
+      @combined_data_log_shifted = transform_data(@combined_data, :log_shifted)
+      @combined_data_bidirectional = transform_data(@combined_data, :bidirectional)
+      @combined_data_sqrt = transform_data(@combined_data, :sqrt)     
+    
+    elsif @stat_section == 'new_upg' 
+      @all_ratings_data = []
+      top50_slists = get_top50_lists_sorted
+      top_50_dates = []
+    
+      # Получаем список дат для каждой редакции
+      top50_slists.each do |top50_list|
+        list_num = @num_vals.find_by(obj_id: top50_list.id)
+        date_val = @date_vals.find_by(obj_id: top50_list.id)
+        list_year = date_val.value.split(".")[2]
+        list_month = date_val.value.split(".")[1]
+        top_50_dates.push([list_year, list_month])
+      end
+    
+      # Для каждой даты собираем данные
+      top_50_dates.each do |top50_date|
+        list_id = get_list_id_by_date(top50_date[0], top50_date[1])
+        top50_machines = fetch_archive_list(list_id)
+        rating_data = {
+          list_id: list_id,
+          date: top50_date,
+          machines: top50_machines,
+          num_vals: @num_vals.dup,
+          date_vals: @date_vals.dup,
+          prec_machines: @prec_machines.dup,
+          ed_num_attrid:@ed_num_attrid.dup,
+          ed_date_attrid:@ed_date_attrid.dup, 
+          prev_rated_pos:@prev_rated_pos.dup
+        }
+        @all_ratings_data << rating_data
+      end
+      @ratings_summary = []
+
+    @all_ratings_data.pop
+    @all_ratings_data.each do |rating|
+      new_mach = 0
+      upg_mach = 0
+
+      rating[:machines].each do |top50_machine|
+        rank_pos = top50_machine["result"].to_i
+        prev_rank_pos = rating[:prev_rated_pos].find { |pos| pos.machine_id == top50_machine["id"] }
+        is_upg = false
+
+        # Проверяем предшественника, если текущей машины нет в предыдущем рейтинге
+        if prev_rank_pos.nil?
+          prec_machine = rating[:prec_machines].find { |prec| prec["sec_obj_id"] == top50_machine["id"] }
+          if prec_machine.present?
+            prev_rank_pos = rating[:prev_rated_pos].find { |pos| pos.machine_id == prec_machine["prim_obj_id"] }
+            is_upg = true if prev_rank_pos.present?
+          end
+        end
+
+        # Если машина присутствует в предыдущем рейтинге
+        if prev_rank_pos.present?
+          if is_upg
+            upg_mach += 1
+          end
+        else
+          if prec_machine.present?
+            upg_mach += 1
+          else
+            new_mach += 1
+          end
+        end
+      end
+      
+      # Сохраняем результат для текущего рейтинга
+      @ratings_summary << {
+        list_id: rating[:list_id],
+        num_vals: rating[:num_vals],
+        date_vals: rating[:date_vals],
+        date: rating[:date].join('-'),
+        new_machines: new_mach,
+        upgraded_machines: upg_mach,
+        total_machines: new_mach + upg_mach
+      }
+    end
+
+    # Формируем данные для графика
+    @ratings_chart_data = [
+      {
+        name: "Новые и обновлённые системы",
+        data: @ratings_summary.map { |rating| [rating[:date], rating[:total_machines]] },
+        color: "#0000FF"
+      },
+      {
+        name: "Новые системы",
+        data: @ratings_summary.map { |rating| [rating[:date], rating[:new_machines]] },
+        color: "#2ca02c"
+      },
+      {
+        name: "Обновлённые системы",
+        data: @ratings_summary.map { |rating| [rating[:date], rating[:upgraded_machines]] },
+        color: "#ff7f0e"
+      }
+    ]
+      
+        
+=begin
+        all data needed
+        rating_data = {
+          date: top50_date,
+          machines: top50_machines,
+          num_vals: @num_vals.dup,
+          date_vals: @date_vals.dup,
+          rmax_res: @rmax_res.dup,
+          cpu_qty_attr_vals: @cpu_qty_attr_vals.dup,
+          core_qty_attr_vals: @core_qty_attr_vals.dup,
+          rpeak_attr_vals: @rpeak_attr_vals.dup,
+          com_net_attr_vals: @com_net_attr_vals.dup,
+          serv_net_attr_vals: @serv_net_attr_vals.dup,
+          tran_net_attr_vals: @tran_net_attr_vals.dup,
+          app_area_attr_vals: @app_area_attr_vals.dup,
+          ram_size_attr_vals: @ram_size_attr_vals.dup,
+          cpu_model_attr_vals: @cpu_model_attr_vals.dup,
+          cpu_vendor_attr_vals: @cpu_vendor_attr_vals.dup,
+          gpu_model_attr_vals: @gpu_model_attr_vals.dup,
+          gpu_vendor_attr_vals: @gpu_vendor_attr_vals.dup,
+          cop_model_attr_vals: @cop_model_attr_vals.dup,
+          cop_vendor_attr_vals: @cop_vendor_attr_vals.dup,
+          cop_objects: @cop_objects.dup,
+          cpu_objects: @cpu_objects.dup,
+          gpu_objects: @gpu_objects.dup,
+          acc_objects: @acc_objects.dup,
+          comp_model_attr_vals: @comp_model_attr_vals.dup,
+          comp_vendor_attr_vals: @comp_vendor_attr_vals.dup,
+          nmax_attr_vals: @nmax_attr_vals.dup,
+          prec_machines: @prec_machines.dup,
+          node_platform_attr_vals: @node_platform_attr_vals.dup,
+          node_platform_vendor_attr_vals: @node_platform_vendor_attr_vals.dup,
+          microcore_qty_attr_vals: @microcore_qty_attr_vals.dup,
+          mach_l1_hash: @mach_l1_hash.dup,
+          l1_l2_hash: @l1_l2_hash.dup,
+          mach_attrd_hash: @mach_attrd_hash.dup,
+          mach_attrdb_hash: @mach_attrdb_hash.dup,
+          l1_attrd_hash: @l1_attrd_hash.dup,
+          l1_attrdb_hash: @l1_attrdb_hash.dup,
+          l2_attrd_hash: @l2_attrd_hash.dup,
+          l2_attrdb_hash: @l2_attrdb_hash.dup,
+          mach_bench_hash: @mach_bench_hash.dup,
+          ed_num_attrid:@ed_num_attrid.dup,
+          ed_date_attrid:@ed_date_attrid.dup, 
+          prev_rated_pos:@prev_rated_pos.dup
+        }
+      _____old attempt_____ delishakov
+      @top50_components_arr = []
+      top50_machines_arr.each do |top50_machines|
+        top50_machines_components_arr = []
+        top50_machines.each do |machine|
+          top50_machine_components_arr = []
+          cpucnt = 0
+          gpucnt = 0
+          copcnt = 0
+          
+          top50_cpus = []
+          top50_gpus = []
+          top50_cops = []
+          cpus = (machine.top50_object.top50_relations.joins(:top50_relation_type).merge(Top50RelationType.where(name_eng: "Contains"))).joins(:top50_object).merge(@cpu_objects)
+          gpus = (machine.top50_object.top50_relations.joins(:top50_relation_type).merge(Top50RelationType.where(name_eng: "Contains"))).joins(:top50_object).merge(@gpu_objects)
+          cops = (machine.top50_object.top50_relations.joins(:top50_relation_type).merge(Top50RelationType.where(name_eng: "Contains"))).joins(:top50_object).merge(@cop_objects)
+          
+          cpus.each do |cpu|
+            top50_cpu = cpu.top50_object.id
+            top50_cpus.push(top50_cpu)
+          end
+          gpus.each do |gpu|
+            top50_gpu = gpu.top50_object.id
+            top50_gpus.push(top50_gpu)
+          end
+          cops.each do |cop|
+            top50_cop = cop.top50_object.id
+            top50_cops.push(top50_cop)
+          end
+
+          top50_machine_components_arr << top50_cpus << top50_gpus << top50_cops
+          top50_machines_components_arr << top50_machine_components_arr
+        end
+        # Добавление массива компонентов машины в общий массив компонентов
+        @top50_components_arr << top50_machines_components_arr
+      end
+
+        head
+    title Таблица значений
+  body
+    h1 Components Update
+    table        
+      tr
+        td
+        -@top50_machines_arr.each do |machines|
+          -machines.each do |machine|
+            -mach_x_attrdb = Top50Machine.select("top50_machines.id as id, top50_attributes.id as attr_id, top50_attributes.name as attr_name, avd.value").joins("join top50_attribute_val_dbvals avd on avd.obj_id = top50_machines.id").joins("join top50_attributes on top50_attributes.id = avd.attr_id").where("top50_machines.is_valid > 0").map(&:attributes)
+            -_attrdb_val = Struct.new('AttrDbValue', :attr_id, :attr_name, :value)
+            -mach_attrdb_hash = Hash.new{|h, k| h[k] = []}
+            -mach_x_attrdb.each do |rec|
+              -mach_attrdb_hash[rec["id"]] << _attrdb_val.new(rec["attr_id"], rec["attr_name"], rec["value"])
+            - newest_gpu_diff = 999999
+            - newest_cpu_diff = 999999
+            - newest_cop_diff = 999999
+            / переделать чтоб был массив?
+            - newest_cpu = nil
+            - newest_gpu = nil
+            - newest_cop = nil
+            - top50_nodes = machine.top50_object.top50_relations.joins(:top50_relation_type).merge(Top50RelationType.where(name_eng: "Contains"))
+            p
+
+              strong = "Машина: "
+              - if machine.name.present?
+                = machine.name
+              br
+                - nodcnt = 0
+                - sum_difference = 0
+                - cpucnt = 0
+                - top50_nodes.each do |top50_node|
+                  - top50_cpus = (top50_node.top50_object.top50_relations.joins(:top50_relation_type).merge(Top50RelationType.where(name_eng: "Contains"))).joins(:top50_object).merge(@cpu_objects)
+                  - top50_gpus = (top50_node.top50_object.top50_relations.joins(:top50_relation_type).merge(Top50RelationType.where(name_eng: "Contains"))).joins(:top50_object).merge(@gpu_objects)
+                  - top50_cops = (top50_node.top50_object.top50_relations.joins(:top50_relation_type).merge(Top50RelationType.where(name_eng: "Contains"))).joins(:top50_object).merge(@cop_objects)
+                  - if top50_node.sec_obj_qty > 0
+                    - node_platform_wlist = []
+                    - node_platform_vendor = @node_platform_vendor_attr_vals.find_by(obj_id: top50_node.top50_object)
+                    - if node_platform_vendor.present?
+                      - node_platform_wlist.append(node_platform_vendor.top50_dictionary_elem.name)
+                    - node_platform = @node_platform_attr_vals.find_by(obj_id: top50_node.top50_object)
+                    - if node_platform.present?
+                      - node_platform_wlist.append(node_platform.top50_dictionary_elem.name)
+                    - if not node_platform_wlist.empty?
+                      = "узлы #{node_platform_wlist.join(' ')}: #{top50_node.sec_obj_qty} "
+                    - else
+                      = "узлов: #{top50_node.sec_obj_qty} "
+                  = "["
+                  - top50_cpus.each_with_index do |top50_cpu, i|
+                    - t = top50_cpu.sec_obj_qty * top50_node.sec_obj_qty
+                    - cpucnt += t
+                    - component_info = ComponentInfo.find_by(component_id: top50_cpu.top50_object)
+                    - if component_info.present? && component_info.date_announced.present? && component_info.date_mentioned.present?
+                      - difference_in_days = (component_info.date_mentioned - component_info.date_announced).to_i
+                      - if difference_in_days < newest_cpu_diff
+                        - newest_cpu = top50_cpu
+                        - newest_cpu_diff = difference_in_days
+                      = difference_in_days
+                      = " days "
+                      - if cpucnt > 0 
+                        - sum_difference += cpucnt * difference_in_days
+                      - else
+                        - cpucnt_attr = mach_attrdb_hash[machine["id"]].find{|x| x.attr_id == @cpu_qty_attrid}
+                        - sum_difference += cpucnt_attr.value.to_i * difference_in_days
+                    - if i > 0
+                      = ", "
+                    - if top50_cpu.sec_obj_qty > 0 
+                      = "#{top50_cpu.sec_obj_qty}x "
+                    - cpu_vendor = @cpu_vendor_attr_vals.find_by(obj_id: top50_cpu.top50_object)
+                    - if cpu_vendor.present?
+                      = cpu_vendor.top50_dictionary_elem.name
+                      = " "
+                    = link_to @cpu_model_attr_vals.find_by(obj_id: top50_cpu.top50_object).top50_dictionary_elem.name, top50_objects_show_info_path(top50_cpu.top50_object)
+                  - ram_size_val = @ram_size_attr_vals.find_by(obj_id: top50_node.top50_object)
+                  - if ram_size_val.present? and ram_size_val.value.to_f > 0
+                      - if top50_cpus.any?
+                        = ", "
+                      = "#{number_with_precision(@ram_size_attr_vals.find_by(obj_id: top50_node.top50_object).value.to_f, precision: 3, strip_insignificant_zeros: true)} GB RAM"
+                  
+                  - if top50_gpus.any? or top50_cops.any?
+                    = "; "
+                    = "Acc: "
+                    - i = 0
+                    - top50_gpus.each do |top50_gpu|
+                      - component_info = ComponentInfo.find_by(component_id: top50_gpu.top50_object)
+                      - if component_info.present? && component_info.date_announced.present? && component_info.date_mentioned.present?
+                        - difference_in_days = (component_info.date_mentioned - component_info.date_announced).to_i
+                        - if difference_in_days < newest_gpu_diff
+                            - newest_gpu = top50_gpu
+                            - newest_gpu_diff = difference_in_days
+                        = difference_in_days
+                        = " days "
+                        - if top50_node.sec_obj_qty > 0 
+                          - sum_difference += top50_gpu.sec_obj_qty * difference_in_days * top50_node.sec_obj_qty
+                        - else
+                          - sum_difference += top50_gpu.sec_obj_qty * difference_in_days
+                      - if i > 0
+                        = ", "
+                      - i += 1
+                      - if top50_gpu.sec_obj_qty > 0
+                        = "#{top50_gpu.sec_obj_qty}x "
+                      - gpu_vendor = @gpu_vendor_attr_vals.find_by(obj_id: top50_gpu.top50_object)
+                      - if gpu_vendor.present?
+                        = gpu_vendor.top50_dictionary_elem.name
+                        = " "                  
+                      = link_to @gpu_model_attr_vals.find_by(obj_id: top50_gpu.top50_object).top50_dictionary_elem.name, top50_objects_show_info_path(top50_gpu.top50_object)
+                    - top50_cops.each do |top50_cop|
+                      - component_info = ComponentInfo.find_by(component_id: top50_cop.top50_object)
+                      - if component_info.present? && component_info.date_announced.present? && component_info.date_mentioned.present?
+                        - difference_in_days = (component_info.date_mentioned - component_info.date_announced).to_i
+                        - if difference_in_days < newest_cop_diff
+                          - newest_cop = top50_cop
+                          - newest_cop_diff = difference_in_days
+                        = difference_in_days
+                        = " days "
+                        - if top50_node.sec_obj_qty > 0 
+                          - sum_difference += top50_cop.sec_obj_qty * difference_in_days * top50_node.sec_obj_qty
+                        - else
+                          - sum_difference += top50_cop.sec_obj_qty * difference_in_days
+                      - if i > 0
+                        = ", "
+                      - i += 1
+                      - if top50_cop.sec_obj_qty > 0 
+                        = "#{top50_cop.sec_obj_qty}x "
+                      - cop_vendor = @cop_vendor_attr_vals.find_by(obj_id: top50_cop.top50_object)
+                      - if cop_vendor.present?
+                        = cop_vendor.top50_dictionary_elem.name
+                        = " "                  
+                      = link_to @cop_model_attr_vals.find_by(obj_id: top50_cop.top50_object).top50_dictionary_elem.name, top50_objects_show_info_path(top50_cop.top50_object)
+                  = "]"
+                  = " "
+                  br     
+            - if newest_cpu.present?
+              = " "
+              = newest_cpu_diff
+              = " "
+              = @cpu_vendor_attr_vals.find_by(obj_id: newest_cpu.top50_object).top50_dictionary_elem.name
+              = " "
+              = @cpu_model_attr_vals.find_by(obj_id: newest_cpu.top50_object).top50_dictionary_elem.name
+            = " "
+            - if newest_gpu.present?
+              = " "
+              = newest_gpu_diff
+              = " "
+              = @gpu_vendor_attr_vals.find_by(obj_id: newest_gpu.top50_object).top50_dictionary_elem.name
+              = " "
+              = @gpu_model_attr_vals.find_by(obj_id: newest_gpu.top50_object).top50_dictionary_elem.name
+            = " "
+            - if newest_cop.present?
+              = " "
+              = newest_cop_diff
+              = " "
+              = @cop_vendor_attr_vals.find_by(obj_id: newest_cop.top50_object).top50_dictionary_elem.name
+              = " "
+              = @cop_model_attr_vals.find_by(obj_id: newest_cop.top50_object).top50_dictionary_elem.name
+            = " Суммарное отставание: "
+            = sum_difference
+            - top50_nodes = machine.top50_object.top50_relations.joins(:top50_relation_type).merge(Top50RelationType.where(name_eng: "Contains"))
+            - nodcnt = top50_nodes.sum(:sec_obj_qty)
+            - if nodcnt != 0
+              = " Суммарное отставание на узел: "
+              - sum_difference_node = sum_difference / nodcnt
+              = sum_difference_node
+            br     
+
+
+                elsif @stat_section == 'freshest_components_lag'
+      @all_ratings_data = []
+      top50_slists = get_top50_lists_sorted
+      top_50_dates = []
+    
+      # Получаем список дат для каждой редакции
+      top50_slists.each do |top50_list|
+        list_num = @num_vals.find_by(obj_id: top50_list.id)
+        date_val = @date_vals.find_by(obj_id: top50_list.id)
+        list_year = date_val.value.split(".")[2]
+        list_month = date_val.value.split(".")[1]
+        top_50_dates.push([list_year, list_month])
+      end
+    
+      # Для каждой даты собираем данные
+      top_50_dates.each do |top50_date|
+        top50_machines = fetch_archive_list(get_list_id_by_date(top50_date[0], top50_date[1]))
+        rating_data = {
+          date: top50_date,
+          machines: top50_machines,
+          num_vals: @num_vals.dup,
+          date_vals: @date_vals.dup,
+          rmax_res: @rmax_res.dup,
+          cpu_qty_attr_vals: @cpu_qty_attr_vals.dup,
+          core_qty_attr_vals: @core_qty_attr_vals.dup,
+          rpeak_attr_vals: @rpeak_attr_vals.dup,
+          com_net_attr_vals: @com_net_attr_vals.dup,
+          serv_net_attr_vals: @serv_net_attr_vals.dup,
+          tran_net_attr_vals: @tran_net_attr_vals.dup,
+          app_area_attr_vals: @app_area_attr_vals.dup,
+          ram_size_attr_vals: @ram_size_attr_vals.dup,
+          cpu_model_attr_vals: @cpu_model_attr_vals.dup,
+          cpu_vendor_attr_vals: @cpu_vendor_attr_vals.dup,
+          gpu_model_attr_vals: @gpu_model_attr_vals.dup,
+          gpu_vendor_attr_vals: @gpu_vendor_attr_vals.dup,
+          cop_model_attr_vals: @cop_model_attr_vals.dup,
+          cop_vendor_attr_vals: @cop_vendor_attr_vals.dup,
+          cop_objects: @cop_objects.dup,
+          cpu_objects: @cpu_objects.dup,
+          gpu_objects: @gpu_objects.dup,
+          acc_objects: @acc_objects.dup,
+          comp_model_attr_vals: @comp_model_attr_vals.dup,
+          comp_vendor_attr_vals: @comp_vendor_attr_vals.dup,
+          nmax_attr_vals: @nmax_attr_vals.dup,
+          prec_machines: @prec_machines.dup,
+          node_platform_attr_vals: @node_platform_attr_vals.dup,
+          node_platform_vendor_attr_vals: @node_platform_vendor_attr_vals.dup,
+          microcore_qty_attr_vals: @microcore_qty_attr_vals.dup,
+          mach_l1_hash: @mach_l1_hash.dup,
+          l1_l2_hash: @l1_l2_hash.dup,
+          mach_attrd_hash: @mach_attrd_hash.dup,
+          mach_attrdb_hash: @mach_attrdb_hash.dup,
+          l1_attrd_hash: @l1_attrd_hash.dup,
+          l1_attrdb_hash: @l1_attrdb_hash.dup,
+          l2_attrd_hash: @l2_attrd_hash.dup,
+          l2_attrdb_hash: @l2_attrdb_hash.dup,
+          mach_bench_hash: @mach_bench_hash.dup
+        }
+        @all_ratings_data << rating_data
+      end
+    
+      @cpu_data = []
+      @gpu_data = []
+      @combined_data = []
+    
+      # Заполняем данные для CPU, GPU и комбинированных значений
+      @all_ratings_data.each_with_index do |rating_data, reverse_edition_index|
+        edition = @all_ratings_data.size - reverse_edition_index
+        machines = rating_data[:machines]
+    
+        machines.each_with_index do |machine, rank_index|
+          newest_cpu_diff = Float::INFINITY
+          newest_gpu_diff = Float::INFINITY
+          cpu_count = 0
+          gpu_count = 0
+    
+          mach_l1_nodes = rating_data[:mach_l1_hash][machine["id"]] || []
+          mach_l1_nodes.each do |node|
+            cpus = rating_data[:l1_l2_hash][node.id].select { |x| x.type_id == @cpu_typeid }
+            gpus = rating_data[:l1_l2_hash][node.id].select { |x| x.type_id == @gpu_typeid }
+    
+            cpus.each do |cpu|
+              component_info = ComponentInfo.find_by(component_id: cpu.id)
+              if component_info&.date_announced && component_info&.date_mentioned
+                diff = (component_info.date_mentioned - component_info.date_announced).to_i
+                newest_cpu_diff = [newest_cpu_diff, diff].min
+                cpu_count += cpu.cnt
+              end
+            end
+    
+            gpus.each do |gpu|
+              component_info = ComponentInfo.find_by(component_id: gpu.id)
+              if component_info&.date_announced && component_info&.date_mentioned
+                diff = (component_info.date_mentioned - component_info.date_announced).to_i
+                newest_gpu_diff = [newest_gpu_diff, diff].min
+                gpu_count += gpu.cnt
+              end
+            end
+          end
+    
+          newest_cpu_diff = nil if newest_cpu_diff == Float::INFINITY
+          newest_gpu_diff = nil if newest_gpu_diff == Float::INFINITY
+    
+          combined_diff = if newest_cpu_diff && newest_gpu_diff && cpu_count > 0 && gpu_count > 0
+                            ((newest_cpu_diff * cpu_count) + (newest_gpu_diff * gpu_count)) / (cpu_count + gpu_count)
+                          end
+    
+          @cpu_data << { edition: edition, rank: rank_index + 1, lag: newest_cpu_diff }
+          @gpu_data << { edition: edition, rank: rank_index + 1, lag: newest_gpu_diff }
+          @combined_data << { edition: edition, rank: rank_index + 1, lag: combined_diff }
+        end
+      end
+    
+      def transform_data(data, method)
+        transformed_data = data.map(&:dup)
+        case method
+        when :linear
+          transformed_data
+        when :log_shifted
+          min = transformed_data.map { |d| d[:lag] }.compact.min
+          transformed_data.each { |d| d[:lag] = d[:lag] ? Math.log(d[:lag] - min + 1) : nil }
+        when :bidirectional
+          transformed_data.each do |d|
+            next if d[:lag].nil?
+            d[:lag] = d[:lag] > 0 ? Math.log(d[:lag] + 1) : -Math.log(d[:lag].abs + 1)
+          end
+        when :sqrt
+          transformed_data.each do |d|
+            next if d[:lag].nil?
+            d[:lag] = Math.sqrt(d[:lag].abs) * (d[:lag].negative? ? -1 : 1)
+          end
+        end
+      
+        transformed_data
+      end
+      
+      @cpu_data_linear = @cpu_data
+      @cpu_data_log_shifted = transform_data(@cpu_data, :log_shifted)
+      @cpu_data_bidirectional = transform_data(@cpu_data, :bidirectional)
+      @cpu_data_sqrt = transform_data(@cpu_data, :sqrt)
+      
+      @gpu_data_linear = @gpu_data
+      @gpu_data_log_shifted = transform_data(@gpu_data, :log_shifted)
+      @gpu_data_bidirectional = transform_data(@gpu_data, :bidirectional)
+      @gpu_data_sqrt = transform_data(@gpu_data, :sqrt)
+      
+      @combined_data_linear = @combined_data
+      @combined_data_log_shifted = transform_data(@combined_data, :log_shifted)
+      @combined_data_bidirectional = transform_data(@combined_data, :bidirectional)
+      @combined_data_sqrt = transform_data(@combined_data, :sqrt)     
+=end
+    elsif @stat_section == 'common_lag'
+      top50_slists = get_top50_lists_sorted
+      top_50_dates = []
+
+      # Получаем список дат
+      top50_slists.each do |top50_list|
+        list_num = @num_vals.find_by(obj_id: top50_list.id)
+        date_val = @date_vals.find_by(obj_id: top50_list.id)
+        list_year = date_val.value.split(".")[2]
+        list_month = date_val.value.split(".")[1]
+        top_50_dates.push([list_year, list_month])
+      end
+
+      @top50_machines_arr = []
+
+      # Получаем двумерный массив машин для всех дат
+      top_50_dates.each do |top50_date|
+        top50_machines = fetch_archive_list(get_list_id_by_date(top50_date[0], top50_date[1]))
+        @top50_machines_arr.push(top50_machines)
+      end
+
+      # Преобразуем в одномерный массив уникальных машин
+      @unique_machines = @top50_machines_arr.flatten.uniq
+
+    elsif  @stat_section == 'debug'
+      @new_upd_data = [] # Данные для матрицы
+      top50_slists = get_top50_lists_sorted
+      top_50_dates = []
+      
+      # Получаем список дат для каждой редакции
+      top50_slists.each do |top50_list|
+        list_num = @num_vals.find_by(obj_id: top50_list.id)
+        date_val = @date_vals.find_by(obj_id: top50_list.id)
+        list_year = date_val.value.split(".")[2]
+        list_month = date_val.value.split(".")[1]
+        top_50_dates.push([list_year, list_month])
+      end
+      
+      # Для каждой даты собираем данные
+      top_50_dates.each do |top50_date|
+        top50_machines = fetch_archive_list(get_list_id_by_date(top50_date[0], top50_date[1]))
+        rating_data = {
+          date: top50_date,
+          machines: top50_machines,
+          num_vals: @num_vals.dup,
+          date_vals: @date_vals.dup,
+          prec_machines: @prec_machines.dup,
+          ed_num_attrid: @ed_num_attrid.dup,
+          ed_date_attrid: @ed_date_attrid.dup,
+          prev_rated_pos: @prev_rated_pos.dup
+        }
+      
+        # Обрабатываем каждую машину
+        rating_data[:machines].each_with_index do |top50_machine, index|
+          machine_id = top50_machine["id"]      
+          new_upd_status = nil
+          pos_status = nil
+          rank_change = nil
+          is_updated = false
+          rank_pos = top50_machine["result"].to_i
+          prev_rank_pos = rating_data[:prev_rated_pos].find { |pos| pos.machine_id == machine_id }
+          
+          if prev_rank_pos.nil? 
+            prec_machine = rating_data[:prec_machines].find { |prec| prec["sec_obj_id"] == machine_id }
+            if prec_machine.present?
+              prev_rank_pos = rating_data[:prev_rated_pos].find { |pos| pos.machine_id == prec_machine["prim_obj_id"] }
+              if prev_rank_pos.present?
+                is_updated = true
+                if new_upd_status != "updated"
+                  new_upd_status = "updated"
+                end
+              end
+            end
+          end
+          if prev_rank_pos.present?
+            prev_rank = prev_rank_pos.result.to_i
+            if rank_pos != prev_rank
+              rank_change = prev_rank - rank_pos
+              if rank_change > 0
+                pos_status = "moved_up"
+              elsif rank_change < 0
+                pos_status = "moved_down"
+              end
+              if is_updated
+                if new_upd_status != "updated"
+                  new_upd_status = "updated"
+                end
+              end
+            end
+          else 
+            if prec_machine.present?
+              if new_upd_status != "updated"
+                new_upd_status = "updated"
+              end
+            else
+                new_upd_status = "new"
+            end
+          end
+        
+
+          @new_upd_data << {
+            edition: top50_date.join('-'),
+            rank: rank_pos,
+            new_upd_status: new_upd_status,
+            pos_status: pos_status,
+            rank_change: rank_change
+          }
+        end
+      end
+      @new_upd_data.sort_by! do |entry|
+        [-entry[:edition].split('-').join.to_i, entry[:rank]]
+      end
+      @new_upd_data_2d = @new_upd_data.group_by { |entry| entry[:edition] }.values
+      @chart_data = @new_upd_data.map do |entry|
+        {
+          edition: entry[:edition],
+          rank: entry[:rank],
+          new_upd_status: entry[:new_upd_status],
+          pos_status: entry[:pos_status],
+          rank_change: entry[:rank_change]
+        }
+      end.to_json      
+                  
     elsif  @stat_section == 'area'
       area_dict_id = Top50Dictionary.where(name_eng: 'Application areas').first.id
       @mach_x_areas = Top50DictionaryElem.all.select("top50_dictionary_elems.id area_id, top50_dictionary_elems.name area_name, top50_machines.id mach_id").
@@ -3901,7 +4694,46 @@ class Top50MachinesController < Top50BaseController
     Top50Mailer.app_confirm_email({step1_data: @step1_data, step2_data: @step2_data, step3_data: @step3_data, step4_data: @step4_data, id: @top50_machine.id}).deliver!
   end
 
+  ###delishakov### duplicated from ObjectsController
+
+  def show_info
+    @top50_object = Top50Object.find(params[:id])
+    @first_appearance_date = fetch_first_appearance_date(@top50_object.id)
+  end 
+
+  ### delishakov ###
   
+  def get_rel_contain_id
+    Top50RelationType.find_by(name_eng: 'Contains').id
+  end
+
+  def get_name_eng_attr_id
+    Top50Attribute.find_by(name_eng: "Name(eng)").id
+  end
+
+  def get_bunch_id
+    Top50Object.joins("join top50_object_types on top50_object_types.id = top50_objects.type_id and top50_object_types.name_eng = 'Bunch of benchmarks'")
+               .joins("join top50_attribute_val_dbvals dbv on dbv.obj_id = top50_objects.id and dbv.attr_id = #{get_name_eng_attr_id} and dbv.value = 'Top50 position'")
+               .first.id
+  end
+
+  def fetch_first_appearance_date(component_id)
+    machine_id = Top50Machine.where("exists(select 1 from top50_relations a join top50_relations b on
+                                      b.prim_obj_id = a.sec_obj_id where b.sec_obj_id = #{component_id} and
+                                      a.prim_obj_id = top50_machines.id and a.type_id = #{get_rel_contain_id} and
+                                      b.type_id = #{get_rel_contain_id})").order(:created_at).first.try(:id)
+    return nil unless machine_id
+
+    benchmark = Top50Benchmark.joins("join top50_benchmark_results ed_results on ed_results.machine_id = #{machine_id} and
+    ed_results.benchmark_id = top50_benchmarks.id").select('top50_benchmarks.*')
+                 .joins("join top50_relations on top50_benchmarks.id = top50_relations.sec_obj_id")
+                 .where("top50_relations.prim_obj_id = (?) and top50_relations.type_id = ?", get_bunch_id, get_rel_contain_id)
+                 .order(:created_at).first
+    benchmark.created_at if benchmark
+  end
+
+  ###delishakov### duplicated from ObjectsController
+
   private
   
   def top50machine_params
