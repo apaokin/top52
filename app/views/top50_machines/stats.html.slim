@@ -2328,6 +2328,14 @@ br
     tbody
       - @ratings_summary.each do |summary|
         - total_machines = summary[:new_machines] + summary[:upgraded_machines]
+        - sum_rmax_total = summary[:sum_rmax_total].to_f
+        - sum_rpeak_total = summary[:sum_rpeak_total].to_f
+        - pct_rmax_new = sum_rmax_total > 0 ? (summary[:sum_rmax_new].to_f / sum_rmax_total * 100).round(2) : nil
+        - pct_rmax_upg = sum_rmax_total > 0 ? (summary[:sum_rmax_upg].to_f / sum_rmax_total * 100).round(2) : nil
+        - pct_rmax_new_upg = sum_rmax_total > 0 ? ((summary[:sum_rmax_new].to_f + summary[:sum_rmax_upg].to_f) / sum_rmax_total * 100).round(2) : nil
+        - pct_rpeak_new = sum_rpeak_total > 0 ? (summary[:sum_rpeak_new].to_f / sum_rpeak_total * 100).round(2) : nil
+        - pct_rpeak_upg = sum_rpeak_total > 0 ? (summary[:sum_rpeak_upg].to_f / sum_rpeak_total * 100).round(2) : nil
+        - pct_rpeak_new_upg = sum_rpeak_total > 0 ? ((summary[:sum_rpeak_new].to_f + summary[:sum_rpeak_upg].to_f) / sum_rpeak_total * 100).round(2) : nil
         tr
           - list_num = summary[:num_vals].find_by(obj_id: summary[:list_id])
           - date_val = summary[:date_vals].find_by(obj_id: summary[:list_id])
@@ -2342,6 +2350,15 @@ br
           td style="text-align: right;" = (summary[:new_machines].to_f / @all_ratings_data[0][:machines].size * 100).round(2).to_s + '%'
           td style="text-align: right;" = (summary[:upgraded_machines].to_f / @all_ratings_data[0][:machines].size * 100).round(2).to_s + '%'
           td style="text-align: right;" = ((summary[:new_machines].to_f + summary[:upgraded_machines].to_f) / @all_ratings_data[0][:machines].size * 100).round(2).to_s + '%'
+          - rpeak_new_s = pct_rpeak_new.nil? ? "—" : "#{pct_rpeak_new}%"
+          - rmax_new_s = pct_rmax_new.nil? ? "—" : "#{pct_rmax_new}%"
+          - rpeak_upg_s = pct_rpeak_upg.nil? ? "—" : "#{pct_rpeak_upg}%"
+          - rmax_upg_s = pct_rmax_upg.nil? ? "—" : "#{pct_rmax_upg}%"
+          - rpeak_new_upg_s = pct_rpeak_new_upg.nil? ? "—" : "#{pct_rpeak_new_upg}%"
+          - rmax_new_upg_s = pct_rmax_new_upg.nil? ? "—" : "#{pct_rmax_new_upg}%"
+          td style="text-align: right;" = (pct_rpeak_new.nil? && pct_rmax_new.nil?) ? "—" : "#{rpeak_new_s} / #{rmax_new_s}"
+          td style="text-align: right;" = (pct_rpeak_upg.nil? && pct_rmax_upg.nil?) ? "—" : "#{rpeak_upg_s} / #{rmax_upg_s}"
+          td style="text-align: right;" = (pct_rpeak_new_upg.nil? && pct_rmax_new_upg.nil?) ? "—" : "#{rpeak_new_upg_s} / #{rmax_new_upg_s}"
      
 - elsif @stat_section == "debug"
   div id="matrix_chart"

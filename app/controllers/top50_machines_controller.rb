@@ -2415,10 +2415,27 @@ class Top50MachinesController < Top50BaseController
       end
       @ratings_summary = []
 
+    # Preload Rmax (Linpack result) and Rpeak (attribute) per machine for new_upg percentages
+    rmax_by_machine = Top50BenchmarkResult.where(benchmark_id: @rmax_benchid).index_by(&:machine_id)
+    rpeak_rows = ActiveRecord::Base.connection.select_all(
+      "SELECT obj_id, cast(encode(value, 'escape') as double precision) as num FROM top50_attribute_val_dbvals WHERE attr_id = #{@rpeak_attrid}"
+    )
+    rpeak_by_machine = rpeak_rows.rows.each_with_object({}) do |row, h|
+      val = (row[1] || 0).to_f
+      h[row[0].to_i] = val
+      h[row[0].to_s] = val
+    end
+
     @all_ratings_data.pop
     @all_ratings_data.each do |rating|
       new_mach = 0
       upg_mach = 0
+      sum_rmax_new = 0.0
+      sum_rmax_upg = 0.0
+      sum_rpeak_new = 0.0
+      sum_rpeak_upg = 0.0
+      sum_rmax_total = 0.0
+      sum_rpeak_total = 0.0
 
       rating[:machines].each do |top50_machine|
         rank_pos = top50_machine["result"].to_i
@@ -2434,7 +2451,7 @@ class Top50MachinesController < Top50BaseController
           end
         end
 
-        # Если машина присутствует в предыдущем рейтинге
+        # Количество новых и обновлённых — как было изначально
         if prev_rank_pos.present?
           if is_upg
             upg_mach += 1
@@ -2444,6 +2461,27 @@ class Top50MachinesController < Top50BaseController
             upg_mach += 1
           else
             new_mach += 1
+          end
+        end
+
+        mid = top50_machine["id"]
+        rmax_rec = rmax_by_machine[mid] || (mid.respond_to?(:to_i) ? rmax_by_machine[mid.to_i] : nil)
+        rmax_val = (rmax_rec&.result || 0).to_f
+        rpeak_val = rpeak_by_machine[mid] || (mid.respond_to?(:to_i) ? rpeak_by_machine[mid.to_i] : nil) || 0.0
+        sum_rmax_total += rmax_val
+        sum_rpeak_total += rpeak_val
+        if prev_rank_pos.present?
+          if is_upg
+            sum_rmax_upg += rmax_val
+            sum_rpeak_upg += rpeak_val
+          end
+        else
+          if prec_machine.present?
+            sum_rmax_upg += rmax_val
+            sum_rpeak_upg += rpeak_val
+          else
+            sum_rmax_new += rmax_val
+            sum_rpeak_new += rpeak_val
           end
         end
       end
@@ -2456,7 +2494,13 @@ class Top50MachinesController < Top50BaseController
         date: rating[:date].join('-'),
         new_machines: new_mach,
         upgraded_machines: upg_mach,
-        total_machines: new_mach + upg_mach
+        total_machines: new_mach + upg_mach,
+        sum_rmax_new: sum_rmax_new,
+        sum_rmax_upg: sum_rmax_upg,
+        sum_rmax_total: sum_rmax_total,
+        sum_rpeak_new: sum_rpeak_new,
+        sum_rpeak_upg: sum_rpeak_upg,
+        sum_rpeak_total: sum_rpeak_total
       }
     end
 
