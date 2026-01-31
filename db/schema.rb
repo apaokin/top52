@@ -11,7 +11,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 20240409222820) do
+ActiveRecord::Schema.define(version: 20240416120000) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -60,8 +60,9 @@ ActiveRecord::Schema.define(version: 20240409222820) do
   end
 
   create_table "component_infos", force: :cascade do |t|
-    t.date     "date_announced"
     t.integer  "component_id"
+    t.date     "date_announced"
+    t.date     "date_mentioned"
     t.datetime "created_at",     null: false
     t.datetime "updated_at",     null: false
   end
