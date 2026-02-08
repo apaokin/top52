@@ -2197,7 +2197,8 @@ br
     style
       | .cell { stroke-width: 1; }
       | .tooltip { position: absolute; visibility: hidden; background: #fff; border: 1px solid #ccc; padding: 5px; border-radius: 5px; }
-      | .width-col { width: 60px; }
+      | .heatmap-wrapper { position: relative; display: inline-block; }
+      | .heatmap-footer { position: absolute; bottom: 15px; right: 20px; }
 
   body
     h1 Тепловые карты отставания самых свежих компонент
@@ -2211,80 +2212,32 @@ br
         option value="sqrt" Квадратный корень
 
     / Контейнеры для тепловых карт
-    h2 CPU Тепловая карта
-    #cpu_heatmap
-    h2 GPU Тепловая карта  
-    #gpu_heatmap
-    h2 Общая Тепловая карта (CPU + GPU)
-    #combined_heatmap
+    div.heatmap-section
+      h2 CPU Тепловая карта
+      div.heatmap-wrapper
+        #cpu_heatmap
+        div.heatmap-footer
+          a.button style="background: #6699CC;" id="download_cpu_lag" download="CPU_lag.csv" Скачать CSV
 
-    / Передача данных в JavaScript
+    div.heatmap-section
+      h2 GPU Тепловая карта
+      div.heatmap-wrapper
+        #gpu_heatmap
+        div.heatmap-footer
+          a.button style="background: #6699CC;" id="download_gpu_lag" download="GPU_lag.csv" Скачать CSV
+
+    div.heatmap-section
+      h2 Общая Тепловая карта (CPU + GPU)
+      div.heatmap-wrapper
+        #combined_heatmap
+        div.heatmap-footer
+          a.button style="background: #6699CC;" id="download_combined_lag" download="Combined_lag.csv" Скачать CSV
+
+    / Передача данных в JavaScript (только linear; остальные шкалы вычисляются на клиенте)
     script
-      | const cpuDataSets = {
-      |   linear: #{raw @cpu_data_linear.to_json},
-      |   log_shifted: #{raw @cpu_data_log_shifted.to_json},
-      |   bidirectional: #{raw @cpu_data_bidirectional.to_json},
-      |   sqrt: #{raw @cpu_data_sqrt.to_json}
-      | };
-      | const gpuDataSets = {
-      |   linear: #{raw @gpu_data_linear.to_json},
-      |   log_shifted: #{raw @gpu_data_log_shifted.to_json},
-      |   bidirectional: #{raw @gpu_data_bidirectional.to_json},
-      |   sqrt: #{raw @gpu_data_sqrt.to_json}
-      | };
-      | const combinedDataSets = {
-      |   linear: #{raw @combined_data_linear.to_json},
-      |   log_shifted: #{raw @combined_data_log_shifted.to_json},
-      |   bidirectional: #{raw @combined_data_bidirectional.to_json},
-      |   sqrt: #{raw @combined_data_sqrt.to_json}
-      | };
-
-
-  - total_editions = @all_ratings_data.size
-  - total_ranks = @all_ratings_data[0][:machines].size
-
-
-  h3 Таблица значений отставания CPU
-  table class="table table-hover"
-  table.heatmap-table
-    tr
-      th Место / Редакция
-      - (1..total_editions).each do |edition|
-        th.width-col= edition
-    - (1..total_ranks).each do |rank|
-      tr
-        td= rank
-        - (1..total_editions).each do |edition|
-          - lag_value = @cpu_data.find { |entry| entry[:edition] == edition && entry[:rank] == rank }&.dig(:lag)
-          td.width-col= lag_value.nil? ? "—" : lag_value
-
-  h3 Таблица значений отставания GPU
-  table class="table table-hover"
-  table.heatmap-table
-    tr
-      th Место / Редакция
-      - (1..total_editions).each do |edition|
-        th.width-col= edition
-    - (1..total_ranks).each do |rank|
-      tr
-        td= rank
-        - (1..total_editions).each do |edition|
-          - lag_value = @gpu_data.find { |entry| entry[:edition] == edition && entry[:rank] == rank }&.dig(:lag)
-          td.width-col= lag_value.nil? ? "—" : lag_value
-
-  h3 Таблица значений комбинированного отставания (CPU + GPU)
-  table class="table table-hover"
-  table.heatmap-table
-    tr
-      th Место / Редакция
-      - (1..total_editions).each do |edition|
-        th.width-col= edition
-    - (1..total_ranks).each do |rank|
-      tr
-        td= rank
-        - (1..total_editions).each do |edition|
-          - lag_value = @combined_data.find { |entry| entry[:edition] == edition && entry[:rank] == rank }&.dig(:lag)
-          td.width-col= lag_value.nil? ? "—" : lag_value
+      | const cpuDataLinear = #{raw @cpu_data.to_json};
+      | const gpuDataLinear = #{raw @gpu_data.to_json};
+      | const combinedDataLinear = #{raw @combined_data.to_json};
 
 - elsif @stat_section == "common_lag"
   head

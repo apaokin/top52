@@ -1834,18 +1834,59 @@ drawHeatmap = (data, containerId, title) ->
   # Рисуем легенду
   drawLegend(svg, colorScale, minLag, maxLag, width, height)
 
-# Обновление графиков
-@updateHeatmaps = (scale, dataSets, containerIds, titles, colorScales) ->
+# Transform linear lag data to another scale (computed client-side to reduce payload)
+transformLagData = (data, method) ->
+  if method == "linear"
+    data
+  else
+    data.map((d) ->
+      { edition: d.edition, rank: d.rank, lag: if d.lag == null then null else (
+        switch method
+          when "log_shifted" then Math.log(d.lag + 1)
+          when "bidirectional" then (if d.lag > 0 then Math.log(d.lag + 1) else -Math.log(Math.abs(d.lag) + 1))
+          when "sqrt" then Math.sqrt(Math.abs(d.lag)) * (if d.lag < 0 then -1 else 1)
+          else d.lag
+      ) }
+    )
+
+# Build CSV from lag data (rows=rank, cols=edition)
+buildLagCsv = (data) ->
+  editions = Array.from(new Set(data.map((d) -> d.edition))).sort((a, b) -> a - b)
+  ranks = [1..50]
+  lookup = {}
+  data.forEach((d) -> lookup["#{d.edition}-#{d.rank}"] = d.lag)
+  header = "Место | Редакция," + editions.join(",")
+  rows = ranks.map((rank) ->
+    cells = editions.map((ed) ->
+      v = lookup["#{ed}-#{rank}"]
+      if v == null or v == undefined then "" else v
+    )
+    rank + "," + cells.join(",")
+  )
+  [header].concat(rows).join("\n")
+
+# Обновление графиков и кнопок экспорта
+@updateHeatmaps = (scale, dataSets, containerIds, titles, colorScales, downloadIds, downloadFilenames) ->
   for i in [0...dataSets.length]
-    drawHeatmap(dataSets[i][scale], containerIds[i], titles[i], colorScales[i])
+    data = transformLagData(dataSets[i], scale)
+    drawHeatmap(data, containerIds[i], titles[i], colorScales[i])
+    if downloadIds and downloadIds[i]
+      csv = buildLagCsv(data)
+      csvEncoded = encodeURIComponent(csv)
+      d3.select("#" + downloadIds[i]).attr("href", "data:text/csv;charset=utf-8," + csvEncoded)
+      if downloadFilenames and downloadFilenames[i]
+        base = downloadFilenames[i].replace(/\.csv$/, "")
+        d3.select("#" + downloadIds[i]).attr("download", base + "_" + scale + ".csv")
 
 # Инициализация
 document.addEventListener("DOMContentLoaded", ->
   scaleSelector = document.getElementById("scale-selector")
 
-  # Данные и настройки
-  dataSets = [cpuDataSets, gpuDataSets, combinedDataSets]
+  # Linear data only; other scales computed on demand
+  dataSets = [cpuDataLinear, gpuDataLinear, combinedDataLinear]
   containerIds = ["cpu_heatmap", "gpu_heatmap", "combined_heatmap"]
+  downloadIds = ["download_cpu_lag", "download_gpu_lag", "download_combined_lag"]
+  downloadFilenames = ["CPU_lag.csv", "GPU_lag.csv", "Combined_lag.csv"]
   titles = ["CPU Отставание", "GPU Отставание", "Общее Отставание (CPU + GPU)"]
   colorScales = [
     d3.scaleLinear().domain([0, 1]).range(["#b3ffb3", "#ff4d4d"]),
@@ -1853,13 +1894,16 @@ document.addEventListener("DOMContentLoaded", ->
     d3.scaleLinear().domain([0, 1]).range(["#b3ffb3", "#ff4d4d"])
   ]
 
-  # Рисуем по умолчанию
-  updateHeatmaps("linear", dataSets, containerIds, titles, colorScales)
+  updateAll = (scale) ->
+    updateHeatmaps(scale, dataSets, containerIds, titles, colorScales, downloadIds, downloadFilenames)
+
+  # Рисуем по умолчанию и обновляем кнопки
+  updateAll("linear")
 
   # Обработчик переключения шкалы
   scaleSelector.addEventListener("change", (event) ->
     scale = event.target.value
-    updateHeatmaps(scale, dataSets, containerIds, titles, colorScales)
+    updateAll(scale)
   )
 )
 

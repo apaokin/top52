@@ -2228,49 +2228,17 @@ class Top50MachinesController < Top50BaseController
         top_50_dates.push([list_year, list_month])
       end
     
-      # Для каждой даты собираем данные
+      # Для каждой даты собираем данные (minimal structure)
       top_50_dates.each do |top50_date|
-        top50_machines = fetch_archive_list(get_list_id_by_date(top50_date[0], top50_date[1]))
+        list_id = get_list_id_by_date(top50_date[0], top50_date[1])
+        top50_machines = fetch_archive_list(list_id)
+        list_date = @date_vals.find_by(obj_id: list_id)&.value
         rating_data = {
           date: top50_date,
+          list_date: list_date,
           machines: top50_machines,
-          num_vals: @num_vals.dup,
-          date_vals: @date_vals.dup,
-          rmax_res: @rmax_res.dup,
-          cpu_qty_attr_vals: @cpu_qty_attr_vals.dup,
-          core_qty_attr_vals: @core_qty_attr_vals.dup,
-          rpeak_attr_vals: @rpeak_attr_vals.dup,
-          com_net_attr_vals: @com_net_attr_vals.dup,
-          serv_net_attr_vals: @serv_net_attr_vals.dup,
-          tran_net_attr_vals: @tran_net_attr_vals.dup,
-          app_area_attr_vals: @app_area_attr_vals.dup,
-          ram_size_attr_vals: @ram_size_attr_vals.dup,
-          cpu_model_attr_vals: @cpu_model_attr_vals.dup,
-          cpu_vendor_attr_vals: @cpu_vendor_attr_vals.dup,
-          gpu_model_attr_vals: @gpu_model_attr_vals.dup,
-          gpu_vendor_attr_vals: @gpu_vendor_attr_vals.dup,
-          cop_model_attr_vals: @cop_model_attr_vals.dup,
-          cop_vendor_attr_vals: @cop_vendor_attr_vals.dup,
-          cop_objects: @cop_objects.dup,
-          cpu_objects: @cpu_objects.dup,
-          gpu_objects: @gpu_objects.dup,
-          acc_objects: @acc_objects.dup,
-          comp_model_attr_vals: @comp_model_attr_vals.dup,
-          comp_vendor_attr_vals: @comp_vendor_attr_vals.dup,
-          nmax_attr_vals: @nmax_attr_vals.dup,
-          prec_machines: @prec_machines.dup,
-          node_platform_attr_vals: @node_platform_attr_vals.dup,
-          node_platform_vendor_attr_vals: @node_platform_vendor_attr_vals.dup,
-          microcore_qty_attr_vals: @microcore_qty_attr_vals.dup,
           mach_l1_hash: @mach_l1_hash.dup,
-          l1_l2_hash: @l1_l2_hash.dup,
-          mach_attrd_hash: @mach_attrd_hash.dup,
-          mach_attrdb_hash: @mach_attrdb_hash.dup,
-          l1_attrd_hash: @l1_attrd_hash.dup,
-          l1_attrdb_hash: @l1_attrdb_hash.dup,
-          l2_attrd_hash: @l2_attrd_hash.dup,
-          l2_attrdb_hash: @l2_attrdb_hash.dup,
-          mach_bench_hash: @mach_bench_hash.dup
+          l1_l2_hash: @l1_l2_hash.dup
         }
         @all_ratings_data << rating_data
       end
@@ -2283,11 +2251,8 @@ class Top50MachinesController < Top50BaseController
       @all_ratings_data.each_with_index do |rating_data, reverse_edition_index|
         edition = @all_ratings_data.size - reverse_edition_index
         machines = rating_data[:machines]
-
-        top50_date = rating_data[:date] # Берём дату из структуры
-        list_id = get_list_id_by_date(top50_date[0], top50_date[1]) # Получаем list_id
-        date_val = rating_data[:date_vals].find { |val| val[:obj_id] == list_id }
-        list_date = date_val.value
+        list_date = rating_data[:list_date]
+        next unless list_date.present?
 
         machines.each_with_index do |machine, rank_index|
           newest_cpu_diff = Float::INFINITY
@@ -2344,43 +2309,7 @@ class Top50MachinesController < Top50BaseController
         end
       end
     
-      def transform_data(data, method)
-        transformed_data = data.map(&:dup)
-        case method
-        when :linear
-          transformed_data
-        when :log_shifted
-          min = transformed_data.map { |d| d[:lag] }.compact.min
-          transformed_data.each { |d| d[:lag] = d[:lag] ? Math.log(d[:lag] + 1) : nil }
-        when :bidirectional
-          transformed_data.each do |d|
-            next if d[:lag].nil?
-            d[:lag] = d[:lag] > 0 ? Math.log(d[:lag] + 1) : -Math.log(d[:lag].abs + 1)
-          end
-        when :sqrt
-          transformed_data.each do |d|
-            next if d[:lag].nil?
-            d[:lag] = Math.sqrt(d[:lag].abs) * (d[:lag].negative? ? -1 : 1)
-          end
-        end
-      
-        transformed_data
-      end
-      
-      @cpu_data_linear = @cpu_data
-      @cpu_data_log_shifted = transform_data(@cpu_data, :log_shifted)
-      @cpu_data_bidirectional = transform_data(@cpu_data, :bidirectional)
-      @cpu_data_sqrt = transform_data(@cpu_data, :sqrt)
-      
-      @gpu_data_linear = @gpu_data
-      @gpu_data_log_shifted = transform_data(@gpu_data, :log_shifted)
-      @gpu_data_bidirectional = transform_data(@gpu_data, :bidirectional)
-      @gpu_data_sqrt = transform_data(@gpu_data, :sqrt)
-      
-      @combined_data_linear = @combined_data
-      @combined_data_log_shifted = transform_data(@combined_data, :log_shifted)
-      @combined_data_bidirectional = transform_data(@combined_data, :bidirectional)
-      @combined_data_sqrt = transform_data(@combined_data, :sqrt)     
+      # Only pass linear data; scale transforms (log_shifted, bidirectional, sqrt) computed client-side     
     
     elsif @stat_section == 'new_upg' 
       @all_ratings_data = []
