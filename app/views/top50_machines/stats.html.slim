@@ -2239,23 +2239,26 @@ br
       | const gpuDataLinear = #{raw @gpu_data.to_json};
       | const combinedDataLinear = #{raw @combined_data.to_json};
 
-- elsif @stat_section == "common_lag"
-  head
-    title Тепловые карты общего отставания компонентов
-  body
-    h1 Тепловые карты общего отставания компонент
-    - @unique_machines.each do |machine|
-      strong Машина:
-      = machine.name
-      = " "
-      = machine.id
-      = " "
-      = link_to machine.name, top50_machines_show_path(machine.id)
-      - if machine.website.present? and machine.website.length > 0
-        p
-          strong = "Веб-сайт: "
-          = link_to nil, ext_url(machine.website)
-      br
+- elsif @stat_section == "debug"
+  / Тепловые карты общего отставания компонентов (common_lag) — закомментировано
+  p Debug section — содержимое закомментировано
+  /
+    head
+      title Тепловые карты общего отставания компонентов
+    body
+      h1 Тепловые карты общего отставания компонент
+      - @unique_machines.each do |machine|
+        strong Машина:
+        = machine.name
+        = " "
+        = machine.id
+        = " "
+        = link_to machine.name, top50_machines_show_path(machine.id)
+        - if machine.website.present? and machine.website.length > 0
+          p
+            strong = "Веб-сайт: "
+            = link_to nil, ext_url(machine.website)
+        br
 - elsif @stat_section == "new_upg"
   - @csv_string_new_upg = ["Редакция,Новые машины,Обновлённые машины,Новые и обновлённые машины,% Новых машин,% Обновлённых машин,% Новых и обновлённых машин,% Rpeak новых машин,% Rmax новых машин,% Rpeak обновлённых машин,% Rmax обновлённых машин,% Rpeak новых и обновлённых машин,% Rmax новых и обновлённых машин"]
   div id="chart_new_vs_upgraded"

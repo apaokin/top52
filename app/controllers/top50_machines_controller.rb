@@ -1447,7 +1447,7 @@ class Top50MachinesController < Top50BaseController
     @section_headers["cpu_cnt"] = "количество CPU"
     @section_headers["freshest_components_lag"] = "обновляемость: отставание самых свежих компонент"
     @section_headers["new_upg"] = "обновляемость: количество новых и обновлённых систем и их доля в производительности"
-    @section_headers["common_lag"] = "обновляемость: общее отставание компонент"
+    @section_headers["debug"] = "debug"
     @section_headers["list_upg"] = "обновляемость: изменение позиций машин в рейтинге"
     @section_headers["core_cnt"] = "количество вычислительных ядер"
     @section_headers["comm_net"] = "семейства коммуникационных сетей"
@@ -2510,29 +2510,23 @@ class Top50MachinesController < Top50BaseController
         color: "#ff7f0e"
       }
     ]      
-    elsif @stat_section == 'common_lag'
-      top50_slists = get_top50_lists_sorted
-      top_50_dates = []
-
-      # Получаем список дат
-      top50_slists.each do |top50_list|
-        list_num = @num_vals.find_by(obj_id: top50_list.id)
-        date_val = @date_vals.find_by(obj_id: top50_list.id)
-        list_year = date_val.value.split(".")[2]
-        list_month = date_val.value.split(".")[1]
-        top_50_dates.push([list_year, list_month])
-      end
-
-      @top50_machines_arr = []
-
-      # Получаем двумерный массив машин для всех дат
-      top_50_dates.each do |top50_date|
-        top50_machines = fetch_archive_list(get_list_id_by_date(top50_date[0], top50_date[1]))
-        @top50_machines_arr.push(top50_machines)
-      end
-
-      # Преобразуем в одномерный массив уникальных машин
-      @unique_machines = @top50_machines_arr.flatten.uniq
+    elsif @stat_section == 'debug'
+      # common_lag: тепловые карты общего отставания компонентов (закомментировано)
+      # top50_slists = get_top50_lists_sorted
+      # top_50_dates = []
+      # top50_slists.each do |top50_list|
+      #   list_num = @num_vals.find_by(obj_id: top50_list.id)
+      #   date_val = @date_vals.find_by(obj_id: top50_list.id)
+      #   list_year = date_val.value.split(".")[2]
+      #   list_month = date_val.value.split(".")[1]
+      #   top_50_dates.push([list_year, list_month])
+      # end
+      # @top50_machines_arr = []
+      # top_50_dates.each do |top50_date|
+      #   top50_machines = fetch_archive_list(get_list_id_by_date(top50_date[0], top50_date[1]))
+      #   @top50_machines_arr.push(top50_machines)
+      # end
+      # @unique_machines = @top50_machines_arr.flatten.uniq
 
     elsif  @stat_section == 'list_upg'
       precedes_type_id = Top50RelationType.find_by(name_eng: "Precedes")&.id
