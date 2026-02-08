@@ -1965,7 +1965,7 @@ document.addEventListener("DOMContentLoaded", ->
        .style("text-anchor", "middle")
        .style("font-family", "Arial")
        .style("font-size", "14px")
-       .text("Количество систем")
+       .text(y_label)
 
     # Добавляем столбцы и точки
     data.forEach((dataset, i) ->
@@ -2012,8 +2012,11 @@ document.addEventListener("DOMContentLoaded", ->
            .attr("class", "layer-" + i)
     )
 
-  # Добавляем обработчик загрузки
-  window.onload = func
+  # Добавляем обработчик загрузки (цепочка, чтобы не перезаписать другие графики)
+  oldOnload = window.onload
+  window.onload = () ->
+    if oldOnload then oldOnload()
+    func()
 
 
 @drawMatrix = (data, containerId, title) ->

@@ -2304,6 +2304,7 @@ br
           = link_to nil, ext_url(machine.website)
       br
 - elsif @stat_section == "new_upg"
+  - @csv_string_new_upg = ["Редакция,Новые машины,Обновлённые машины,Новые и обновлённые машины,% Новых машин,% Обновлённых машин,% Новых и обновлённых машин,% Rpeak новых машин,% Rmax новых машин,% Rpeak обновлённых машин,% Rmax обновлённых машин,% Rpeak новых и обновлённых машин,% Rmax новых и обновлённых машин"]
   div id="chart_new_vs_upgraded"
 
   javascript:
@@ -2311,7 +2312,21 @@ br
 
   coffee:
     draw_new_vs_upgraded_new(chartData, "chart_new_vs_upgraded", "Новые и обновлённые системы по редакциям", "Дата (ММ.ГГ)", "Количество систем")
-    
+
+  div id="chart_new_vs_upgraded_rpeak_pct"
+  javascript:
+    var chartDataRpeakPct = JSON.parse("#{@ratings_rpeak_pct_chart_data.to_json}".replace(/&quot;/g, '"'));
+  coffee:
+    draw_new_vs_upgraded_new(chartDataRpeakPct, "chart_new_vs_upgraded_rpeak_pct", "Процент Rpeak (от общего) новых и обновлённых систем", "Дата (ММ.ГГ)", "% Rpeak")
+
+  div id="chart_new_vs_upgraded_rmax_pct"
+  javascript:
+    var chartDataRmaxPct = JSON.parse("#{@ratings_rmax_pct_chart_data.to_json}".replace(/&quot;/g, '"'));
+  coffee:
+    draw_new_vs_upgraded_new(chartDataRmaxPct, "chart_new_vs_upgraded_rmax_pct", "Процент Rmax (от общего) новых и обновлённых систем", "Дата (ММ.ГГ)", "% Rmax")
+  div style="clear: both;"
+  a class="button" style="background: #6699CC; float: right; margin-bottom: 15px;" target="_blank" download="New_upgraded_systems.csv" id="download_new_upg"
+    = "Скачать CSV"
   table class="table table-hover" style="width: 1400px; margin: 0 auto; table-layout: fixed;"
     thead
       tr
@@ -2359,6 +2374,15 @@ br
           td style="text-align: right;" = (pct_rpeak_new.nil? && pct_rmax_new.nil?) ? "—" : "#{rpeak_new_s} / #{rmax_new_s}"
           td style="text-align: right;" = (pct_rpeak_upg.nil? && pct_rmax_upg.nil?) ? "—" : "#{rpeak_upg_s} / #{rmax_upg_s}"
           td style="text-align: right;" = (pct_rpeak_new_upg.nil? && pct_rmax_new_upg.nil?) ? "—" : "#{rpeak_new_upg_s} / #{rmax_new_upg_s}"
+        - edition_csv = list_num.present? ? "#{list_num.value} (#{date_val.value})" : date_val.value
+        - pct_new_val = (summary[:new_machines].to_f / @all_ratings_data[0][:machines].size * 100).round(2)
+        - pct_upg_val = (summary[:upgraded_machines].to_f / @all_ratings_data[0][:machines].size * 100).round(2)
+        - pct_new_upg_val = ((summary[:new_machines].to_f + summary[:upgraded_machines].to_f) / @all_ratings_data[0][:machines].size * 100).round(2)
+        - @csv_string_new_upg.push("#{edition_csv},#{summary[:new_machines]},#{summary[:upgraded_machines]},#{total_machines},#{pct_new_val},#{pct_upg_val},#{pct_new_upg_val},#{pct_rpeak_new || ''},#{pct_rmax_new || ''},#{pct_rpeak_upg || ''},#{pct_rmax_upg || ''},#{pct_rpeak_new_upg || ''},#{pct_rmax_new_upg || ''}")
+  javascript:
+    var csvNewUpg = JSON.parse("#{@csv_string_new_upg.to_json}".replace(/&quot;/g, '"')).join("\n");
+  coffee:
+    d3.selectAll("a").filter(() -> d3.select(this).attr("id") == "download_new_upg").attr("href", "data:attachment/csv," + csvNewUpg)
      
 - elsif @stat_section == "debug"
   div id="matrix_chart"

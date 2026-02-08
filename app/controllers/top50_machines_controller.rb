@@ -1446,7 +1446,7 @@ class Top50MachinesController < Top50BaseController
     @section_headers["cpu_gen"] = "микроархитектура CPU"
     @section_headers["cpu_cnt"] = "количество CPU"
     @section_headers["freshest_components_lag"] = "обновляемость: отставание самых свежих компонент"
-    @section_headers["new_upg"] = "количество новых и обновлённых систем"
+    @section_headers["new_upg"] = "количество новых и обновлённых систем и их доля в производительности"
     @section_headers["common_lag"] = "обновляемость: общее отставание компонент"
     @section_headers["debug"] = "дебаг"
     @section_headers["core_cnt"] = "количество вычислительных ядер"
@@ -2415,7 +2415,6 @@ class Top50MachinesController < Top50BaseController
       end
       @ratings_summary = []
 
-    # Preload Rmax (Linpack result) and Rpeak (attribute) per machine for new_upg percentages
     rmax_by_machine = Top50BenchmarkResult.where(benchmark_id: @rmax_benchid).index_by(&:machine_id)
     rpeak_rows = ActiveRecord::Base.connection.select_all(
       "SELECT obj_id, cast(encode(value, 'escape') as double precision) as num FROM top50_attribute_val_dbvals WHERE attr_id = #{@rpeak_attrid}"
@@ -2519,6 +2518,66 @@ class Top50MachinesController < Top50BaseController
       {
         name: "Обновлённые системы",
         data: @ratings_summary.map { |rating| [rating[:date], rating[:upgraded_machines]] },
+        color: "#ff7f0e"
+      }
+    ]
+
+    # Данные для графиков процентов Rpeak и Rmax (имена серий должны совпадать с draw_new_vs_upgraded_new)
+    @ratings_rpeak_pct_chart_data = [
+      {
+        name: "Новые и обновлённые системы",
+        data: @ratings_summary.map { |r|
+          st = r[:sum_rpeak_total].to_f
+          val = st > 0 ? ((r[:sum_rpeak_new].to_f + r[:sum_rpeak_upg].to_f) / st * 100).round(2) : 0
+          [r[:date], val]
+        },
+        color: "#0000FF"
+      },
+      {
+        name: "Новые системы",
+        data: @ratings_summary.map { |r|
+          st = r[:sum_rpeak_total].to_f
+          val = st > 0 ? (r[:sum_rpeak_new].to_f / st * 100).round(2) : 0
+          [r[:date], val]
+        },
+        color: "#2ca02c"
+      },
+      {
+        name: "Обновлённые системы",
+        data: @ratings_summary.map { |r|
+          st = r[:sum_rpeak_total].to_f
+          val = st > 0 ? (r[:sum_rpeak_upg].to_f / st * 100).round(2) : 0
+          [r[:date], val]
+        },
+        color: "#ff7f0e"
+      }
+    ]
+    @ratings_rmax_pct_chart_data = [
+      {
+        name: "Новые и обновлённые системы",
+        data: @ratings_summary.map { |r|
+          st = r[:sum_rmax_total].to_f
+          val = st > 0 ? ((r[:sum_rmax_new].to_f + r[:sum_rmax_upg].to_f) / st * 100).round(2) : 0
+          [r[:date], val]
+        },
+        color: "#0000FF"
+      },
+      {
+        name: "Новые системы",
+        data: @ratings_summary.map { |r|
+          st = r[:sum_rmax_total].to_f
+          val = st > 0 ? (r[:sum_rmax_new].to_f / st * 100).round(2) : 0
+          [r[:date], val]
+        },
+        color: "#2ca02c"
+      },
+      {
+        name: "Обновлённые системы",
+        data: @ratings_summary.map { |r|
+          st = r[:sum_rmax_total].to_f
+          val = st > 0 ? (r[:sum_rmax_upg].to_f / st * 100).round(2) : 0
+          [r[:date], val]
+        },
         color: "#ff7f0e"
       }
     ]
