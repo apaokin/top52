@@ -1446,9 +1446,9 @@ class Top50MachinesController < Top50BaseController
     @section_headers["cpu_gen"] = "микроархитектура CPU"
     @section_headers["cpu_cnt"] = "количество CPU"
     @section_headers["freshest_components_lag"] = "обновляемость: отставание самых свежих компонент"
-    @section_headers["new_upg"] = "количество новых и обновлённых систем и их доля в производительности"
+    @section_headers["new_upg"] = "обновляемость: количество новых и обновлённых систем и их доля в производительности"
     @section_headers["common_lag"] = "обновляемость: общее отставание компонент"
-    @section_headers["debug"] = "дебаг"
+    @section_headers["list_upg"] = "обновляемость: изменение позиций машин в рейтинге"
     @section_headers["core_cnt"] = "количество вычислительных ядер"
     @section_headers["comm_net"] = "семейства коммуникационных сетей"
     @section_headers["comm_net_sep"] = "коммуникационные сети"
@@ -3007,7 +3007,12 @@ class Top50MachinesController < Top50BaseController
       # Преобразуем в одномерный массив уникальных машин
       @unique_machines = @top50_machines_arr.flatten.uniq
 
-    elsif  @stat_section == 'debug'
+    elsif  @stat_section == 'list_upg'
+      precedes_type_id = Top50RelationType.find_by(name_eng: "Precedes")&.id
+      @prec_machines = precedes_type_id ? Top50Relation.where(type_id: precedes_type_id, is_valid: [1, 2]) : []
+      @ed_num_attrid = Top50Attribute.where(name_eng: "Edition number").first&.id
+      @ed_date_attrid = Top50Attribute.where(name_eng: "Edition date").first&.id
+
       @new_upd_data = [] # Данные для матрицы
       top50_slists = get_top50_lists_sorted
       top_50_dates = []
@@ -3021,70 +3026,63 @@ class Top50MachinesController < Top50BaseController
         top_50_dates.push([list_year, list_month])
       end
       
-      # Для каждой даты собираем данные
-      top_50_dates.each do |top50_date|
-        top50_machines = fetch_archive_list(get_list_id_by_date(top50_date[0], top50_date[1]))
+      all_ratings_list_upg = []
+      top_50_dates.each_with_index do |top50_date, idx|
+        list_id = get_list_id_by_date(top50_date[0], top50_date[1])
+        top50_machines = fetch_archive_list(list_id)
+        prev_rated_pos = []
+        if idx + 1 < top50_slists.size
+          prev_list_id = top50_slists[idx + 1].id
+          prev_rated_pos = Top50BenchmarkResult.where(benchmark_id: prev_list_id).to_a
+        end
         rating_data = {
+          list_id: list_id,
           date: top50_date,
           machines: top50_machines,
-          num_vals: @num_vals.dup,
-          date_vals: @date_vals.dup,
           prec_machines: @prec_machines.dup,
-          ed_num_attrid: @ed_num_attrid.dup,
-          ed_date_attrid: @ed_date_attrid.dup,
-          prev_rated_pos: @prev_rated_pos.dup
+          prev_rated_pos: prev_rated_pos
         }
-      
-        # Обрабатываем каждую машину
-        rating_data[:machines].each_with_index do |top50_machine, index|
-          machine_id = top50_machine["id"]      
+        all_ratings_list_upg << rating_data
+      end
+
+      all_ratings_list_upg.each_with_index do |rating_data, idx|
+        top50_date = rating_data[:date]
+        is_first_list = (idx == all_ratings_list_upg.size - 1)
+        rating_data[:machines].each do |top50_machine|
+          machine_id = top50_machine["id"]
           new_upd_status = nil
           pos_status = nil
           rank_change = nil
-          is_updated = false
           rank_pos = top50_machine["result"].to_i
-          prev_rank_pos = rating_data[:prev_rated_pos].find { |pos| pos.machine_id == machine_id }
-          
-          if prev_rank_pos.nil? 
-            prec_machine = rating_data[:prec_machines].find { |prec| prec["sec_obj_id"] == machine_id }
-            if prec_machine.present?
-              prev_rank_pos = rating_data[:prev_rated_pos].find { |pos| pos.machine_id == prec_machine["prim_obj_id"] }
-              if prev_rank_pos.present?
-                is_updated = true
-                if new_upd_status != "updated"
-                  new_upd_status = "updated"
-                end
-              end
-            end
-          end
-          if prev_rank_pos.present?
-            prev_rank = prev_rank_pos.result.to_i
-            if rank_pos != prev_rank
-              rank_change = prev_rank - rank_pos
-              if rank_change > 0
-                pos_status = "moved_up"
-              elsif rank_change < 0
-                pos_status = "moved_down"
-              end
-              if is_updated
-                if new_upd_status != "updated"
-                  new_upd_status = "updated"
-                end
-              end
-            end
-          else 
-            if prec_machine.present?
-              if new_upd_status != "updated"
-                new_upd_status = "updated"
-              end
-            else
-                new_upd_status = "new"
-            end
-          end
-        
+          unless is_first_list
+            is_upg = false
+            prec_machine = nil
+            prev_rank_pos = rating_data[:prev_rated_pos].find { |pos| pos.machine_id == machine_id }
 
+            if prev_rank_pos.nil?
+              prec_machine = rating_data[:prec_machines].find { |prec| prec.sec_obj_id == machine_id }
+              if prec_machine.present?
+                prev_rank_pos = rating_data[:prev_rated_pos].find { |pos| pos.machine_id == prec_machine.prim_obj_id }
+                is_upg = true if prev_rank_pos.present?
+              end
+            end
+            if prev_rank_pos.present?
+              prev_rank = prev_rank_pos.result.to_i
+              if rank_pos != prev_rank
+                rank_change = prev_rank - rank_pos
+                pos_status = rank_change > 0 ? "moved_up" : "moved_down"
+              end
+              new_upd_status = "updated" if is_upg
+            else
+              new_upd_status = prec_machine.present? ? "updated" : "new"
+            end
+          end
+
+          list_num = @num_vals.find_by(obj_id: rating_data[:list_id])&.value
           @new_upd_data << {
             edition: top50_date.join('-'),
+            list_id: rating_data[:list_id],
+            list_num: list_num,
             rank: rank_pos,
             new_upd_status: new_upd_status,
             pos_status: pos_status,
@@ -3096,6 +3094,33 @@ class Top50MachinesController < Top50BaseController
         [-entry[:edition].split('-').join.to_i, entry[:rank]]
       end
       @new_upd_data_2d = @new_upd_data.group_by { |entry| entry[:edition] }.values
+      lists_chronological = top50_slists.reverse
+      @new_upd_list_ids = lists_chronological.map(&:id)
+      @new_upd_list_nums = @new_upd_list_ids.map { |lid| @num_vals.find_by(obj_id: lid)&.value }.map { |v| v.presence || "—" }
+      @new_upd_matrix = (1..50).map do |rank|
+        @new_upd_list_ids.map do |list_id|
+          @new_upd_data.find { |e| e[:rank] == rank && e[:list_id] == list_id }
+        end
+      end
+      col_headers = (1..@new_upd_list_ids.size).to_a
+      @csv_string_list_upg = col_headers.present? ? ["Место | Редакция," + col_headers.join(",")] : []
+      @new_upd_matrix.each_with_index do |row, idx|
+        row_str = (idx + 1).to_s
+        row.each do |entry|
+          cell = if entry.present?
+            statuses = []
+            statuses << (entry[:new_upd_status] == "updated" ? "upg" : entry[:new_upd_status]) if entry[:new_upd_status].present?
+            statuses << "+#{entry[:rank_change]}" if entry[:pos_status] == "moved_up" && entry[:rank_change].present?
+            statuses << "-#{entry[:rank_change].abs}" if entry[:pos_status] == "moved_down" && entry[:rank_change].present?
+            statuses.present? ? statuses.join(" ") : ""
+          else
+            ""
+          end
+          cell_str = cell.to_s.include?(',') ? "\"#{cell.to_s.gsub('"', '""')}\"" : cell.to_s
+          row_str += "," + cell_str
+        end
+        @csv_string_list_upg << row_str if @csv_string_list_upg.present?
+      end
       @chart_data = @new_upd_data.map do |entry|
         {
           edition: entry[:edition],

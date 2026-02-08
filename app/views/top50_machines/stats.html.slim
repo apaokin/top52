@@ -2248,7 +2248,7 @@ br
   table class="table table-hover"
   table.heatmap-table
     tr
-      th Ранг / Редакция
+      th Место / Редакция
       - (1..total_editions).each do |edition|
         th.width-col= edition
     - (1..total_ranks).each do |rank|
@@ -2262,7 +2262,7 @@ br
   table class="table table-hover"
   table.heatmap-table
     tr
-      th Ранг / Редакция
+      th Место / Редакция
       - (1..total_editions).each do |edition|
         th.width-col= edition
     - (1..total_ranks).each do |rank|
@@ -2276,7 +2276,7 @@ br
   table class="table table-hover"
   table.heatmap-table
     tr
-      th Ранг / Редакция
+      th Место / Редакция
       - (1..total_editions).each do |edition|
         th.width-col= edition
     - (1..total_ranks).each do |rank|
@@ -2384,31 +2384,22 @@ br
   coffee:
     d3.selectAll("a").filter(() -> d3.select(this).attr("id") == "download_new_upg").attr("href", "data:attachment/csv," + csvNewUpg)
      
-- elsif @stat_section == "debug"
+- elsif @stat_section == "list_upg"
   div id="matrix_chart"
     javascript:
       chartData = #{raw @chart_data};
     coffee:
       @drawMatrix(chartData, "matrix_chart", "Эволюция машин в рейтинге")
 
-  h3 Данные для визуализации
-  table
-    thead
-      tr
-        th Редакция
-        th Место
-        th new-upd
-        th rank shift
-        th Изменение позиции
-    tbody
-      - @new_upd_data_2d.each do |edition_data|
-        - edition_data.each do |data|
-          tr
-            td = data[:edition]
-            td = data[:rank]
-            td = data[:new_upd_status]
-            td = data[:pos_status]
-            td = data[:rank_change].present? ? "#{data[:rank_change] > 0 ? '+' : ''}#{data[:rank_change]}" : "-"
+  
+  div style="clear: both;"
+  - if @csv_string_list_upg.present?
+    a class="button" style="background: #6699CC; float: right; margin-bottom: 15px;" target="_blank" download="Statuses_matrix.csv" id="download_list_upg"
+      = "Скачать CSV"
+    javascript:
+      var csvListUpg = JSON.parse("#{@csv_string_list_upg.to_json}".replace(/&quot;/g, '"')).join("\n");
+    coffee:
+      d3.selectAll("a").filter(() -> d3.select(this).attr("id") == "download_list_upg").attr("href", "data:text/csv;charset=utf-8," + encodeURIComponent(csvListUpg))
 
 - else
   div id="chart_1"
