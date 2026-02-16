@@ -2256,6 +2256,7 @@ br
         option value="linear" Равные интервалы
         option value="log" Лог. интервалы
         option value="fixed" Равные интервалы (0–max)
+        option value="gradient_linear" Градиент (линейный)
         option value="gradient" Градиент (лог.)
         option value="gradient_sqrt" Градиент (sqrt)
 
@@ -2285,6 +2286,70 @@ br
       | const ramPerCpuData = #{raw @ram_per_cpu_data.to_json};
       | const ramPerNodeData = #{raw @ram_per_node_data.to_json};
       | const editionDatesRam = #{raw (@edition_dates_ram || []).to_json};
+
+- elsif @stat_section == "component_stats"
+  head
+    title Количество компонент
+    style
+      | .cell { stroke-width: 1; }
+      | .heatmap-wrapper { position: relative; display: inline-block; }
+      | .heatmap-footer { position: absolute; bottom: 15px; right: 20px; }
+  body
+    h1 Количество компонент
+    div style="margin-bottom: 1em;"
+      label for="metric-selector-component" Метрика:
+      select#metric-selector-component
+        option value="total" selected="selected" Всего
+        option value="per_node" На узел
+    div style="margin-bottom: 1em;"
+      label for="scale-selector-component" Шкала:
+      select#scale-selector-component
+        option value="quantile" selected="selected" По квантилям
+        option value="linear" Равные интервалы
+        option value="log" Лог. интервалы
+        option value="fixed" Равные интервалы (0–max)
+        option value="gradient_linear" Градиент (линейный)
+        option value="gradient" Градиент (лог.)
+        option value="gradient_sqrt" Градиент (sqrt)
+
+    div.heatmap-section
+      h2 CPU:
+      div.heatmap-wrapper
+        #cpu_component_heatmap
+        div.heatmap-footer
+          a.button style="background: #6699CC;" id="download_cpu_component" download="CPU_component.csv" Скачать CSV
+
+    div.heatmap-section
+      h2 GPU:
+      div.heatmap-wrapper
+        #gpu_component_heatmap
+        div.heatmap-footer
+          a.button style="background: #6699CC;" id="download_gpu_component" download="GPU_component.csv" Скачать CSV
+
+    div.heatmap-section
+      h2 Самые свежие компоненты:
+      div.heatmap-wrapper
+        #freshest_component_heatmap
+        div.heatmap-footer
+          a.button style="background: #6699CC;" id="download_freshest_component" download="Freshest_component.csv" Скачать CSV
+
+    div.heatmap-section
+      h2 Ядра:
+      div.heatmap-wrapper
+        #cores_component_heatmap
+        div.heatmap-footer
+          a.button style="background: #6699CC;" id="download_cores_component" download="Cores_component.csv" Скачать CSV
+
+    script
+      | const cpuTotalData = #{raw @cpu_total_data.to_json};
+      | const cpuPerNodeData = #{raw @cpu_per_node_data.to_json};
+      | const gpuTotalData = #{raw @gpu_total_data.to_json};
+      | const gpuPerNodeData = #{raw @gpu_per_node_data.to_json};
+      | const freshestTotalData = #{raw @freshest_total_data.to_json};
+      | const freshestPerNodeData = #{raw @freshest_per_node_data.to_json};
+      | const coresTotalData = #{raw @cores_total_data.to_json};
+      | const coresPerNodeData = #{raw @cores_per_node_data.to_json};
+      | const editionDatesComponent = #{raw (@edition_dates_component || []).to_json};
 
 - elsif @stat_section == "debug"
   / Тепловые карты общего отставания компонентов (common_lag) — закомментировано

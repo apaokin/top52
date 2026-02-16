@@ -1911,6 +1911,14 @@ ramFmt = (x) ->
   else if x >= 1 then d3.format(".1f")(x)
   else d3.format(".2f")(x)
 
+# Format component quantity for legend (integers)
+componentFmt = (x) ->
+  if x >= 1000 then Math.round(x)
+  else if x >= 100 then Math.round(x)
+  else if x >= 10 then Math.round(x)
+  else if x >= 1 then Math.round(x)
+  else Math.round(x)
+
 # Build scale and legend for all RAM heatmaps. All methods are data-driven (no hardcoded values).
 # method: "fixed" = 7 equal steps from 0 to max; "quantile" = equal count per band; "linear" = 7 steps min–max; "log" = log-spaced; "gradient" = continuous gradient min–max
 # Returns { colorScale (function), labels (array) or gradient (minVal, maxVal) }
@@ -1919,7 +1927,7 @@ ramFlexibleScale = (data, method) ->
   data = [] unless Array.isArray(data)
   vals = data.map((d) -> d.lag).filter((v) -> v != null && v != undefined)
   if vals.length == 0
-    if method == "gradient" or method == "gradient_sqrt"
+    if method == "gradient" or method == "gradient_sqrt" or method == "gradient_linear"
       scale = d3.scaleLinear().domain([0, 1]).range(RAM_STEP_COLORS).clamp(true)
       return { colorScale: scale, gradient: true, minVal: 0, maxVal: 1 }
     return {
@@ -1930,6 +1938,15 @@ ramFlexibleScale = (data, method) ->
   maxVal = d3.max(vals)
   if minVal >= maxVal
     maxVal = minVal + 1
+  if method == "gradient_linear"
+    # Continuous gradient: linear (no transformation)
+    domainPts = [minVal]
+    for i in [1..5]
+      domainPts.push(minVal + (maxVal - minVal) * i / 6)
+    domainPts.push(maxVal)
+    linearScale = d3.scaleLinear().domain(domainPts).range(RAM_STEP_COLORS).clamp(true)
+    scale = (v) -> linearScale(v)
+    return { colorScale: scale, gradient: true, minVal: minVal, maxVal: maxVal }
   if method == "gradient"
     # Continuous gradient: more color change at low values (log)
     toTransformed = (v) -> Math.log(1 + Math.max(0, v))
@@ -2069,6 +2086,276 @@ drawRamLegend = (svg, width, height, spec) ->
     .attr("text-anchor", "middle")
     .style("font-size", "10px")
     .text((d) -> d + " ГБ")
+
+# --- Component quantity heatmaps: flexible color scale (reuse RAM scale logic) ---
+# Component scale: reuse ramFlexibleScale but with componentFmt for labels
+componentFlexibleScale = (data, method) ->
+  result = ramFlexibleScale(data, method)
+  if result.labels
+    result.labels = result.labels.map((label) ->
+      # Labels from ramFlexibleScale are formatted strings like "0.5", "1.0", "100+"
+      # Ensure label is a string before processing
+      labelStr = if typeof label == "string" then label else String(label)
+      # Remove "+" suffix and parse as float, then format as integer
+      num = parseFloat(labelStr.replace(/\+$/, ""))
+      if isNaN(num) then labelStr else componentFmt(num) + (if labelStr.match(/\+$/) then "+" else "")
+    )
+  return result
+
+# Legend for component quantities: same as RAM but no "ГБ" suffix
+drawComponentLegend = (svg, width, height, spec) ->
+  spec = spec or {}
+  legendWidth = 320
+  legendHeight = 22
+  legendX = width / 2 - legendWidth / 2
+  legendY = height + 80
+  if spec.gradient
+    defs = svg.append("defs")
+    grad = defs.append("linearGradient")
+      .attr("id", spec.gradientId)
+      .attr("x1", "0%")
+      .attr("x2", "100%")
+      .attr("y1", "0%")
+      .attr("y2", "0%")
+    for i in [0...RAM_STEP_COLORS.length]
+      grad.append("stop")
+        .attr("offset", (100 * i / (RAM_STEP_COLORS.length - 1)) + "%")
+        .attr("stop-color", RAM_STEP_COLORS[i])
+    legend = svg.append("g")
+      .attr("class", "legend")
+      .attr("transform", "translate(#{legendX}, #{legendY})")
+    legend.append("rect")
+      .attr("width", legendWidth)
+      .attr("height", legendHeight)
+      .style("fill", "url(##{spec.gradientId})")
+      .attr("stroke", "#333")
+      .attr("stroke-width", 0.5)
+    legend.append("text")
+      .attr("x", 0)
+      .attr("y", legendHeight + 14)
+      .attr("text-anchor", "start")
+      .style("font-size", "10px")
+      .text(componentFmt(spec.minVal))
+    legend.append("text")
+      .attr("x", legendWidth)
+      .attr("y", legendHeight + 14)
+      .attr("text-anchor", "end")
+      .style("font-size", "10px")
+      .text(componentFmt(spec.maxVal))
+    return
+  labels = spec.labels or spec
+  n = RAM_STEP_COLORS.length
+  stepWidth = legendWidth / n
+  legend = svg.append("g")
+    .attr("class", "legend")
+    .attr("transform", "translate(#{legendX}, #{legendY})")
+  legend.selectAll("rect")
+    .data(RAM_STEP_COLORS)
+    .enter()
+    .append("rect")
+    .attr("x", (d, i) -> i * stepWidth)
+    .attr("y", 0)
+    .attr("width", stepWidth)
+    .attr("height", legendHeight)
+    .attr("fill", (d) -> d)
+    .attr("stroke", "#333")
+    .attr("stroke-width", 0.5)
+  legend.append("g")
+    .selectAll("text")
+    .data(labels)
+    .enter()
+    .append("text")
+    .attr("x", (d, i) -> i * stepWidth + stepWidth / 2)
+    .attr("y", legendHeight + 14)
+    .attr("text-anchor", "middle")
+    .style("font-size", "10px")
+    .text((d) -> d)
+
+drawComponentHeatmap = (data, containerId, title, scaleMethod) ->
+  console.log("drawComponentHeatmap called for", containerId, "with", data.length, "data points")
+  data = data or []
+  data = [] unless Array.isArray(data)
+  container = d3.select("##{containerId}")
+  if container.empty()
+    console.error("Container ##{containerId} not found!")
+    return
+  container.selectAll("*").remove()
+  margin = { top: 20, right: 20, bottom: 80, left: 60 }
+  width = 1000 - margin.left - margin.right
+  height = 600 - margin.top - margin.bottom
+  editions = Array.from(new Set(data.map((d) -> d.edition))).sort((a, b) -> b - a)
+  ranks = Array.from({ length: 50 }, (_, i) -> 50 - i)
+  method = (scaleMethod and scaleMethod.toString()) or "quantile"
+  flexible = componentFlexibleScale(data, method)
+  if !flexible or !flexible.colorScale
+    console.error("Failed to create scale for ##{containerId}, method: #{method}, data length: #{data.length}")
+    return
+  colorScale = flexible.colorScale
+  legendSpec = if flexible.gradient
+    { gradient: true, minVal: flexible.minVal, maxVal: flexible.maxVal, gradientId: "component-grad-" + containerId }
+  else
+    { labels: flexible.labels }
+  x = d3.scaleBand().range([width, 0]).domain(editions).padding(0.05)
+  y = d3.scaleBand().range([height, 0]).domain(ranks).padding(0.05)
+  svg = d3.select("##{containerId}").append("svg")
+    .attr("width", width + margin.left + margin.right)
+    .attr("height", height + margin.top + margin.bottom + 75)
+    .append("g")
+    .attr("transform", "translate(#{margin.left}, #{margin.top})")
+  xAxisComponent = svg.append("g")
+    .attr("transform", "translate(0, #{height})")
+  xAxisComponent.call(d3.axisBottom(x).tickFormat((d) ->
+    if typeof editionDatesComponent != "undefined" && editionDatesComponent && editionDatesComponent[d - 1] then editionDatesComponent[d - 1] else d
+  ))
+  xAxisComponent.selectAll("text")
+    .attr("transform", "rotate(-45)")
+    .style("text-anchor", "end")
+  svg.append("text")
+    .attr("x", width / 2)
+    .attr("y", height + 55)
+    .attr("text-anchor", "middle")
+    .style("font-size", "16px")
+    .text("Редакция")
+  svg.append("g").call(d3.axisLeft(y))
+  svg.append("text")
+    .attr("transform", "rotate(-90)")
+    .attr("y", -margin.left + 20)
+    .attr("x", -height / 2)
+    .attr("text-anchor", "middle")
+    .style("font-size", "16px")
+    .text("Ранг")
+  cells = svg.selectAll(".cell")
+    .data(data.filter((d) -> d.lag != null))
+    .enter().append("rect")
+    .attr("class", "cell")
+    .attr("x", (d) -> x(d.edition))
+    .attr("y", (d) -> y(d.rank))
+    .attr("width", x.bandwidth())
+    .attr("height", y.bandwidth())
+    .attr("fill", (d) -> colorScale(d.lag))
+    .attr("stroke", "#000")
+    .attr("stroke-width", 0.5)
+  cells.append("title")
+    .text((d) -> "#{title}\nРедакция: #{d.edition}, Место: #{d.rank}, Количество: #{Math.round(d.lag)}")
+  drawComponentLegend(svg, width, height, legendSpec)
+
+buildComponentCsv = (data) ->
+  editions = Array.from(new Set(data.map((d) -> d.edition))).sort((a, b) -> a - b)
+  ranks = [1..50]
+  lookup = {}
+  data.forEach((d) -> lookup["#{d.edition}-#{d.rank}"] = d.lag)
+  header = "Место | Редакция," + editions.join(",")
+  rows = ranks.map((rank) ->
+    cells = editions.map((ed) ->
+      v = lookup["#{ed}-#{rank}"]
+      if v == null or v == undefined then "" else (if typeof v == "number" then Math.round(v).toString() else v)
+    )
+    rank + "," + cells.join(",")
+  )
+  [header].concat(rows).join("\n")
+
+drawComponentTable = (data, containerId, title) ->
+  data = data or []
+  data = [] unless Array.isArray(data)
+  d3.select("##{containerId}").selectAll("*").remove()
+  
+  editions = Array.from(new Set(data.map((d) -> d.edition))).sort((a, b) -> a - b)
+  ranks = [1..50]
+  
+  # Build lookup map
+  lookup = {}
+  data.forEach((d) ->
+    if d.lag != null and d.lag != undefined
+      lookup["#{d.edition}-#{d.rank}"] = d.lag
+  )
+  
+  # Get edition dates for headers
+  editionLabels = editions.map((ed) ->
+    if typeof editionDatesComponent != "undefined" && editionDatesComponent && editionDatesComponent[ed - 1]
+      editionDatesComponent[ed - 1]
+    else
+      ed.toString()
+  )
+  
+  # Create table
+  table = d3.select("##{containerId}").append("table")
+    .style("border-collapse", "collapse")
+    .style("font-size", "12px")
+    .style("margin", "10px 0")
+  
+  # Header row
+  thead = table.append("thead")
+  headerRow = thead.append("tr")
+  headerRow.append("th")
+    .text("Ранг")
+    .style("border", "1px solid #ccc")
+    .style("padding", "5px")
+    .style("background-color", "#f0f0f0")
+    .style("position", "sticky")
+    .style("left", "0")
+    .style("z-index", "10")
+  
+  headerRow.selectAll("th.edition-header")
+    .data(editionLabels)
+    .enter()
+    .append("th")
+    .attr("class", "edition-header")
+    .text((d) -> d)
+    .style("border", "1px solid #ccc")
+    .style("padding", "5px")
+    .style("background-color", "#f0f0f0")
+    .style("min-width", "50px")
+    .style("text-align", "center")
+  
+  # Body rows
+  tbody = table.append("tbody")
+  rows = tbody.selectAll("tr")
+    .data(ranks)
+    .enter()
+    .append("tr")
+  
+  # Rank column
+  rows.append("td")
+    .text((rank) -> rank)
+    .style("border", "1px solid #ccc")
+    .style("padding", "5px")
+    .style("background-color", "#f5f5f5")
+    .style("font-weight", "bold")
+    .style("text-align", "right")
+  
+  # Data cells
+  rows.selectAll("td.data-cell")
+    .data((rank) -> editions.map((ed) -> { edition: ed, rank: rank }))
+    .enter()
+    .append("td")
+    .attr("class", "data-cell")
+    .text((d) ->
+      v = lookup["#{d.edition}-#{d.rank}"]
+      if v == null or v == undefined then "" else (if typeof v == "number" then Math.round(v).toString() else v.toString())
+    )
+    .style("border", "1px solid #ccc")
+    .style("padding", "5px")
+    .style("text-align", "right")
+    .style("background-color", (d) ->
+      v = lookup["#{d.edition}-#{d.rank}"]
+      if v == null or v == undefined then "#fff"
+      else if v == 0 then "#f9f9f9"
+      else "#e8f5e9"
+    )
+
+@updateComponentHeatmaps = (dataSets, containerIds, titles, downloadIds, downloadFilenames, scaleMethod) ->
+  dataSets = dataSets or []
+  console.log("updateComponentHeatmaps called with", dataSets.length, "datasets, scaleMethod:", scaleMethod)
+  for i in [0...dataSets.length]
+    data = dataSets[i]
+    data = [] if !data or !Array.isArray(data)
+    console.log("Drawing heatmap", i, "container:", containerIds[i], "data points:", data.length)
+    drawComponentHeatmap(data, containerIds[i], titles[i], scaleMethod)
+    if downloadIds and downloadIds[i]
+      csv = buildComponentCsv(data)
+      d3.select("#" + downloadIds[i]).attr("href", "data:text/csv;charset=utf-8," + encodeURIComponent(csv))
+      if downloadFilenames and downloadFilenames[i]
+        d3.select("#" + downloadIds[i]).attr("download", downloadFilenames[i])
 
 drawRamHeatmap = (data, containerId, title, scaleMethod) ->
   data = data or []
@@ -2216,6 +2503,42 @@ document.addEventListener("DOMContentLoaded", ->
     ramScaleEl = document.getElementById("scale-selector-ram")
     if ramScaleEl
       ramScaleEl.addEventListener("change", updateRamAll)
+
+  # Инициализация component_stats (тепловые карты количества компонентов)
+  if typeof cpuTotalData != "undefined"
+    getComponentMetric = () -> (document.getElementById("metric-selector-component") or {}).value or "total"
+    getComponentScale = () -> (document.getElementById("scale-selector-component") or {}).value or "quantile"
+    updateComponentAll = () ->
+      metric = getComponentMetric()
+      scaleMethod = getComponentScale()
+      if metric == "total"
+        componentDataSets = [
+          cpuTotalData || [],
+          gpuTotalData || [],
+          freshestTotalData || [],
+          coresTotalData || []
+        ]
+        componentTitles = ["CPU: всего", "GPU: всего", "Самые свежие компоненты: всего", "Ядра: всего"]
+        componentDownloadFilenames = ["CPU_total.csv", "GPU_total.csv", "Freshest_total.csv", "Cores_total.csv"]
+      else
+        componentDataSets = [
+          cpuPerNodeData || [],
+          gpuPerNodeData || [],
+          freshestPerNodeData || [],
+          coresPerNodeData || []
+        ]
+        componentTitles = ["CPU: на узел", "GPU: на узел", "Самые свежие компоненты: на узел", "Ядра: на узел"]
+        componentDownloadFilenames = ["CPU_per_node.csv", "GPU_per_node.csv", "Freshest_per_node.csv", "Cores_per_node.csv"]
+      componentContainerIds = ["cpu_component_heatmap", "gpu_component_heatmap", "freshest_component_heatmap", "cores_component_heatmap"]
+      componentDownloadIds = ["download_cpu_component", "download_gpu_component", "download_freshest_component", "download_cores_component"]
+      updateComponentHeatmaps(componentDataSets, componentContainerIds, componentTitles, componentDownloadIds, componentDownloadFilenames, scaleMethod)
+    updateComponentAll()
+    componentMetricEl = document.getElementById("metric-selector-component")
+    if componentMetricEl
+      componentMetricEl.addEventListener("change", updateComponentAll)
+    componentScaleEl = document.getElementById("scale-selector-component")
+    if componentScaleEl
+      componentScaleEl.addEventListener("change", updateComponentAll)
 )
 
 @draw_new_vs_upgraded_new = (data, src_id, title, x_label, y_label) ->

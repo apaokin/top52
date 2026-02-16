@@ -1449,6 +1449,7 @@ class Top50MachinesController < Top50BaseController
     @section_headers["new_upg"] = "обновляемость: количество новых и обновлённых систем и их доля в производительности"
     @section_headers["debug"] = "debug"
     @section_headers["ram_stats"] = "обновляемость: среднее количество памяти"
+    @section_headers["component_stats"] = "обновляемость: количество компонент"
     @section_headers["list_upg"] = "обновляемость: изменение позиций машин в рейтинге"
     @section_headers["core_cnt"] = "количество вычислительных ядер"
     @section_headers["comm_net"] = "семейства коммуникационных сетей"
@@ -2652,6 +2653,136 @@ class Top50MachinesController < Top50BaseController
           @ram_per_core_data << { edition: edition, rank: rank, lag: ram_per_core, has_gpu: has_gpu }
           @ram_per_cpu_data << { edition: edition, rank: rank, lag: ram_per_cpu, has_gpu: has_gpu }
           @ram_per_node_data << { edition: edition, rank: rank, lag: ram_per_node_val, has_gpu: has_gpu }
+        end
+      end
+
+    elsif @stat_section == 'component_stats'
+      @cpu_total_data = []
+      @cpu_per_node_data = []
+      @gpu_total_data = []
+      @gpu_per_node_data = []
+      @freshest_total_data = []
+      @freshest_per_node_data = []
+      @cores_total_data = []
+      @cores_per_node_data = []
+      
+      # Initialize attribute IDs
+      calc_machine_attrs
+      @cpu_typeid = Top50ObjectType.where(name_eng: "CPU").first&.id
+      @gpu_typeid = Top50ObjectType.where(name_eng: "GPU").first&.id
+      @core_qty_attrid = Top50Attribute.where(name_eng: "Number of cores").first&.id
+      @rel_contain_id = get_rel_contain_id
+      
+      top50_slists = get_top50_lists_sorted
+      top_50_dates = []
+      top50_slists.each do |top50_list|
+        date_val = @date_vals.find_by(obj_id: top50_list.id)
+        next unless date_val.present?
+        list_year = date_val.value.split(".")[2]
+        list_month = date_val.value.split(".")[1]
+        top_50_dates.push([list_year, list_month])
+      end
+
+      @edition_dates_component = Array.new(top_50_dates.size)
+      top_50_dates.each_with_index do |top50_date, reverse_edition_index|
+        list_id = get_list_id_by_date(top50_date[0], top50_date[1])
+        list_date = @date_vals.find_by(obj_id: list_id)&.value
+        edition = top_50_dates.size - reverse_edition_index
+        if list_date.present?
+          parts = list_date.split(".")
+          @edition_dates_component[edition - 1] = parts.size >= 3 ? "#{parts[1]}.#{parts[2][-2..-1]}" : list_date
+        end
+        
+        benchmark_results = Top50BenchmarkResult.where(benchmark_id: list_id).order(result: :asc).limit(50)
+
+        benchmark_results.each_with_index do |benchmark_result, rank_index|
+          rank = rank_index + 1
+          machine_id = benchmark_result.machine_id
+          total_cpus = 0
+          total_gpus = 0
+          total_cores = 0
+          total_nodes = 0
+          min_lag = Float::INFINITY
+          freshest_count = 0
+
+          # Get nodes directly from database for this specific machine
+          node_rels = Top50Relation.where(prim_obj_id: machine_id, type_id: @rel_contain_id)
+          
+          node_rels.each do |node_rel|
+            node_id = node_rel.sec_obj_id
+            node_qty = node_rel.sec_obj_qty
+            total_nodes += node_qty
+            
+            # Get components directly from database for this specific node
+            component_rels = Top50Relation.where(prim_obj_id: node_id, type_id: @rel_contain_id)
+            component_rels.each do |component_rel|
+              component_id = component_rel.sec_obj_id
+              component_obj = Top50Object.find_by(id: component_id)
+              next unless component_obj
+              
+              component_qty = component_rel.sec_obj_qty * node_qty
+              
+              if component_obj.type_id == @cpu_typeid
+                total_cpus += component_qty
+                
+                # Get cores directly from database for this specific CPU
+                cores_val = Top50AttributeValDbval.find_by(obj_id: component_id, attr_id: @core_qty_attrid)
+                if cores_val && cores_val.value.present?
+                  cores_per_cpu = cores_val.value.to_i
+                  total_cores += component_qty * cores_per_cpu if cores_per_cpu > 0
+                end
+                
+                # Check for freshest components
+                component_info = ComponentInfo.find_by(component_id: component_id)
+                if component_info&.date_announced && component_info&.date_mentioned && list_date.present?
+                  used_date = component_info.date_mentioned < component_info.date_announced ? 
+                              component_info.date_mentioned : 
+                              component_info.date_announced
+                  diff = (Date.parse(list_date) - used_date).to_i
+                  if diff < min_lag
+                    min_lag = diff
+                    freshest_count = component_qty
+                  elsif diff == min_lag
+                    freshest_count += component_qty
+                  end
+                end
+              elsif component_obj.type_id == @gpu_typeid
+                total_gpus += component_qty
+                
+                # Check for freshest components
+                component_info = ComponentInfo.find_by(component_id: component_id)
+                if component_info&.date_announced && component_info&.date_mentioned && list_date.present?
+                  used_date = component_info.date_mentioned < component_info.date_announced ? 
+                              component_info.date_mentioned : 
+                              component_info.date_announced
+                  diff = (Date.parse(list_date) - used_date).to_i
+                  if diff < min_lag
+                    min_lag = diff
+                    freshest_count = component_qty
+                  elsif diff == min_lag
+                    freshest_count += component_qty
+                  end
+                end
+              end
+            end
+          end
+
+          # Calculate per-node averages
+          cpu_per_node = (total_nodes > 0 && total_cpus > 0) ? (total_cpus.to_f / total_nodes) : nil
+          gpu_per_node = (total_nodes > 0 && total_gpus > 0) ? (total_gpus.to_f / total_nodes) : nil
+          cores_per_node = (total_nodes > 0 && total_cores > 0) ? (total_cores.to_f / total_nodes) : nil
+          freshest_per_node = (total_nodes > 0 && min_lag != Float::INFINITY && freshest_count > 0) ? (freshest_count.to_f / total_nodes) : nil
+          
+          freshest_total = (min_lag != Float::INFINITY && freshest_count > 0) ? freshest_count : nil
+
+          @cpu_total_data << { edition: edition, rank: rank, lag: (total_cpus > 0 ? total_cpus : nil) }
+          @cpu_per_node_data << { edition: edition, rank: rank, lag: cpu_per_node }
+          @gpu_total_data << { edition: edition, rank: rank, lag: (total_gpus > 0 ? total_gpus : nil) }
+          @gpu_per_node_data << { edition: edition, rank: rank, lag: gpu_per_node }
+          @cores_total_data << { edition: edition, rank: rank, lag: (total_cores > 0 ? total_cores : nil) }
+          @cores_per_node_data << { edition: edition, rank: rank, lag: cores_per_node }
+          @freshest_total_data << { edition: edition, rank: rank, lag: freshest_total }
+          @freshest_per_node_data << { edition: edition, rank: rank, lag: freshest_per_node }
         end
       end
 
