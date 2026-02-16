@@ -1448,6 +1448,7 @@ class Top50MachinesController < Top50BaseController
     @section_headers["freshest_components_lag"] = "обновляемость: отставание самых свежих компонент"
     @section_headers["new_upg"] = "обновляемость: количество новых и обновлённых систем и их доля в производительности"
     @section_headers["debug"] = "debug"
+    @section_headers["ram_stats"] = "обновляемость: среднее количество памяти"
     @section_headers["list_upg"] = "обновляемость: изменение позиций машин в рейтинге"
     @section_headers["core_cnt"] = "количество вычислительных ядер"
     @section_headers["comm_net"] = "семейства коммуникационных сетей"
@@ -2246,12 +2247,17 @@ class Top50MachinesController < Top50BaseController
       @cpu_data = []
       @gpu_data = []
       @combined_data = []
+      @edition_dates_lag = Array.new(@all_ratings_data.size)
     
       # Заполняем данные для CPU, GPU и комбинированных значений
       @all_ratings_data.each_with_index do |rating_data, reverse_edition_index|
         edition = @all_ratings_data.size - reverse_edition_index
         machines = rating_data[:machines]
         list_date = rating_data[:list_date]
+        if list_date.present?
+          parts = list_date.split(".")
+          @edition_dates_lag[edition - 1] = parts.size >= 3 ? "#{parts[1]}.#{parts[2][-2..-1]}" : list_date
+        end
         next unless list_date.present?
 
         machines.each_with_index do |machine, rank_index|
@@ -2259,6 +2265,8 @@ class Top50MachinesController < Top50BaseController
           newest_gpu_diff = Float::INFINITY
           cpu_count = 0
           gpu_count = 0
+          freshest_cpu_count = 0
+          freshest_gpu_count = 0
         
           mach_l1_nodes = rating_data[:mach_l1_hash][machine["id"]] || []
           mach_l1_nodes.each do |node|
@@ -2275,7 +2283,12 @@ class Top50MachinesController < Top50BaseController
                 # Вычисляем разницу с текущей датой
                 diff = (Date.parse(list_date) - used_date).to_i
                 #diff = (Date.today - used_date).to_i
-                newest_cpu_diff = [newest_cpu_diff, diff].min
+                if diff < newest_cpu_diff
+                  newest_cpu_diff = diff
+                  freshest_cpu_count = cpu.cnt
+                elsif diff == newest_cpu_diff
+                  freshest_cpu_count += cpu.cnt
+                end
                 cpu_count += cpu.cnt
               end
             end
@@ -2290,7 +2303,12 @@ class Top50MachinesController < Top50BaseController
                 # Вычисляем разницу с текущей датой
                 diff = (Date.parse(list_date) - used_date).to_i
                 #diff = (Date.today - used_date).to_i
-                newest_gpu_diff = [newest_gpu_diff, diff].min
+                if diff < newest_gpu_diff
+                  newest_gpu_diff = diff
+                  freshest_gpu_count = gpu.cnt
+                elsif diff == newest_gpu_diff
+                  freshest_gpu_count += gpu.cnt
+                end
                 gpu_count += gpu.cnt
               end
             end
@@ -2298,14 +2316,29 @@ class Top50MachinesController < Top50BaseController
         
           newest_cpu_diff = nil if newest_cpu_diff == Float::INFINITY
           newest_gpu_diff = nil if newest_gpu_diff == Float::INFINITY
+          freshest_cpu_count = nil if newest_cpu_diff.nil?
+          freshest_gpu_count = nil if newest_gpu_diff.nil?
         
-          combined_diff = if newest_cpu_diff && newest_gpu_diff && cpu_count > 0 && gpu_count > 0
-                            ((newest_cpu_diff * cpu_count) + (newest_gpu_diff * gpu_count)) / (cpu_count + gpu_count)
+          # Combined lag: minimum (freshest) between CPU and GPU
+          # If equal, prefer CPU
+          # (Previously: weighted average by component count)
+          # combined_diff = if newest_cpu_diff && newest_gpu_diff && cpu_count > 0 && gpu_count > 0
+          #                   ((newest_cpu_diff * cpu_count) + (newest_gpu_diff * gpu_count)) / (cpu_count + gpu_count)
+          #                 end
+          combined_diff = if newest_cpu_diff && newest_gpu_diff
+                            [newest_cpu_diff, newest_gpu_diff].min
                           end
+          freshest_combined_count = if newest_cpu_diff && newest_gpu_diff
+                                       if newest_cpu_diff <= newest_gpu_diff
+                                         freshest_cpu_count
+                                       else
+                                         freshest_gpu_count
+                                       end
+                                     end
         
-          @cpu_data << { edition: edition, rank: rank_index + 1, lag: newest_cpu_diff }
-          @gpu_data << { edition: edition, rank: rank_index + 1, lag: newest_gpu_diff }
-          @combined_data << { edition: edition, rank: rank_index + 1, lag: combined_diff }
+          @cpu_data << { edition: edition, rank: rank_index + 1, lag: newest_cpu_diff, freshest_count: freshest_cpu_count }
+          @gpu_data << { edition: edition, rank: rank_index + 1, lag: newest_gpu_diff, freshest_count: freshest_gpu_count }
+          @combined_data << { edition: edition, rank: rank_index + 1, lag: combined_diff, freshest_count: freshest_combined_count }
         end
       end
     
@@ -2527,6 +2560,100 @@ class Top50MachinesController < Top50BaseController
       #   @top50_machines_arr.push(top50_machines)
       # end
       # @unique_machines = @top50_machines_arr.flatten.uniq
+
+    elsif @stat_section == 'ram_stats'
+      @ram_per_core_data = []
+      @ram_per_cpu_data = []
+      @ram_per_node_data = []
+      
+      # Initialize attribute IDs
+      calc_machine_attrs
+      @ram_size_attrid = Top50Attribute.where(name_eng: "RAM size (GB)").first&.id
+      @core_qty_attrid = Top50Attribute.where(name_eng: "Number of cores").first&.id
+      @cpu_typeid = Top50ObjectType.where(name_eng: "CPU").first&.id
+      @gpu_typeid = Top50ObjectType.where(name_eng: "GPU").first&.id
+      @rel_contain_id = get_rel_contain_id
+      
+      top50_slists = get_top50_lists_sorted
+      top_50_dates = []
+      top50_slists.each do |top50_list|
+        date_val = @date_vals.find_by(obj_id: top50_list.id)
+        next unless date_val.present?
+        list_year = date_val.value.split(".")[2]
+        list_month = date_val.value.split(".")[1]
+        top_50_dates.push([list_year, list_month])
+      end
+
+      @edition_dates_ram = Array.new(top_50_dates.size)
+      top_50_dates.each_with_index do |top50_date, reverse_edition_index|
+        list_id = get_list_id_by_date(top50_date[0], top50_date[1])
+        list_date = @date_vals.find_by(obj_id: list_id)&.value
+        edition = top_50_dates.size - reverse_edition_index
+        if list_date.present?
+          parts = list_date.split(".")
+          @edition_dates_ram[edition - 1] = parts.size >= 3 ? "#{parts[1]}.#{parts[2][-2..-1]}" : list_date
+        end
+        # Get machines directly from the benchmark results for this specific list
+        benchmark_results = Top50BenchmarkResult.where(benchmark_id: list_id).order(result: :asc).limit(50)
+
+        benchmark_results.each_with_index do |benchmark_result, rank_index|
+          rank = rank_index + 1
+          machine_id = benchmark_result.machine_id
+          total_ram = 0.0
+          total_cores = 0
+          total_cpus = 0
+          total_nodes = 0
+          has_gpu = false
+
+          # Get nodes directly from database for this specific machine
+          node_rels = Top50Relation.where(prim_obj_id: machine_id, type_id: @rel_contain_id)
+          
+          node_rels.each do |node_rel|
+            node_id = node_rel.sec_obj_id
+            node_qty = node_rel.sec_obj_qty
+            total_nodes += node_qty
+            
+            # Get RAM directly from database for this specific node
+            ram_val = Top50AttributeValDbval.find_by(obj_id: node_id, attr_id: @ram_size_attrid)
+            if ram_val && ram_val.value.present?
+              ram_per_node = ram_val.value.to_f
+              if ram_per_node > 0
+                total_ram += node_qty * ram_per_node
+              end
+            end
+            
+            # Get CPUs and GPUs directly from database for this specific node
+            cpu_rels = Top50Relation.where(prim_obj_id: node_id, type_id: @rel_contain_id)
+            cpu_rels.each do |cpu_rel|
+              cpu_id = cpu_rel.sec_obj_id
+              cpu_obj = Top50Object.find_by(id: cpu_id)
+              
+              if cpu_obj && cpu_obj.type_id == @cpu_typeid
+                cpu_qty = cpu_rel.sec_obj_qty * node_qty
+                total_cpus += cpu_qty
+                
+                # Get cores directly from database for this specific CPU
+                cores_val = Top50AttributeValDbval.find_by(obj_id: cpu_id, attr_id: @core_qty_attrid)
+                if cores_val && cores_val.value.present?
+                  cores_per_cpu = cores_val.value.to_i
+                  total_cores += cpu_qty * cores_per_cpu if cores_per_cpu > 0
+                end
+              elsif cpu_obj && cpu_obj.type_id == @gpu_typeid
+                has_gpu = true
+              end
+            end
+          end
+
+          # Calculate averages - return nil only if denominator is 0 or no valid data exists
+          ram_per_core = (total_cores > 0 && total_ram > 0) ? (total_ram / total_cores) : nil
+          ram_per_cpu = (total_cpus > 0 && total_ram > 0) ? (total_ram / total_cpus) : nil
+          ram_per_node_val = (total_nodes > 0 && total_ram > 0) ? (total_ram / total_nodes) : nil
+
+          @ram_per_core_data << { edition: edition, rank: rank, lag: ram_per_core, has_gpu: has_gpu }
+          @ram_per_cpu_data << { edition: edition, rank: rank, lag: ram_per_cpu, has_gpu: has_gpu }
+          @ram_per_node_data << { edition: edition, rank: rank, lag: ram_per_node_val, has_gpu: has_gpu }
+        end
+      end
 
     elsif  @stat_section == 'list_upg'
       precedes_type_id = Top50RelationType.find_by(name_eng: "Precedes")&.id

@@ -2238,6 +2238,53 @@ br
       | const cpuDataLinear = #{raw @cpu_data.to_json};
       | const gpuDataLinear = #{raw @gpu_data.to_json};
       | const combinedDataLinear = #{raw @combined_data.to_json};
+      | const editionDatesLag = #{raw (@edition_dates_lag || []).to_json};
+
+- elsif @stat_section == "ram_stats"
+  head
+    title RAM: среднее на ядро/CPU/узел
+    style
+      | .cell { stroke-width: 1; }
+      | .heatmap-wrapper { position: relative; display: inline-block; }
+      | .heatmap-footer { position: absolute; bottom: 15px; right: 20px; }
+  body
+    h1 Среднее количество памяти
+    div style="margin-bottom: 1em;"
+      label for="scale-selector-ram" Шкала:
+      select#scale-selector-ram
+        option value="quantile" selected="selected" По квантилям
+        option value="linear" Равные интервалы
+        option value="log" Лог. интервалы
+        option value="fixed" Равные интервалы (0–max)
+        option value="gradient" Градиент (лог.)
+        option value="gradient_sqrt" Градиент (sqrt)
+
+    div.heatmap-section
+      h2 RAM на узел (ГБ)
+      div.heatmap-wrapper
+        #ram_per_node_heatmap
+        div.heatmap-footer
+          a.button style="background: #6699CC;" id="download_ram_per_node" download="RAM_per_node.csv" Скачать CSV
+    
+    div.heatmap-section
+      h2 RAM на CPU (ГБ)
+      div.heatmap-wrapper
+        #ram_per_cpu_heatmap
+        div.heatmap-footer
+          a.button style="background: #6699CC;" id="download_ram_per_cpu" download="RAM_per_cpu.csv" Скачать CSV
+          
+    div.heatmap-section
+      h2 RAM на ядро (ГБ)
+      div.heatmap-wrapper
+        #ram_per_core_heatmap
+        div.heatmap-footer
+          a.button style="background: #6699CC;" id="download_ram_per_core" download="RAM_per_core.csv" Скачать CSV
+
+    script
+      | const ramPerCoreData = #{raw @ram_per_core_data.to_json};
+      | const ramPerCpuData = #{raw @ram_per_cpu_data.to_json};
+      | const ramPerNodeData = #{raw @ram_per_node_data.to_json};
+      | const editionDatesRam = #{raw (@edition_dates_ram || []).to_json};
 
 - elsif @stat_section == "debug"
   / Тепловые карты общего отставания компонентов (common_lag) — закомментировано

@@ -1725,7 +1725,7 @@ drawLegend = (svg, colorScale, minLag, maxLag, width, height) ->
   legendWidth = 300
   legendHeight = 20
   legendX = width / 2 - legendWidth / 2
-  legendY = height + 50
+  legendY = height + 75
 
   # Добавляем градиент в SVG
   defs = svg.append("defs")
@@ -1761,7 +1761,7 @@ drawLegend = (svg, colorScale, minLag, maxLag, width, height) ->
     .attr("height", legendHeight)
     .style("fill", "url(#legend-gradient)")
 
-  # Добавляем текст для интервалов
+  # Добавляем текст для интервалов (дни)
   legend.append("g")
     .selectAll("text")
     .data([minLag, maxLag])
@@ -1771,7 +1771,7 @@ drawLegend = (svg, colorScale, minLag, maxLag, width, height) ->
     .attr("y", legendHeight + 15)
     .attr("text-anchor", (d, i) -> if i == 0 then "start" else "end")
     .style("font-size", "12px")
-    .text((d) -> d3.format(".2f")(d))
+    .text((d) -> d3.format(".2f")(d) + " дн.")
 
 drawHeatmap = (data, containerId, title) ->
   # Очищаем контейнер
@@ -1789,6 +1789,9 @@ drawHeatmap = (data, containerId, title) ->
   # Определяем минимальное и максимальное значение lag
   minLag = d3.min(data, (d) -> d.lag)
   maxLag = d3.max(data, (d) -> d.lag)
+  if minLag == null or maxLag == null
+    minLag = 0
+    maxLag = 1
 
   # Создаём цветовую шкалу
   colorScale = d3.scaleSequential((d3.interpolateRgbBasis(["#00FF00", "#FFFF00", "#FFA500", "#FF0000", "#0000FF", "#800080"])))
@@ -1801,19 +1804,34 @@ drawHeatmap = (data, containerId, title) ->
   # Контейнер SVG
   svg = d3.select("##{containerId}").append("svg")
     .attr("width", width + margin.left + margin.right)
-    .attr("height", height + margin.top + margin.bottom + 50)
+    .attr("height", height + margin.top + margin.bottom + 70)
     .append("g")
     .attr("transform", "translate(#{margin.left}, #{margin.top})")
 
   # Оси
-  svg.append("g")
+  xAxis = svg.append("g")
     .attr("transform", "translate(0, #{height})")
-    .call(d3.axisBottom(x))
-    .selectAll("text")
+  xAxis.call(d3.axisBottom(x).tickFormat((d) ->
+    if typeof editionDatesLag != "undefined" && editionDatesLag && editionDatesLag[d - 1] then editionDatesLag[d - 1] else d
+  ))
+  xAxis.selectAll("text")
     .attr("transform", "rotate(-45)")
     .style("text-anchor", "end")
+  svg.append("text")
+    .attr("x", width / 2)
+    .attr("y", height + 55)
+    .attr("text-anchor", "middle")
+    .style("font-size", "16px")
+    .text("Редакция")
 
   svg.append("g").call(d3.axisLeft(y))
+  svg.append("text")
+    .attr("transform", "rotate(-90)")
+    .attr("y", -margin.left + 20)
+    .attr("x", -height / 2)
+    .attr("text-anchor", "middle")
+    .style("font-size", "16px")
+    .text("Ранг")
 
   # Клетки
   svg.selectAll(".cell")
@@ -1828,7 +1846,12 @@ drawHeatmap = (data, containerId, title) ->
     .attr("stroke", "#000")
     .attr("stroke-width", 0.5)
     .append("title")
-    .text((d) -> "#{title}\nРедакция: #{d.edition}, Место: #{d.rank}, Отставание: #{d.lag}")
+    .text((d) ->
+      info = "#{title}\nРедакция: #{d.edition}, Место: #{d.rank}, Отставание: #{d.lag} дн."
+      if d.freshest_count != null && d.freshest_count != undefined
+        info += "\nКоличество: #{d.freshest_count}"
+      info
+    )
 
 
   # Рисуем легенду
@@ -1869,7 +1892,7 @@ buildLagCsv = (data) ->
 @updateHeatmaps = (scale, dataSets, containerIds, titles, colorScales, downloadIds, downloadFilenames) ->
   for i in [0...dataSets.length]
     data = transformLagData(dataSets[i], scale)
-    drawHeatmap(data, containerIds[i], titles[i], colorScales[i])
+    drawHeatmap(data, containerIds[i], titles[i])
     if downloadIds and downloadIds[i]
       csv = buildLagCsv(data)
       csvEncoded = encodeURIComponent(csv)
@@ -1878,33 +1901,321 @@ buildLagCsv = (data) ->
         base = downloadFilenames[i].replace(/\.csv$/, "")
         d3.select("#" + downloadIds[i]).attr("download", base + "_" + scale + ".csv")
 
-# Инициализация
+# --- RAM heatmaps: stepped green scale (all three use scale selector) ---
+# Green steps: light -> dark green; last step stays clearly green, not black
+RAM_STEP_COLORS = ["#f0fff0", "#c8e6c8", "#81c784", "#4caf50", "#388e3c", "#2e7d32", "#1b5e20"]
+
+# Format threshold for legend
+ramFmt = (x) ->
+  if x >= 100 then Math.round(x)
+  else if x >= 1 then d3.format(".1f")(x)
+  else d3.format(".2f")(x)
+
+# Build scale and legend for all RAM heatmaps. All methods are data-driven (no hardcoded values).
+# method: "fixed" = 7 equal steps from 0 to max; "quantile" = equal count per band; "linear" = 7 steps min–max; "log" = log-spaced; "gradient" = continuous gradient min–max
+# Returns { colorScale (function), labels (array) or gradient (minVal, maxVal) }
+ramFlexibleScale = (data, method) ->
+  data = data or []
+  data = [] unless Array.isArray(data)
+  vals = data.map((d) -> d.lag).filter((v) -> v != null && v != undefined)
+  if vals.length == 0
+    if method == "gradient" or method == "gradient_sqrt"
+      scale = d3.scaleLinear().domain([0, 1]).range(RAM_STEP_COLORS).clamp(true)
+      return { colorScale: scale, gradient: true, minVal: 0, maxVal: 1 }
+    return {
+      colorScale: d3.scaleThreshold().domain([1]).range(RAM_STEP_COLORS)
+      labels: ["0", "1", "2", "3", "4", "5", "6+"]
+    }
+  minVal = d3.min(vals)
+  maxVal = d3.max(vals)
+  if minVal >= maxVal
+    maxVal = minVal + 1
+  if method == "gradient"
+    # Continuous gradient: more color change at low values (log)
+    toTransformed = (v) -> Math.log(1 + Math.max(0, v))
+    tMin = toTransformed(minVal)
+    tMax = toTransformed(maxVal)
+    tMax = tMin + 1 if tMax <= tMin
+    domainPts = [tMin]
+    for i in [1..5]
+      domainPts.push(tMin + (tMax - tMin) * i / 6)
+    domainPts.push(tMax)
+    linearScale = d3.scaleLinear().domain(domainPts).range(RAM_STEP_COLORS).clamp(true)
+    scale = (v) -> linearScale(toTransformed(v))
+    return { colorScale: scale, gradient: true, minVal: minVal, maxVal: maxVal }
+  if method == "gradient_sqrt"
+    # Continuous gradient: more color change at low values (sqrt)
+    toTransformed = (v) -> Math.sqrt(Math.max(0, v))
+    tMin = toTransformed(minVal)
+    tMax = toTransformed(maxVal)
+    tMax = tMin + 1 if tMax <= tMin
+    domainPts = [tMin]
+    for i in [1..5]
+      domainPts.push(tMin + (tMax - tMin) * i / 6)
+    domainPts.push(tMax)
+    linearScale = d3.scaleLinear().domain(domainPts).range(RAM_STEP_COLORS).clamp(true)
+    scale = (v) -> linearScale(toTransformed(v))
+    return { colorScale: scale, gradient: true, minVal: minVal, maxVal: maxVal }
+  if method == "fixed"
+    # 7 equal steps from 0 to max (whole interval 0–max)
+    step = maxVal / 7
+    thresholds = []
+    for i in [1..6]
+      thresholds.push(step * i)
+    labels = [ramFmt(0)]
+    for t in thresholds
+      labels.push(ramFmt(t))
+    scale = d3.scaleThreshold().domain(thresholds).range(RAM_STEP_COLORS)
+    return { colorScale: scale, labels: labels }
+  if method == "quantile"
+    # Equal count per band (each interval has ~same number of points)
+    scale = d3.scaleQuantile().domain(vals).range(RAM_STEP_COLORS)
+    thresholds = scale.quantiles()
+    labels = [ramFmt(minVal)]
+    for i in [0...5]
+      labels.push(ramFmt(thresholds[i]))
+    labels.push(ramFmt(maxVal) + "+")
+    return { colorScale: scale, labels: labels }
+  if method == "log"
+    # Log-spaced over whole interval [min, max]
+    minSafe = Math.max(minVal, 0.01)
+    maxSafe = Math.max(maxVal, minSafe + 0.01)
+    logMin = Math.log(minSafe)
+    logMax = Math.log(maxSafe)
+    thresholds = []
+    for i in [1..6]
+      thresholds.push(Math.exp(logMin + (logMax - logMin) * i / 7))
+    labels = [ramFmt(minVal)]
+    for t in thresholds
+      labels.push(ramFmt(t))
+    scale = d3.scaleThreshold().domain(thresholds).range(RAM_STEP_COLORS)
+    return { colorScale: scale, labels: labels }
+  # linear: 7 equal steps over whole interval [min, max]
+  step = (maxVal - minVal) / 7
+  thresholds = []
+  for i in [1..6]
+    thresholds.push(minVal + step * i)
+  labels = [ramFmt(minVal)]
+  for t in thresholds
+    labels.push(ramFmt(t))
+  scale = d3.scaleThreshold().domain(thresholds).range(RAM_STEP_COLORS)
+  return { colorScale: scale, labels: labels }
+
+# Legend: discrete steps (rects) or gradient bar. spec = { labels } or { gradient: true, minVal, maxVal, gradientId }
+drawRamLegend = (svg, width, height, spec) ->
+  spec = spec or {}
+  legendWidth = 320
+  legendHeight = 22
+  legendX = width / 2 - legendWidth / 2
+  legendY = height + 80
+  if spec.gradient
+    defs = svg.append("defs")
+    grad = defs.append("linearGradient")
+      .attr("id", spec.gradientId)
+      .attr("x1", "0%")
+      .attr("x2", "100%")
+      .attr("y1", "0%")
+      .attr("y2", "0%")
+    for i in [0...RAM_STEP_COLORS.length]
+      grad.append("stop")
+        .attr("offset", (100 * i / (RAM_STEP_COLORS.length - 1)) + "%")
+        .attr("stop-color", RAM_STEP_COLORS[i])
+    legend = svg.append("g")
+      .attr("class", "legend")
+      .attr("transform", "translate(#{legendX}, #{legendY})")
+    legend.append("rect")
+      .attr("width", legendWidth)
+      .attr("height", legendHeight)
+      .style("fill", "url(##{spec.gradientId})")
+      .attr("stroke", "#333")
+      .attr("stroke-width", 0.5)
+    legend.append("text")
+      .attr("x", 0)
+      .attr("y", legendHeight + 14)
+      .attr("text-anchor", "start")
+      .style("font-size", "10px")
+      .text(ramFmt(spec.minVal) + " ГБ")
+    legend.append("text")
+      .attr("x", legendWidth)
+      .attr("y", legendHeight + 14)
+      .attr("text-anchor", "end")
+      .style("font-size", "10px")
+      .text(ramFmt(spec.maxVal) + " ГБ")
+    return
+  labels = spec.labels or spec
+  n = RAM_STEP_COLORS.length
+  stepWidth = legendWidth / n
+  legend = svg.append("g")
+    .attr("class", "legend")
+    .attr("transform", "translate(#{legendX}, #{legendY})")
+  legend.selectAll("rect")
+    .data(RAM_STEP_COLORS)
+    .enter()
+    .append("rect")
+    .attr("x", (d, i) -> i * stepWidth)
+    .attr("y", 0)
+    .attr("width", stepWidth)
+    .attr("height", legendHeight)
+    .attr("fill", (d) -> d)
+    .attr("stroke", "#333")
+    .attr("stroke-width", 0.5)
+  legend.append("g")
+    .selectAll("text")
+    .data(labels)
+    .enter()
+    .append("text")
+    .attr("x", (d, i) -> i * stepWidth + stepWidth / 2)
+    .attr("y", legendHeight + 14)
+    .attr("text-anchor", "middle")
+    .style("font-size", "10px")
+    .text((d) -> d + " ГБ")
+
+drawRamHeatmap = (data, containerId, title, scaleMethod) ->
+  data = data or []
+  data = [] unless Array.isArray(data)
+  d3.select("##{containerId}").selectAll("*").remove()
+  margin = { top: 20, right: 20, bottom: 80, left: 60 }
+  width = 1000 - margin.left - margin.right
+  height = 600 - margin.top - margin.bottom
+  editions = Array.from(new Set(data.map((d) -> d.edition))).sort((a, b) -> b - a)
+  ranks = Array.from({ length: 50 }, (_, i) -> 50 - i)
+  method = (scaleMethod and scaleMethod.toString()) or "quantile"
+  flexible = ramFlexibleScale(data, method)
+  colorScale = flexible.colorScale
+  legendSpec = if flexible.gradient
+    { gradient: true, minVal: flexible.minVal, maxVal: flexible.maxVal, gradientId: "ram-grad-" + containerId }
+  else
+    { labels: flexible.labels }
+  x = d3.scaleBand().range([width, 0]).domain(editions).padding(0.05)
+  y = d3.scaleBand().range([height, 0]).domain(ranks).padding(0.05)
+  svg = d3.select("##{containerId}").append("svg")
+    .attr("width", width + margin.left + margin.right)
+    .attr("height", height + margin.top + margin.bottom + 75)
+    .append("g")
+    .attr("transform", "translate(#{margin.left}, #{margin.top})")
+  xAxisRam = svg.append("g")
+    .attr("transform", "translate(0, #{height})")
+  xAxisRam.call(d3.axisBottom(x).tickFormat((d) ->
+    if typeof editionDatesRam != "undefined" && editionDatesRam && editionDatesRam[d - 1] then editionDatesRam[d - 1] else d
+  ))
+  xAxisRam.selectAll("text")
+    .attr("transform", "rotate(-45)")
+    .style("text-anchor", "end")
+  svg.append("text")
+    .attr("x", width / 2)
+    .attr("y", height + 55)
+    .attr("text-anchor", "middle")
+    .style("font-size", "16px")
+    .text("Редакция")
+  svg.append("g").call(d3.axisLeft(y))
+  svg.append("text")
+    .attr("transform", "rotate(-90)")
+    .attr("y", -margin.left + 20)
+    .attr("x", -height / 2)
+    .attr("text-anchor", "middle")
+    .style("font-size", "16px")
+    .text("Ранг")
+  cells = svg.selectAll(".cell")
+    .data(data.filter((d) -> d.lag != null))
+    .enter().append("g")
+    .attr("class", "cell")
+  
+  # Background rectangle (for non-GPU systems or as base)
+  cells.append("rect")
+    .attr("x", (d) -> x(d.edition))
+    .attr("y", (d) -> y(d.rank))
+    .attr("width", x.bandwidth())
+    .attr("height", y.bandwidth())
+    .attr("fill", (d) -> if d.has_gpu then "#f0f0f0" else colorScale(d.lag))
+    .attr("stroke", "#000")
+    .attr("stroke-width", 0.5)
+  
+  # Ellipse for GPU systems
+  cells.filter((d) -> d.has_gpu)
+    .append("ellipse")
+    .attr("cx", (d) -> x(d.edition) + x.bandwidth() / 2)
+    .attr("cy", (d) -> y(d.rank) + y.bandwidth() / 2)
+    .attr("rx", (d) -> x.bandwidth() * 0.4)
+    .attr("ry", (d) -> y.bandwidth() * 0.4)
+    .attr("fill", (d) -> colorScale(d.lag))
+    .attr("stroke", "#000")
+    .attr("stroke-width", 0.5)
+  
+  cells.append("title")
+    .text((d) ->
+      info = "#{title}\nРедакция: #{d.edition}, Место: #{d.rank}, ГБ: #{d3.format(".2f")(d.lag)}"
+      if d.has_gpu
+        info += "\nГибридная система (с GPU)"
+      info
+    )
+  drawRamLegend(svg, width, height, legendSpec)
+
+buildRamCsv = (data) ->
+  editions = Array.from(new Set(data.map((d) -> d.edition))).sort((a, b) -> a - b)
+  ranks = [1..50]
+  lookup = {}
+  data.forEach((d) -> lookup["#{d.edition}-#{d.rank}"] = d.lag)
+  header = "Место | Редакция," + editions.join(",")
+  rows = ranks.map((rank) ->
+    cells = editions.map((ed) ->
+      v = lookup["#{ed}-#{rank}"]
+      if v == null or v == undefined then "" else (if typeof v == "number" then v.toFixed(2) else v)
+    )
+    rank + "," + cells.join(",")
+  )
+  [header].concat(rows).join("\n")
+
+@updateRamHeatmaps = (dataSets, containerIds, titles, downloadIds, downloadFilenames, scaleMethod) ->
+  dataSets = dataSets or []
+  for i in [0...dataSets.length]
+    data = dataSets[i]
+    data = [] if !data or !Array.isArray(data)
+    drawRamHeatmap(data, containerIds[i], titles[i], scaleMethod)
+    if downloadIds and downloadIds[i]
+      csv = buildRamCsv(data)
+      d3.select("#" + downloadIds[i]).attr("href", "data:text/csv;charset=utf-8," + encodeURIComponent(csv))
+      if downloadFilenames and downloadFilenames[i]
+        d3.select("#" + downloadIds[i]).attr("download", downloadFilenames[i])
+
+# Инициализация freshest_components_lag
 document.addEventListener("DOMContentLoaded", ->
   scaleSelector = document.getElementById("scale-selector")
+  if scaleSelector and typeof cpuDataLinear != "undefined"
+    dataSets = [cpuDataLinear, gpuDataLinear, combinedDataLinear]
+    containerIds = ["cpu_heatmap", "gpu_heatmap", "combined_heatmap"]
+    downloadIds = ["download_cpu_lag", "download_gpu_lag", "download_combined_lag"]
+    downloadFilenames = ["CPU_lag.csv", "GPU_lag.csv", "Combined_lag.csv"]
+    titles = ["CPU Отставание", "GPU Отставание", "Общее Отставание min(CPU, GPU)"]
+    colorScales = [
+      d3.scaleLinear().domain([0, 1]).range(["#b3ffb3", "#ff4d4d"]),
+      d3.scaleLinear().domain([0, 1]).range(["#b3ffb3", "#ff4d4d"]),
+      d3.scaleLinear().domain([0, 1]).range(["#b3ffb3", "#ff4d4d"])
+    ]
+    updateAll = (scale) ->
+      updateHeatmaps(scale, dataSets, containerIds, titles, colorScales, downloadIds, downloadFilenames)
+    updateAll("linear")
+    scaleSelector.addEventListener("change", (event) ->
+      updateAll(event.target.value)
+    )
 
-  # Linear data only; other scales computed on demand
-  dataSets = [cpuDataLinear, gpuDataLinear, combinedDataLinear]
-  containerIds = ["cpu_heatmap", "gpu_heatmap", "combined_heatmap"]
-  downloadIds = ["download_cpu_lag", "download_gpu_lag", "download_combined_lag"]
-  downloadFilenames = ["CPU_lag.csv", "GPU_lag.csv", "Combined_lag.csv"]
-  titles = ["CPU Отставание", "GPU Отставание", "Общее Отставание (CPU + GPU)"]
-  colorScales = [
-    d3.scaleLinear().domain([0, 1]).range(["#b3ffb3", "#ff4d4d"]),
-    d3.scaleLinear().domain([0, 1]).range(["#b3ffb3", "#ff4d4d"]),
-    d3.scaleLinear().domain([0, 1]).range(["#b3ffb3", "#ff4d4d"])
-  ]
-
-  updateAll = (scale) ->
-    updateHeatmaps(scale, dataSets, containerIds, titles, colorScales, downloadIds, downloadFilenames)
-
-  # Рисуем по умолчанию и обновляем кнопки
-  updateAll("linear")
-
-  # Обработчик переключения шкалы
-  scaleSelector.addEventListener("change", (event) ->
-    scale = event.target.value
-    updateAll(scale)
-  )
+  # Инициализация ram_stats (тепловые карты RAM; шкала для core/CPU: квантили / равные интервалы / лог)
+  if typeof ramPerCoreData != "undefined"
+    ramDataSets = [
+      ramPerCoreData || [],
+      (if typeof ramPerCpuData != "undefined" then ramPerCpuData else []),
+      (if typeof ramPerNodeData != "undefined" then ramPerNodeData else [])
+    ]
+    ramContainerIds = ["ram_per_core_heatmap", "ram_per_cpu_heatmap", "ram_per_node_heatmap"]
+    ramDownloadIds = ["download_ram_per_core", "download_ram_per_cpu", "download_ram_per_node"]
+    ramDownloadFilenames = ["RAM_per_core.csv", "RAM_per_cpu.csv", "RAM_per_node.csv"]
+    ramTitles = ["RAM на ядро (ГБ)", "RAM на CPU (ГБ)", "RAM на узел (ГБ)"]
+    getRamScale = () -> (document.getElementById("scale-selector-ram") or {}).value or "quantile"
+    updateRamAll = () ->
+      updateRamHeatmaps(ramDataSets, ramContainerIds, ramTitles, ramDownloadIds, ramDownloadFilenames, getRamScale())
+    updateRamAll()
+    ramScaleEl = document.getElementById("scale-selector-ram")
+    if ramScaleEl
+      ramScaleEl.addEventListener("change", updateRamAll)
 )
 
 @draw_new_vs_upgraded_new = (data, src_id, title, x_label, y_label) ->
@@ -2063,6 +2374,12 @@ document.addEventListener("DOMContentLoaded", ->
     func()
 
 
+# "YYYY-MM" -> "MM.YY" for list_upg x-axis
+formatEditionDate = (s) ->
+  return s unless s
+  parts = String(s).split("-")
+  if parts.length >= 2 then parts[1] + "." + (if parts[0].length >= 2 then parts[0].slice(-2) else parts[0]) else s
+
 @drawMatrix = (data, containerId, title) ->
   # Очищаем контейнер
   d3.select("##{containerId}").selectAll("*").remove()
@@ -2072,18 +2389,8 @@ document.addEventListener("DOMContentLoaded", ->
   width = 1000 - margin.left - margin.right
   height = 600 - margin.top - margin.bottom
 
-  # Уникальные значения для редакций (с номерами)
+  # Уникальные значения для редакций (даты)
   editions = Array.from(new Set(data.map((d) -> d.edition))).sort()
-  editionNumbers = editions.map((edition, index) -> { edition, number: index + 1 })
-
-  # Добавляем номера редакций в данные
-  data = data.map((d) ->
-    editionObj = editionNumbers.find((e) -> e.edition == d.edition)
-    d.editionNumber = editionObj.number
-    d
-  )
-
-  # Уникальные ранги
   ranks = Array.from(new Set(data.map((d) -> d.rank))).sort((a, b) -> a - b)
 
   # Цветовая шкала для статусов
@@ -2101,8 +2408,8 @@ document.addEventListener("DOMContentLoaded", ->
     moved_up: "Поднялась"
     moved_down: "Опустилась"
 
-  # Шкалы
-  x = d3.scaleBand().range([0, width]).domain(editionNumbers.map((e) -> e.number)).padding(0.05)
+  # Шкалы (x = дата редакции)
+  x = d3.scaleBand().range([0, width]).domain(editions).padding(0.05)
   y = d3.scaleBand().range([0, height]).domain(ranks).padding(0.05)
 
   # Контейнер
@@ -2153,20 +2460,20 @@ document.addEventListener("DOMContentLoaded", ->
           if (leftActive) and (rightActive)
             # Оба статуса активны: клетка разделена
             cellGroup.select(".left-half")
-              .attr("x", x(d.editionNumber))
+              .attr("x", x(d.edition))
               .attr("width", cellWidth / 2)
               .attr("fill", statusColors[d.new_upd_status])
               .attr("visibility", "visible")
 
             cellGroup.select(".right-half")
-              .attr("x", x(d.editionNumber) + cellWidth / 2)
+              .attr("x", x(d.edition) + cellWidth / 2)
               .attr("width", cellWidth / 2)
               .attr("fill", statusColors[d.pos_status])
               .attr("visibility", "visible")
           else if leftActive
             # Только левый статус активен: закрасить всю клетку в левый цвет
             cellGroup.select(".left-half")
-              .attr("x", x(d.editionNumber))
+              .attr("x", x(d.edition))
               .attr("width", cellWidth)
               .attr("fill", statusColors[d.new_upd_status])
               .attr("visibility", "visible")
@@ -2176,7 +2483,7 @@ document.addEventListener("DOMContentLoaded", ->
           else if rightActive
             # Только правый статус активен: закрасить всю клетку в правый цвет
             cellGroup.select(".left-half")
-              .attr("x", x(d.editionNumber))
+              .attr("x", x(d.edition))
               .attr("width", cellWidth)
               .attr("fill", statusColors[d.pos_status])
               .attr("visibility", "visible")
@@ -2201,13 +2508,25 @@ document.addEventListener("DOMContentLoaded", ->
   # Добавляем оси
   svg.append("g")
     .attr("transform", "translate(0, #{height})")
-    .call(d3.axisBottom(x).tickFormat((d) -> d))
+    .call(d3.axisBottom(x).tickFormat(formatEditionDate))
     .selectAll("text")
     .attr("transform", "rotate(-45)")
     .style("text-anchor", "end")
-
+  svg.append("text")
+    .attr("x", width / 2)
+    .attr("y", height + 55)
+    .attr("text-anchor", "middle")
+    .style("font-size", "16px")
+    .text("Редакция")
   svg.append("g")
     .call(d3.axisLeft(y))
+  svg.append("text")
+    .attr("transform", "rotate(-90)")
+    .attr("y", -margin.left + 20)
+    .attr("x", -height / 2)
+    .attr("text-anchor", "middle")
+    .style("font-size", "16px")
+    .text("Ранг")
 
   # Рисуем клетки матрицы
   svg.selectAll(".cell")
@@ -2224,7 +2543,7 @@ document.addEventListener("DOMContentLoaded", ->
       # Левая половина
       cellGroup.append("rect")
         .attr("class", "left-half")
-        .attr("x", x(d.editionNumber))
+        .attr("x", x(d.edition))
         .attr("y", y(d.rank))
         .attr("height", cellHeight)
         .attr("stroke", "black")
@@ -2233,7 +2552,7 @@ document.addEventListener("DOMContentLoaded", ->
       # Правая половина
       cellGroup.append("rect")
         .attr("class", "right-half")
-        .attr("x", x(d.editionNumber) + cellWidth / 2)
+        .attr("x", x(d.edition) + cellWidth / 2)
         .attr("y", y(d.rank))
         .attr("height", cellHeight)
         .attr("stroke", "black")
@@ -2257,7 +2576,7 @@ document.addEventListener("DOMContentLoaded", ->
       else if leftActive
         # Только левый статус активен: закрасить всю клетку в левый цвет
         cellGroup.select(".left-half")
-          .attr("x", x(d.editionNumber))
+          .attr("x", x(d.edition))
           .attr("width", cellWidth)
           .attr("fill", statusColors[d.new_upd_status])
           .attr("visibility", "visible")
@@ -2267,7 +2586,7 @@ document.addEventListener("DOMContentLoaded", ->
       else if rightActive
         # Только правый статус активен: закрасить всю клетку в правый цвет
         cellGroup.select(".left-half")
-          .attr("x", x(d.editionNumber))
+          .attr("x", x(d.edition))
           .attr("width", cellWidth)
           .attr("fill", statusColors[d.pos_status])
           .attr("visibility", "visible")
@@ -2293,7 +2612,7 @@ document.addEventListener("DOMContentLoaded", ->
 
           tagsText = if tags.length > 0 then tags.join(", ") else "Без тегов"
 
-          "Редакция: #{d.editionNumber}\nМесто: #{d.rank}\n" +
+          "Редакция: #{d.edition}\nМесто: #{d.rank}\n" +
           "Теги: #{tagsText}"
         )
     )
