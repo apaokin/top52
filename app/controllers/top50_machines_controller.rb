@@ -2663,14 +2663,21 @@ class Top50MachinesController < Top50BaseController
       @gpu_per_node_data = []
       @freshest_total_data = []
       @freshest_per_node_data = []
+      @freshest_total_data_cpu_only = []
+      @freshest_per_node_data_cpu_only = []
       @cores_total_data = []
       @cores_per_node_data = []
+      @gpu_cores_total_data = []
+      @gpu_cores_per_node_data = []
+      @gpu_microcores_only_total_data = []
+      @gpu_microcores_only_per_node_data = []
       
       # Initialize attribute IDs
       calc_machine_attrs
       @cpu_typeid = Top50ObjectType.where(name_eng: "CPU").first&.id
       @gpu_typeid = Top50ObjectType.where(name_eng: "GPU").first&.id
       @core_qty_attrid = Top50Attribute.where(name_eng: "Number of cores").first&.id
+      @microcore_qty_attrid = Top50Attribute.where(name_eng: "Number of micro cores").first&.id
       @rel_contain_id = get_rel_contain_id
       
       top50_slists = get_top50_lists_sorted
@@ -2701,9 +2708,13 @@ class Top50MachinesController < Top50BaseController
           total_cpus = 0
           total_gpus = 0
           total_cores = 0
+          total_gpu_cores = 0
+          total_gpu_microcores_only = 0
           total_nodes = 0
           min_lag = Float::INFINITY
           freshest_count = 0
+          min_lag_cpu_only = Float::INFINITY
+          freshest_cpu_only_count = 0
 
           # Get nodes directly from database for this specific machine
           node_rels = Top50Relation.where(prim_obj_id: machine_id, type_id: @rel_contain_id)
@@ -2732,7 +2743,7 @@ class Top50MachinesController < Top50BaseController
                   total_cores += component_qty * cores_per_cpu if cores_per_cpu > 0
                 end
                 
-                # Check for freshest components
+                # Check for freshest components (CPU+GPU combined)
                 component_info = ComponentInfo.find_by(component_id: component_id)
                 if component_info&.date_announced && component_info&.date_mentioned && list_date.present?
                   used_date = component_info.date_mentioned < component_info.date_announced ? 
@@ -2745,11 +2756,34 @@ class Top50MachinesController < Top50BaseController
                   elsif diff == min_lag
                     freshest_count += component_qty
                   end
+                  # CPU-only freshest
+                  if diff < min_lag_cpu_only
+                    min_lag_cpu_only = diff
+                    freshest_cpu_only_count = component_qty
+                  elsif diff == min_lag_cpu_only
+                    freshest_cpu_only_count += component_qty
+                  end
                 end
               elsif component_obj.type_id == @gpu_typeid
                 total_gpus += component_qty
-                
-                # Check for freshest components
+                # GPU cores (Number of cores = мультипроцессорные блоки / CUDA blocks)
+                if @core_qty_attrid.present?
+                  cores_val = Top50AttributeValDbval.find_by(obj_id: component_id, attr_id: @core_qty_attrid)
+                  if cores_val&.value.present?
+                    c = cores_val.value.to_i
+                    total_gpu_cores += component_qty * c if c > 0
+                  end
+                end
+                # GPU microcores (Number of micro cores = CUDA-ядра)
+                if @microcore_qty_attrid.present?
+                  microcores_val = Top50AttributeValDbval.find_by(obj_id: component_id, attr_id: @microcore_qty_attrid)
+                  if microcores_val&.value.present?
+                    mc = microcores_val.value.to_i
+                    total_gpu_microcores_only += component_qty * mc if mc > 0
+                  end
+                end
+
+                # Check for freshest components (CPU+GPU combined only)
                 component_info = ComponentInfo.find_by(component_id: component_id)
                 if component_info&.date_announced && component_info&.date_mentioned && list_date.present?
                   used_date = component_info.date_mentioned < component_info.date_announced ? 
@@ -2771,9 +2805,13 @@ class Top50MachinesController < Top50BaseController
           cpu_per_node = (total_nodes > 0 && total_cpus > 0) ? (total_cpus.to_f / total_nodes) : nil
           gpu_per_node = (total_nodes > 0 && total_gpus > 0) ? (total_gpus.to_f / total_nodes) : nil
           cores_per_node = (total_nodes > 0 && total_cores > 0) ? (total_cores.to_f / total_nodes) : nil
+          gpu_cores_per_node = (total_nodes > 0 && total_gpu_cores > 0) ? (total_gpu_cores.to_f / total_nodes) : nil
+          gpu_microcores_only_per_node = (total_nodes > 0 && total_gpu_microcores_only > 0) ? (total_gpu_microcores_only.to_f / total_nodes) : nil
           freshest_per_node = (total_nodes > 0 && min_lag != Float::INFINITY && freshest_count > 0) ? (freshest_count.to_f / total_nodes) : nil
+          freshest_per_node_cpu_only = (total_nodes > 0 && min_lag_cpu_only != Float::INFINITY && freshest_cpu_only_count > 0) ? (freshest_cpu_only_count.to_f / total_nodes) : nil
           
           freshest_total = (min_lag != Float::INFINITY && freshest_count > 0) ? freshest_count : nil
+          freshest_total_cpu_only = (min_lag_cpu_only != Float::INFINITY && freshest_cpu_only_count > 0) ? freshest_cpu_only_count : nil
 
           @cpu_total_data << { edition: edition, rank: rank, lag: (total_cpus > 0 ? total_cpus : nil) }
           @cpu_per_node_data << { edition: edition, rank: rank, lag: cpu_per_node }
@@ -2781,8 +2819,14 @@ class Top50MachinesController < Top50BaseController
           @gpu_per_node_data << { edition: edition, rank: rank, lag: gpu_per_node }
           @cores_total_data << { edition: edition, rank: rank, lag: (total_cores > 0 ? total_cores : nil) }
           @cores_per_node_data << { edition: edition, rank: rank, lag: cores_per_node }
+          @gpu_cores_total_data << { edition: edition, rank: rank, lag: (total_gpu_cores > 0 ? total_gpu_cores : nil) }
+          @gpu_cores_per_node_data << { edition: edition, rank: rank, lag: gpu_cores_per_node }
+          @gpu_microcores_only_total_data << { edition: edition, rank: rank, lag: (total_gpu_microcores_only > 0 ? total_gpu_microcores_only : nil) }
+          @gpu_microcores_only_per_node_data << { edition: edition, rank: rank, lag: gpu_microcores_only_per_node }
           @freshest_total_data << { edition: edition, rank: rank, lag: freshest_total }
           @freshest_per_node_data << { edition: edition, rank: rank, lag: freshest_per_node }
+          @freshest_total_data_cpu_only << { edition: edition, rank: rank, lag: freshest_total_cpu_only }
+          @freshest_per_node_data_cpu_only << { edition: edition, rank: rank, lag: freshest_per_node_cpu_only }
         end
       end
 

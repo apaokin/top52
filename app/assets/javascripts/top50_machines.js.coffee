@@ -2497,40 +2497,61 @@ document.addEventListener("DOMContentLoaded", ->
     ramDownloadFilenames = ["RAM_per_core.csv", "RAM_per_cpu.csv", "RAM_per_node.csv"]
     ramTitles = ["RAM на ядро (ГБ)", "RAM на CPU (ГБ)", "RAM на узел (ГБ)"]
     getRamScale = () -> (document.getElementById("scale-selector-ram") or {}).value or "quantile"
+    getRamShowHybrid = () ->
+      el = document.getElementById("ram-show-hybrid")
+      el and el.checked
     updateRamAll = () ->
-      updateRamHeatmaps(ramDataSets, ramContainerIds, ramTitles, ramDownloadIds, ramDownloadFilenames, getRamScale())
+      showHybrid = getRamShowHybrid()
+      filtered = if showHybrid
+        ramDataSets
+      else
+        ramDataSets.map((data) -> (data or []).filter((d) -> !d.has_gpu))
+      updateRamHeatmaps(filtered, ramContainerIds, ramTitles, ramDownloadIds, ramDownloadFilenames, getRamScale())
     updateRamAll()
     ramScaleEl = document.getElementById("scale-selector-ram")
     if ramScaleEl
       ramScaleEl.addEventListener("change", updateRamAll)
+    ramShowHybridEl = document.getElementById("ram-show-hybrid")
+    if ramShowHybridEl
+      ramShowHybridEl.addEventListener("change", updateRamAll)
 
   # Инициализация component_stats (тепловые карты количества компонентов)
   if typeof cpuTotalData != "undefined"
     getComponentMetric = () -> (document.getElementById("metric-selector-component") or {}).value or "total"
     getComponentScale = () -> (document.getElementById("scale-selector-component") or {}).value or "quantile"
+    getFreshestIncludeGpu = () ->
+      el = document.getElementById("freshest-include-gpu")
+      el and el.checked
     updateComponentAll = () ->
       metric = getComponentMetric()
       scaleMethod = getComponentScale()
+      includeGpu = getFreshestIncludeGpu()
+      freshestTotal = if includeGpu then (freshestTotalData || []) else (freshestTotalDataCpuOnly || [])
+      freshestPerNode = if includeGpu then (freshestPerNodeData || []) else (freshestPerNodeDataCpuOnly || [])
       if metric == "total"
         componentDataSets = [
           cpuTotalData || [],
           gpuTotalData || [],
-          freshestTotalData || [],
-          coresTotalData || []
+          freshestTotal,
+          coresTotalData || [],
+          gpuCoresTotalData || [],
+          gpuMicrocoresOnlyTotalData || []
         ]
-        componentTitles = ["CPU: всего", "GPU: всего", "Самые свежие компоненты: всего", "Ядра: всего"]
-        componentDownloadFilenames = ["CPU_total.csv", "GPU_total.csv", "Freshest_total.csv", "Cores_total.csv"]
+        componentTitles = ["CPU: всего", "GPU: всего", "Самые свежие компоненты: всего", "Ядра: всего", "GPU ядра (мультипроцессорные блоки): всего", "GPU микроядра (CUDA): всего"]
+        componentDownloadFilenames = ["CPU_total.csv", "GPU_total.csv", "Freshest_total.csv", "Cores_total.csv", "GPU_cores_total.csv", "GPU_microcores_total.csv"]
       else
         componentDataSets = [
           cpuPerNodeData || [],
           gpuPerNodeData || [],
-          freshestPerNodeData || [],
-          coresPerNodeData || []
+          freshestPerNode,
+          coresPerNodeData || [],
+          gpuCoresPerNodeData || [],
+          gpuMicrocoresOnlyPerNodeData || []
         ]
-        componentTitles = ["CPU: на узел", "GPU: на узел", "Самые свежие компоненты: на узел", "Ядра: на узел"]
-        componentDownloadFilenames = ["CPU_per_node.csv", "GPU_per_node.csv", "Freshest_per_node.csv", "Cores_per_node.csv"]
-      componentContainerIds = ["cpu_component_heatmap", "gpu_component_heatmap", "freshest_component_heatmap", "cores_component_heatmap"]
-      componentDownloadIds = ["download_cpu_component", "download_gpu_component", "download_freshest_component", "download_cores_component"]
+        componentTitles = ["CPU: на узел", "GPU: на узел", "Самые свежие компоненты: на узел", "Ядра: на узел", "GPU ядра (мультипроцессорные блоки): на узел", "GPU микроядра (CUDA): на узел"]
+        componentDownloadFilenames = ["CPU_per_node.csv", "GPU_per_node.csv", "Freshest_per_node.csv", "Cores_per_node.csv", "GPU_cores_per_node.csv", "GPU_microcores_per_node.csv"]
+      componentContainerIds = ["cpu_component_heatmap", "gpu_component_heatmap", "freshest_component_heatmap", "cores_component_heatmap", "gpu_cores_component_heatmap", "gpu_microcores_only_component_heatmap"]
+      componentDownloadIds = ["download_cpu_component", "download_gpu_component", "download_freshest_component", "download_cores_component", "download_gpu_cores_component", "download_gpu_microcores_only_component"]
       updateComponentHeatmaps(componentDataSets, componentContainerIds, componentTitles, componentDownloadIds, componentDownloadFilenames, scaleMethod)
     updateComponentAll()
     componentMetricEl = document.getElementById("metric-selector-component")
@@ -2539,6 +2560,9 @@ document.addEventListener("DOMContentLoaded", ->
     componentScaleEl = document.getElementById("scale-selector-component")
     if componentScaleEl
       componentScaleEl.addEventListener("change", updateComponentAll)
+    freshestIncludeGpuEl = document.getElementById("freshest-include-gpu")
+    if freshestIncludeGpuEl
+      freshestIncludeGpuEl.addEventListener("change", updateComponentAll)
 )
 
 @draw_new_vs_upgraded_new = (data, src_id, title, x_label, y_label) ->

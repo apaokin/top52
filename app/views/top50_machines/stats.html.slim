@@ -2259,6 +2259,9 @@ br
         option value="gradient_linear" Градиент (линейный)
         option value="gradient" Градиент (лог.)
         option value="gradient_sqrt" Градиент (sqrt)
+    div style="margin-bottom: 1em;"
+      input#ram-show-hybrid type="checkbox" checked="checked"
+      label for="ram-show-hybrid" Показывать гибридные системы (с GPU)
 
     div.heatmap-section
       h2 RAM на узел (ГБ)
@@ -2328,17 +2331,34 @@ br
 
     div.heatmap-section
       h2 Самые свежие компоненты:
+      div style="margin-bottom: 0.5em;"
+        input#freshest-include-gpu type="checkbox" checked="checked"
+        label for="freshest-include-gpu" Учитывать GPU
       div.heatmap-wrapper
         #freshest_component_heatmap
         div.heatmap-footer
           a.button style="background: #6699CC;" id="download_freshest_component" download="Freshest_component.csv" Скачать CSV
 
     div.heatmap-section
-      h2 Ядра:
+      h2 CPU ядра:
       div.heatmap-wrapper
         #cores_component_heatmap
         div.heatmap-footer
           a.button style="background: #6699CC;" id="download_cores_component" download="Cores_component.csv" Скачать CSV
+
+    div.heatmap-section
+      h2 GPU ядра
+      div.heatmap-wrapper
+        #gpu_cores_component_heatmap
+        div.heatmap-footer
+          a.button style="background: #6699CC;" id="download_gpu_cores_component" download="GPU_cores_component.csv" Скачать CSV
+
+    div.heatmap-section
+      h2 GPU микроядра (CUDA-ядра)
+      div.heatmap-wrapper
+        #gpu_microcores_only_component_heatmap
+        div.heatmap-footer
+          a.button style="background: #6699CC;" id="download_gpu_microcores_only_component" download="GPU_microcores_component.csv" Скачать CSV
 
     script
       | const cpuTotalData = #{raw @cpu_total_data.to_json};
@@ -2347,8 +2367,14 @@ br
       | const gpuPerNodeData = #{raw @gpu_per_node_data.to_json};
       | const freshestTotalData = #{raw @freshest_total_data.to_json};
       | const freshestPerNodeData = #{raw @freshest_per_node_data.to_json};
+      | const freshestTotalDataCpuOnly = #{raw (@freshest_total_data_cpu_only || []).to_json};
+      | const freshestPerNodeDataCpuOnly = #{raw (@freshest_per_node_data_cpu_only || []).to_json};
       | const coresTotalData = #{raw @cores_total_data.to_json};
       | const coresPerNodeData = #{raw @cores_per_node_data.to_json};
+      | const gpuCoresTotalData = #{raw (@gpu_cores_total_data || []).to_json};
+      | const gpuCoresPerNodeData = #{raw (@gpu_cores_per_node_data || []).to_json};
+      | const gpuMicrocoresOnlyTotalData = #{raw (@gpu_microcores_only_total_data || []).to_json};
+      | const gpuMicrocoresOnlyPerNodeData = #{raw (@gpu_microcores_only_per_node_data || []).to_json};
       | const editionDatesComponent = #{raw (@edition_dates_component || []).to_json};
 
 - elsif @stat_section == "debug"
