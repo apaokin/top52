@@ -1834,10 +1834,12 @@ drawHeatmap = (data, containerId, title) ->
     .text("Ранг")
 
   # Клетки
-  svg.selectAll(".cell")
+  cells = svg.selectAll(".cell")
     .data(data.filter((d) -> d.lag != null))
-    .enter().append("rect")
+    .enter().append("g")
     .attr("class", "cell")
+  cells.append("rect")
+    .attr("class", "cell-fill")
     .attr("x", (d) -> x(d.edition))
     .attr("y", (d) -> y(d.rank))
     .attr("width", x.bandwidth())
@@ -1845,11 +1847,40 @@ drawHeatmap = (data, containerId, title) ->
     .attr("fill", (d) -> colorScale(d.lag))
     .attr("stroke", "#000")
     .attr("stroke-width", 0.5)
-    .append("title")
+  cells.append("rect")
+    .attr("class", "cell-hl-outer")
+    .attr("x", (d) -> x(d.edition))
+    .attr("y", (d) -> y(d.rank))
+    .attr("width", x.bandwidth())
+    .attr("height", y.bandwidth())
+    .attr("fill", "none")
+    .attr("stroke", "none")
+    .attr("stroke-width", 3)
+  cells.append("rect")
+    .attr("class", "cell-hl-inner")
+    .attr("x", (d) -> x(d.edition) + 2)
+    .attr("y", (d) -> y(d.rank) + 2)
+    .attr("width", x.bandwidth() - 4)
+    .attr("height", y.bandwidth() - 4)
+    .attr("fill", "none")
+    .attr("stroke", "none")
+    .attr("stroke-width", 2)
+  # Подсветка одной логической системы по всем редакциям (machine_key = root по Precedes, иначе machine_id)
+  key = (d) -> if d.machine_key? then d.machine_key else d.machine_id
+  cells.filter((d) -> key(d) != null)
+    .on("mouseenter", (d) ->
+      k = key(d)
+      d3.select("##{containerId}").selectAll(".cell").classed("cell-same-machine", (d2) -> key(d2) == k)
+    )
+    .on("mouseleave", ->
+      d3.select("##{containerId}").selectAll(".cell").classed("cell-same-machine", false)
+    )
+  cells.append("title")
     .text((d) ->
       info = "#{title}\nРедакция: #{d.edition}, Место: #{d.rank}, Отставание: #{d.lag} дн."
-      if d.freshest_count != null && d.freshest_count != undefined
-        info += "\nКоличество: #{d.freshest_count}"
+      if d.machine_id != null
+        name = if d.machine_name then d.machine_name else "н/д"
+        info += "\nСистема: #{name}"
       info
     )
 
@@ -1863,13 +1894,17 @@ transformLagData = (data, method) ->
     data
   else
     data.map((d) ->
-      { edition: d.edition, rank: d.rank, lag: if d.lag == null then null else (
+      out = { edition: d.edition, rank: d.rank, lag: if d.lag == null then null else (
         switch method
           when "log_shifted" then Math.log(d.lag + 1)
           when "bidirectional" then (if d.lag > 0 then Math.log(d.lag + 1) else -Math.log(Math.abs(d.lag) + 1))
           when "sqrt" then Math.sqrt(Math.abs(d.lag)) * (if d.lag < 0 then -1 else 1)
           else d.lag
       ) }
+      out.machine_id = d.machine_id if d.machine_id != null
+      out.machine_name = d.machine_name if d.machine_name != null
+      out.machine_key = d.machine_key if d.machine_key != null
+      out
     )
 
 # Build CSV from lag data (rows=rank, cols=edition)
@@ -2226,8 +2261,10 @@ drawComponentHeatmap = (data, containerId, title, scaleMethod) ->
     .text("Ранг")
   cells = svg.selectAll(".cell")
     .data(data.filter((d) -> d.lag != null))
-    .enter().append("rect")
+    .enter().append("g")
     .attr("class", "cell")
+  cells.append("rect")
+    .attr("class", "cell-fill")
     .attr("x", (d) -> x(d.edition))
     .attr("y", (d) -> y(d.rank))
     .attr("width", x.bandwidth())
@@ -2235,8 +2272,41 @@ drawComponentHeatmap = (data, containerId, title, scaleMethod) ->
     .attr("fill", (d) -> colorScale(d.lag))
     .attr("stroke", "#000")
     .attr("stroke-width", 0.5)
+  cells.append("rect")
+    .attr("class", "cell-hl-outer")
+    .attr("x", (d) -> x(d.edition))
+    .attr("y", (d) -> y(d.rank))
+    .attr("width", x.bandwidth())
+    .attr("height", y.bandwidth())
+    .attr("fill", "none")
+    .attr("stroke", "none")
+    .attr("stroke-width", 3)
+  cells.append("rect")
+    .attr("class", "cell-hl-inner")
+    .attr("x", (d) -> x(d.edition) + 2)
+    .attr("y", (d) -> y(d.rank) + 2)
+    .attr("width", x.bandwidth() - 4)
+    .attr("height", y.bandwidth() - 4)
+    .attr("fill", "none")
+    .attr("stroke", "none")
+    .attr("stroke-width", 2)
+  key = (d) -> if d.machine_key? then d.machine_key else d.machine_id
+  cells.filter((d) -> key(d) != null)
+    .on("mouseenter", (d) ->
+      k = key(d)
+      d3.select("##{containerId}").selectAll(".cell").classed("cell-same-machine", (d2) -> key(d2) == k)
+    )
+    .on("mouseleave", ->
+      d3.select("##{containerId}").selectAll(".cell").classed("cell-same-machine", false)
+    )
   cells.append("title")
-    .text((d) -> "#{title}\nРедакция: #{d.edition}, Место: #{d.rank}, Количество: #{Math.round(d.lag)}")
+    .text((d) ->
+      info = "#{title}\nРедакция: #{d.edition}, Место: #{d.rank}, Количество: #{Math.round(d.lag)}"
+      if d.machine_id != null
+        name = if d.machine_name then d.machine_name else "н/д"
+        info += "\nСистема: #{name}"
+      info
+    )
   drawComponentLegend(svg, width, height, legendSpec)
 
 buildComponentCsv = (data) ->
@@ -2409,6 +2479,7 @@ drawRamHeatmap = (data, containerId, title, scaleMethod) ->
   
   # Background rectangle (for non-GPU systems or as base)
   cells.append("rect")
+    .attr("class", "cell-fill")
     .attr("x", (d) -> x(d.edition))
     .attr("y", (d) -> y(d.rank))
     .attr("width", x.bandwidth())
@@ -2416,6 +2487,26 @@ drawRamHeatmap = (data, containerId, title, scaleMethod) ->
     .attr("fill", (d) -> if d.has_gpu then "#f0f0f0" else colorScale(d.lag))
     .attr("stroke", "#000")
     .attr("stroke-width", 0.5)
+  
+  # Highlight rects (black outer, yellow inner)
+  cells.append("rect")
+    .attr("class", "cell-hl-outer")
+    .attr("x", (d) -> x(d.edition))
+    .attr("y", (d) -> y(d.rank))
+    .attr("width", x.bandwidth())
+    .attr("height", y.bandwidth())
+    .attr("fill", "none")
+    .attr("stroke", "none")
+    .attr("stroke-width", 3)
+  cells.append("rect")
+    .attr("class", "cell-hl-inner")
+    .attr("x", (d) -> x(d.edition) + 2)
+    .attr("y", (d) -> y(d.rank) + 2)
+    .attr("width", x.bandwidth() - 4)
+    .attr("height", y.bandwidth() - 4)
+    .attr("fill", "none")
+    .attr("stroke", "none")
+    .attr("stroke-width", 2)
   
   # Ellipse for GPU systems
   cells.filter((d) -> d.has_gpu)
@@ -2428,11 +2519,23 @@ drawRamHeatmap = (data, containerId, title, scaleMethod) ->
     .attr("stroke", "#000")
     .attr("stroke-width", 0.5)
   
+  key = (d) -> if d.machine_key? then d.machine_key else d.machine_id
+  cells.filter((d) -> key(d) != null)
+    .on("mouseenter", (d) ->
+      k = key(d)
+      d3.select("##{containerId}").selectAll(".cell").classed("cell-same-machine", (d2) -> key(d2) == k)
+    )
+    .on("mouseleave", ->
+      d3.select("##{containerId}").selectAll(".cell").classed("cell-same-machine", false)
+    )
   cells.append("title")
     .text((d) ->
       info = "#{title}\nРедакция: #{d.edition}, Место: #{d.rank}, ГБ: #{d3.format(".2f")(d.lag)}"
       if d.has_gpu
         info += "\nГибридная система (с GPU)"
+      if d.machine_id != null
+        name = if d.machine_name then d.machine_name else "н/д"
+        info += "\nСистема: #{name}"
       info
     )
   drawRamLegend(svg, width, height, legendSpec)

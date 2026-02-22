@@ -2221,7 +2221,18 @@ class Top50MachinesController < Top50BaseController
       @all_ratings_data = []
       top50_slists = get_top50_lists_sorted
       top_50_dates = []
-    
+
+      # Same tree as /systems/:id: Precedes chain (sec=newer, prim=older). No is_valid filter to match tree_prec_sql.
+      precedes_type_id = Top50RelationType.find_by(name_eng: "Precedes")&.id
+      precedes_map = precedes_type_id ? Top50Relation.where(type_id: precedes_type_id).pluck(:sec_obj_id, :prim_obj_id).to_h : {}
+      # Root = oldest in chain; same grouping as tree_prec_sql(obj_id) on the systems page
+      find_root = ->(mid) { mid.nil? ? nil : (while precedes_map[mid]; mid = precedes_map[mid]; end; mid) }
+
+      # Display name: machine name or organization (as on list/archive)
+      all_list_ids_lag = top_50_dates.map { |y, m| get_list_id_by_date(y, m) }.compact
+      all_machine_ids_lag = all_list_ids_lag.any? ? Top50BenchmarkResult.where(benchmark_id: all_list_ids_lag).pluck(:machine_id).uniq : []
+      machine_display_names_lag = all_machine_ids_lag.any? ? Top50Machine.where(id: all_machine_ids_lag).includes(:top50_organization).each_with_object({}) { |m, h| h[m.id] = m.name.presence || m.top50_organization&.name.presence || "н/д" } : {}
+
       # Получаем список дат для каждой редакции
       top50_slists.each do |top50_list|
         list_num = @num_vals.find_by(obj_id: top50_list.id)
@@ -2231,10 +2242,10 @@ class Top50MachinesController < Top50BaseController
         top_50_dates.push([list_year, list_month])
       end
     
-      # Для каждой даты собираем данные (minimal structure)
+      # Для каждой даты собираем данные (minimal structure). Order by list position so rank matches /systems/ and archive.
       top_50_dates.each do |top50_date|
         list_id = get_list_id_by_date(top50_date[0], top50_date[1])
-        top50_machines = fetch_archive_list(list_id)
+        top50_machines = fetch_archive_list(list_id).order("ed_results.result asc")
         list_date = @date_vals.find_by(obj_id: list_id)&.value
         rating_data = {
           date: top50_date,
@@ -2338,9 +2349,12 @@ class Top50MachinesController < Top50BaseController
                                        end
                                      end
         
-          @cpu_data << { edition: edition, rank: rank_index + 1, lag: newest_cpu_diff, freshest_count: freshest_cpu_count }
-          @gpu_data << { edition: edition, rank: rank_index + 1, lag: newest_gpu_diff, freshest_count: freshest_gpu_count }
-          @combined_data << { edition: edition, rank: rank_index + 1, lag: combined_diff, freshest_count: freshest_combined_count }
+          machine_id = machine["id"]
+          machine_name = machine_display_names_lag[machine_id] || "н/д"
+          machine_key = find_root.call(machine_id)
+          @cpu_data << { edition: edition, rank: rank_index + 1, lag: newest_cpu_diff, freshest_count: freshest_cpu_count, machine_id: machine_id, machine_name: machine_name, machine_key: machine_key }
+          @gpu_data << { edition: edition, rank: rank_index + 1, lag: newest_gpu_diff, freshest_count: freshest_gpu_count, machine_id: machine_id, machine_name: machine_name, machine_key: machine_key }
+          @combined_data << { edition: edition, rank: rank_index + 1, lag: combined_diff, freshest_count: freshest_combined_count, machine_id: machine_id, machine_name: machine_name, machine_key: machine_key }
         end
       end
     
@@ -2576,7 +2590,7 @@ class Top50MachinesController < Top50BaseController
       @cpu_typeid = Top50ObjectType.where(name_eng: "CPU").first&.id
       @gpu_typeid = Top50ObjectType.where(name_eng: "GPU").first&.id
       @rel_contain_id = get_rel_contain_id
-      
+
       top50_slists = get_top50_lists_sorted
       top_50_dates = []
       top50_slists.each do |top50_list|
@@ -2586,6 +2600,14 @@ class Top50MachinesController < Top50BaseController
         list_month = date_val.value.split(".")[1]
         top_50_dates.push([list_year, list_month])
       end
+
+      # Same tree as /systems/:id for hover highlight
+      precedes_type_id_ram = Top50RelationType.find_by(name_eng: "Precedes")&.id
+      precedes_map_ram = precedes_type_id_ram ? Top50Relation.where(type_id: precedes_type_id_ram).pluck(:sec_obj_id, :prim_obj_id).to_h : {}
+      find_root_ram = ->(mid) { mid.nil? ? nil : (while precedes_map_ram[mid]; mid = precedes_map_ram[mid]; end; mid) }
+      all_list_ids_ram = top_50_dates.map { |y, m| get_list_id_by_date(y, m) }.compact
+      all_machine_ids_ram = all_list_ids_ram.any? ? Top50BenchmarkResult.where(benchmark_id: all_list_ids_ram).pluck(:machine_id).uniq : []
+      machine_names_ram = all_machine_ids_ram.any? ? Top50Machine.where(id: all_machine_ids_ram).includes(:top50_organization).each_with_object({}) { |m, h| h[m.id] = m.name.presence || m.top50_organization&.name.presence || "н/д" } : {}
 
       @edition_dates_ram = Array.new(top_50_dates.size)
       top_50_dates.each_with_index do |top50_date, reverse_edition_index|
@@ -2666,9 +2688,11 @@ class Top50MachinesController < Top50BaseController
           ram_per_cpu = (total_cpus > 0 && total_ram > 0) ? (total_ram / total_cpus) : nil
           ram_per_node_val = (total_nodes > 0 && total_ram > 0) ? (total_ram / total_nodes) : nil
 
-          @ram_per_core_data << { edition: edition, rank: rank, lag: ram_per_core, has_gpu: has_gpu }
-          @ram_per_cpu_data << { edition: edition, rank: rank, lag: ram_per_cpu, has_gpu: has_gpu }
-          @ram_per_node_data << { edition: edition, rank: rank, lag: ram_per_node_val, has_gpu: has_gpu }
+          machine_name_ram = machine_names_ram[machine_id] || "н/д"
+          machine_key_ram = find_root_ram.call(machine_id)
+          @ram_per_core_data << { edition: edition, rank: rank, lag: ram_per_core, has_gpu: has_gpu, machine_id: machine_id, machine_name: machine_name_ram, machine_key: machine_key_ram }
+          @ram_per_cpu_data << { edition: edition, rank: rank, lag: ram_per_cpu, has_gpu: has_gpu, machine_id: machine_id, machine_name: machine_name_ram, machine_key: machine_key_ram }
+          @ram_per_node_data << { edition: edition, rank: rank, lag: ram_per_node_val, has_gpu: has_gpu, machine_id: machine_id, machine_name: machine_name_ram, machine_key: machine_key_ram }
         end
       end
 
@@ -2697,7 +2721,7 @@ class Top50MachinesController < Top50BaseController
       @cpu_qty_attrid_comp = Top50Attribute.where(name_eng: "Number of CPUs").first&.id
       @gpu_qty_attrid_comp = Top50Attribute.where(name_eng: "Number of GPUs").first&.id
       @rel_contain_id = get_rel_contain_id
-      
+
       top50_slists = get_top50_lists_sorted
       top_50_dates = []
       top50_slists.each do |top50_list|
@@ -2707,6 +2731,13 @@ class Top50MachinesController < Top50BaseController
         list_month = date_val.value.split(".")[1]
         top_50_dates.push([list_year, list_month])
       end
+
+      # Same tree as /systems/:id for hover highlight
+      precedes_type_id_comp = Top50RelationType.find_by(name_eng: "Precedes")&.id
+      precedes_map_comp = precedes_type_id_comp ? Top50Relation.where(type_id: precedes_type_id_comp).pluck(:sec_obj_id, :prim_obj_id).to_h : {}
+      find_root_comp = ->(mid) { mid.nil? ? nil : (while precedes_map_comp[mid]; mid = precedes_map_comp[mid]; end; mid) }
+      all_list_ids_comp = top_50_dates.map { |y, m| get_list_id_by_date(y, m) }.compact
+      machine_names_comp = all_list_ids_comp.any? ? Top50Machine.where(id: Top50BenchmarkResult.where(benchmark_id: all_list_ids_comp).pluck(:machine_id).uniq).pluck(:id, :name).to_h : {}
 
       @edition_dates_component = Array.new(top_50_dates.size)
       top_50_dates.each_with_index do |top50_date, reverse_edition_index|
@@ -2845,20 +2876,23 @@ class Top50MachinesController < Top50BaseController
           freshest_total = (min_lag != Float::INFINITY && freshest_count > 0) ? freshest_count : nil
           freshest_total_cpu_only = (min_lag_cpu_only != Float::INFINITY && freshest_cpu_only_count > 0) ? freshest_cpu_only_count : nil
 
-          @cpu_total_data << { edition: edition, rank: rank, lag: (total_cpus > 0 ? total_cpus : nil) }
-          @cpu_per_node_data << { edition: edition, rank: rank, lag: cpu_per_node }
-          @gpu_total_data << { edition: edition, rank: rank, lag: (total_gpus > 0 ? total_gpus : nil) }
-          @gpu_per_node_data << { edition: edition, rank: rank, lag: gpu_per_node }
-          @cores_total_data << { edition: edition, rank: rank, lag: (total_cores > 0 ? total_cores : nil) }
-          @cores_per_node_data << { edition: edition, rank: rank, lag: cores_per_node }
-          @gpu_cores_total_data << { edition: edition, rank: rank, lag: (total_gpu_cores > 0 ? total_gpu_cores : nil) }
-          @gpu_cores_per_node_data << { edition: edition, rank: rank, lag: gpu_cores_per_node }
-          @gpu_microcores_only_total_data << { edition: edition, rank: rank, lag: (total_gpu_microcores_only > 0 ? total_gpu_microcores_only : nil) }
-          @gpu_microcores_only_per_node_data << { edition: edition, rank: rank, lag: gpu_microcores_only_per_node }
-          @freshest_total_data << { edition: edition, rank: rank, lag: freshest_total }
-          @freshest_per_node_data << { edition: edition, rank: rank, lag: freshest_per_node }
-          @freshest_total_data_cpu_only << { edition: edition, rank: rank, lag: freshest_total_cpu_only }
-          @freshest_per_node_data_cpu_only << { edition: edition, rank: rank, lag: freshest_per_node_cpu_only }
+          machine_name_comp = machine_names_comp[machine_id] || "н/д"
+          machine_key_comp = find_root_comp.call(machine_id)
+          mk = { machine_id: machine_id, machine_name: machine_name_comp, machine_key: machine_key_comp }
+          @cpu_total_data << { edition: edition, rank: rank, lag: (total_cpus > 0 ? total_cpus : nil) }.merge(mk)
+          @cpu_per_node_data << { edition: edition, rank: rank, lag: cpu_per_node }.merge(mk)
+          @gpu_total_data << { edition: edition, rank: rank, lag: (total_gpus > 0 ? total_gpus : nil) }.merge(mk)
+          @gpu_per_node_data << { edition: edition, rank: rank, lag: gpu_per_node }.merge(mk)
+          @cores_total_data << { edition: edition, rank: rank, lag: (total_cores > 0 ? total_cores : nil) }.merge(mk)
+          @cores_per_node_data << { edition: edition, rank: rank, lag: cores_per_node }.merge(mk)
+          @gpu_cores_total_data << { edition: edition, rank: rank, lag: (total_gpu_cores > 0 ? total_gpu_cores : nil) }.merge(mk)
+          @gpu_cores_per_node_data << { edition: edition, rank: rank, lag: gpu_cores_per_node }.merge(mk)
+          @gpu_microcores_only_total_data << { edition: edition, rank: rank, lag: (total_gpu_microcores_only > 0 ? total_gpu_microcores_only : nil) }.merge(mk)
+          @gpu_microcores_only_per_node_data << { edition: edition, rank: rank, lag: gpu_microcores_only_per_node }.merge(mk)
+          @freshest_total_data << { edition: edition, rank: rank, lag: freshest_total }.merge(mk)
+          @freshest_per_node_data << { edition: edition, rank: rank, lag: freshest_per_node }.merge(mk)
+          @freshest_total_data_cpu_only << { edition: edition, rank: rank, lag: freshest_total_cpu_only }.merge(mk)
+          @freshest_per_node_data_cpu_only << { edition: edition, rank: rank, lag: freshest_per_node_cpu_only }.merge(mk)
         end
       end
 
@@ -2888,6 +2922,14 @@ class Top50MachinesController < Top50BaseController
         list_month = date_val.value.split(".")[1]
         top_50_dates.push([list_year, list_month])
       end
+
+      # Same tree as /systems/:id for hover highlight
+      precedes_type_id_fq = Top50RelationType.find_by(name_eng: "Precedes")&.id
+      precedes_map_fq = precedes_type_id_fq ? Top50Relation.where(type_id: precedes_type_id_fq).pluck(:sec_obj_id, :prim_obj_id).to_h : {}
+      find_root_fq = ->(mid) { mid.nil? ? nil : (while precedes_map_fq[mid]; mid = precedes_map_fq[mid]; end; mid) }
+      all_list_ids_fq = top_50_dates.map { |y, m| get_list_id_by_date(y, m) }.compact
+      all_machine_ids_fq = all_list_ids_fq.any? ? Top50BenchmarkResult.where(benchmark_id: all_list_ids_fq).pluck(:machine_id).uniq : []
+      machine_names_fq = all_machine_ids_fq.any? ? Top50Machine.where(id: all_machine_ids_fq).includes(:top50_organization).each_with_object({}) { |m, h| h[m.id] = m.name.presence || m.top50_organization&.name.presence || "н/д" } : {}
 
       @edition_dates_freshest_quantity = Array.new(top_50_dates.size)
       top_50_dates.each_with_index do |top50_date, reverse_edition_index|
@@ -2972,8 +3014,10 @@ class Top50MachinesController < Top50BaseController
             total_gpu_count = gpu_qty_val.value.to_i if gpu_qty_val.present?
           end
 
-          @freshest_cpu_quantity_data << { edition: edition, rank: rank, lag: (freshest_cpu_count > 0 ? freshest_cpu_count : nil), total_cpu: total_cpu_count, total_gpu: total_gpu_count }
-          @freshest_gpu_quantity_data << { edition: edition, rank: rank, lag: (freshest_gpu_count > 0 ? freshest_gpu_count : nil), total_cpu: total_cpu_count, total_gpu: total_gpu_count }
+          machine_name_fq = machine_names_fq[machine_id] || "н/д"
+          machine_key_fq = find_root_fq.call(machine_id)
+          @freshest_cpu_quantity_data << { edition: edition, rank: rank, lag: (freshest_cpu_count > 0 ? freshest_cpu_count : nil), total_cpu: total_cpu_count, total_gpu: total_gpu_count, machine_id: machine_id, machine_name: machine_name_fq, machine_key: machine_key_fq }
+          @freshest_gpu_quantity_data << { edition: edition, rank: rank, lag: (freshest_gpu_count > 0 ? freshest_gpu_count : nil), total_cpu: total_cpu_count, total_gpu: total_gpu_count, machine_id: machine_id, machine_name: machine_name_fq, machine_key: machine_key_fq }
         end
       end
 

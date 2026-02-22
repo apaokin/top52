@@ -2195,7 +2195,9 @@ br
   head
     title Тепловые карты отставания самых свежих компонент
     style
-      | .cell { stroke-width: 1; }
+      | .cell-fill { stroke-width: 0.5; }
+      | .cell.cell-same-machine .cell-hl-outer { stroke: #000; }
+      | .cell.cell-same-machine .cell-hl-inner { stroke: #ffeb3b; }
       | .tooltip { position: absolute; visibility: hidden; background: #fff; border: 1px solid #ccc; padding: 5px; border-radius: 5px; }
       | .heatmap-wrapper { position: relative; display: inline-block; }
       | .heatmap-footer { position: absolute; bottom: 15px; right: 20px; }
@@ -2244,7 +2246,9 @@ br
   head
     title RAM: среднее на ядро/CPU/узел
     style
-      | .cell { stroke-width: 1; }
+      | .cell-fill { stroke-width: 0.5; }
+      | .cell.cell-same-machine .cell-hl-outer { stroke: #000; }
+      | .cell.cell-same-machine .cell-hl-inner { stroke: #ffeb3b; }
       | .heatmap-wrapper { position: relative; display: inline-block; }
       | .heatmap-footer { position: absolute; bottom: 15px; right: 20px; }
   body
@@ -2294,7 +2298,9 @@ br
   head
     title Количество компонент
     style
-      | .cell { stroke-width: 1; }
+      | .cell-fill { stroke-width: 0.5; }
+      | .cell.cell-same-machine .cell-hl-outer { stroke: #000; }
+      | .cell.cell-same-machine .cell-hl-inner { stroke: #ffeb3b; }
       | .heatmap-wrapper { position: relative; display: inline-block; }
       | .heatmap-footer { position: absolute; bottom: 15px; right: 20px; }
   body
@@ -2381,7 +2387,9 @@ br
   head
     title Количество самых свежих компонент
     style
-      | .cell { stroke-width: 1; }
+      | .cell-fill { stroke-width: 0.5; }
+      | .cell.cell-same-machine .cell-hl-outer { stroke: #000; }
+      | .cell.cell-same-machine .cell-hl-inner { stroke: #ffeb3b; }
       | .heatmap-wrapper { position: relative; display: inline-block; }
       | .heatmap-footer { position: absolute; bottom: 15px; right: 20px; }
   body
