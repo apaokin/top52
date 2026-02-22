@@ -1450,6 +1450,7 @@ class Top50MachinesController < Top50BaseController
     @section_headers["debug"] = "debug"
     @section_headers["ram_stats"] = "обновляемость: среднее количество памяти"
     @section_headers["component_stats"] = "обновляемость: количество компонент"
+    @section_headers["freshest_comp_stats"] = "обновляемость: статистика новых компонент"
     @section_headers["list_upg"] = "обновляемость: изменение позиций машин в рейтинге"
     @section_headers["core_cnt"] = "количество вычислительных ядер"
     @section_headers["comm_net"] = "семейства коммуникационных сетей"
@@ -2571,6 +2572,7 @@ class Top50MachinesController < Top50BaseController
       calc_machine_attrs
       @ram_size_attrid = Top50Attribute.where(name_eng: "RAM size (GB)").first&.id
       @core_qty_attrid = Top50Attribute.where(name_eng: "Number of cores").first&.id
+      @cpu_qty_attrid_ram = Top50Attribute.where(name_eng: "Number of CPUs").first&.id
       @cpu_typeid = Top50ObjectType.where(name_eng: "CPU").first&.id
       @gpu_typeid = Top50ObjectType.where(name_eng: "GPU").first&.id
       @rel_contain_id = get_rel_contain_id
@@ -2645,6 +2647,20 @@ class Top50MachinesController < Top50BaseController
             end
           end
 
+          # Fallback to machine-level attributes when nodes do not contain info (like archive/show)
+          if total_ram == 0 && @ram_size_attrid.present?
+            ram_val = Top50AttributeValDbval.find_by(obj_id: machine_id, attr_id: @ram_size_attrid)
+            total_ram = ram_val.value.to_f if ram_val.present? && ram_val.value.present?
+          end
+          if total_cpus == 0 && @cpu_qty_attrid_ram.present?
+            cpu_qty_val = Top50AttributeValDbval.find_by(obj_id: machine_id, attr_id: @cpu_qty_attrid_ram)
+            total_cpus = cpu_qty_val.value.to_i if cpu_qty_val.present?
+          end
+          if total_cores == 0 && @core_qty_attrid.present?
+            core_qty_val = Top50AttributeValDbval.find_by(obj_id: machine_id, attr_id: @core_qty_attrid)
+            total_cores = core_qty_val.value.to_i if core_qty_val.present?
+          end
+
           # Calculate averages - return nil only if denominator is 0 or no valid data exists
           ram_per_core = (total_cores > 0 && total_ram > 0) ? (total_ram / total_cores) : nil
           ram_per_cpu = (total_cpus > 0 && total_ram > 0) ? (total_ram / total_cpus) : nil
@@ -2678,6 +2694,8 @@ class Top50MachinesController < Top50BaseController
       @gpu_typeid = Top50ObjectType.where(name_eng: "GPU").first&.id
       @core_qty_attrid = Top50Attribute.where(name_eng: "Number of cores").first&.id
       @microcore_qty_attrid = Top50Attribute.where(name_eng: "Number of micro cores").first&.id
+      @cpu_qty_attrid_comp = Top50Attribute.where(name_eng: "Number of CPUs").first&.id
+      @gpu_qty_attrid_comp = Top50Attribute.where(name_eng: "Number of GPUs").first&.id
       @rel_contain_id = get_rel_contain_id
       
       top50_slists = get_top50_lists_sorted
@@ -2801,6 +2819,20 @@ class Top50MachinesController < Top50BaseController
             end
           end
 
+          # Fallback to machine-level attributes when nodes do not contain component info (like archive/show)
+          if total_cpus == 0 && @cpu_qty_attrid_comp.present?
+            cpu_qty_val = Top50AttributeValDbval.find_by(obj_id: machine_id, attr_id: @cpu_qty_attrid_comp)
+            total_cpus = cpu_qty_val.value.to_i if cpu_qty_val.present?
+          end
+          if total_gpus == 0 && @gpu_qty_attrid_comp.present?
+            gpu_qty_val = Top50AttributeValDbval.find_by(obj_id: machine_id, attr_id: @gpu_qty_attrid_comp)
+            total_gpus = gpu_qty_val.value.to_i if gpu_qty_val.present?
+          end
+          if total_cores == 0 && @core_qty_attrid.present?
+            core_qty_val = Top50AttributeValDbval.find_by(obj_id: machine_id, attr_id: @core_qty_attrid)
+            total_cores = core_qty_val.value.to_i if core_qty_val.present?
+          end
+
           # Calculate per-node averages
           cpu_per_node = (total_nodes > 0 && total_cpus > 0) ? (total_cpus.to_f / total_nodes) : nil
           gpu_per_node = (total_nodes > 0 && total_gpus > 0) ? (total_gpus.to_f / total_nodes) : nil
@@ -2829,6 +2861,393 @@ class Top50MachinesController < Top50BaseController
           @freshest_per_node_data_cpu_only << { edition: edition, rank: rank, lag: freshest_per_node_cpu_only }
         end
       end
+
+    elsif @stat_section == 'freshest_comp_stats'
+      @freshest_cpu_quantity_data = []
+      @freshest_gpu_quantity_data = []
+      @freshest_quantity_chart_dates = {}
+      @freshest_cpu_model_ids_by_edition = Hash.new { |h, k| h[k] = Set.new }
+      @freshest_gpu_model_ids_by_edition = Hash.new { |h, k| h[k] = Set.new }
+
+      calc_machine_attrs
+      @rpeak_attrid = Top50Attribute.where(name_eng: "Rpeak (MFlop/s)").first&.id
+      @rmax_benchid = Top50Benchmark.where(name_eng: "Linpack").first&.id
+      @cpu_typeid = Top50ObjectType.where(name_eng: "CPU").first&.id
+      @gpu_typeid = Top50ObjectType.where(name_eng: "GPU").first&.id
+      @rel_contain_id = get_rel_contain_id
+      # Machine-level quantity attributes (used when node/component relations give 0, like archive/show)
+      @cpu_qty_attrid = Top50Attribute.where(name_eng: "Number of CPUs").first&.id
+      @gpu_qty_attrid = Top50Attribute.where(name_eng: "Number of GPUs").first&.id
+
+      top50_slists = get_top50_lists_sorted
+      top_50_dates = []
+      top50_slists.each do |top50_list|
+        date_val = @date_vals.find_by(obj_id: top50_list.id)
+        next unless date_val.present?
+        list_year = date_val.value.split(".")[2]
+        list_month = date_val.value.split(".")[1]
+        top_50_dates.push([list_year, list_month])
+      end
+
+      @edition_dates_freshest_quantity = Array.new(top_50_dates.size)
+      top_50_dates.each_with_index do |top50_date, reverse_edition_index|
+        list_year, list_month = top50_date[0], top50_date[1]
+        list_id = get_list_id_by_date(list_year, list_month)
+        list_date = @date_vals.find_by(obj_id: list_id)&.value
+        edition = top_50_dates.size - reverse_edition_index
+        if list_date.present?
+          parts = list_date.split(".")
+          @edition_dates_freshest_quantity[edition - 1] = parts.size >= 3 ? "#{parts[1]}.#{parts[2][-2..-1]}" : list_date
+        end
+
+        list_date_parsed = nil
+        if list_date.present?
+          begin
+            list_date_parsed = Date.strptime(list_date, "%d.%m.%Y")
+          rescue ArgumentError
+            list_date_parsed = nil
+          end
+        end
+
+        next unless list_date_parsed
+
+        @freshest_quantity_chart_dates[edition] = list_date_parsed.strftime("%Y-%m")
+        benchmark_results = Top50BenchmarkResult.where(benchmark_id: list_id).order(result: :asc).limit(50)
+        benchmark_results.each_with_index do |benchmark_result, rank_index|
+          rank = rank_index + 1
+          machine_id = benchmark_result.machine_id
+          freshest_cpu_count = 0
+          freshest_gpu_count = 0
+          total_cpu_count = 0
+          total_gpu_count = 0
+
+          node_rels = Top50Relation.where(prim_obj_id: machine_id, type_id: @rel_contain_id)
+          node_rels.each do |node_rel|
+            node_id = node_rel.sec_obj_id
+            node_qty = node_rel.sec_obj_qty
+
+            component_rels = Top50Relation.where(prim_obj_id: node_id, type_id: @rel_contain_id)
+            component_rels.each do |component_rel|
+              component_id = component_rel.sec_obj_id
+              component_obj = Top50Object.find_by(id: component_id)
+              next unless component_obj
+
+              component_qty = component_rel.sec_obj_qty * node_qty
+              if component_obj.type_id == @cpu_typeid
+                total_cpu_count += component_qty
+              elsif component_obj.type_id == @gpu_typeid
+                total_gpu_count += component_qty
+              end
+
+              ci = ComponentInfo.find_by(component_id: component_id)
+              next unless ci
+
+              dm = ci.date_mentioned
+              da = ci.date_announced
+              dm_date = dm.respond_to?(:to_date) ? dm.to_date : (dm.is_a?(Date) ? dm : nil)
+              da_date = da.respond_to?(:to_date) ? da.to_date : (da.is_a?(Date) ? da : nil)
+
+              is_freshest = (dm_date.present? && dm_date == list_date_parsed) ||
+                            (da_date.present? && da_date >= list_date_parsed)
+
+              if is_freshest
+                if component_obj.type_id == @cpu_typeid
+                  freshest_cpu_count += component_qty
+                  @freshest_cpu_model_ids_by_edition[edition].add(component_id)
+                elsif component_obj.type_id == @gpu_typeid
+                  freshest_gpu_count += component_qty
+                  @freshest_gpu_model_ids_by_edition[edition].add(component_id)
+                end
+              end
+            end
+          end
+
+          # Fallback to machine-level quantity attributes when nodes do not contain component info (like archive/show)
+          if total_cpu_count == 0 && @cpu_qty_attrid.present?
+            cpu_qty_val = Top50AttributeValDbval.find_by(obj_id: machine_id, attr_id: @cpu_qty_attrid)
+            total_cpu_count = cpu_qty_val.value.to_i if cpu_qty_val.present?
+          end
+          if total_gpu_count == 0 && @gpu_qty_attrid.present?
+            gpu_qty_val = Top50AttributeValDbval.find_by(obj_id: machine_id, attr_id: @gpu_qty_attrid)
+            total_gpu_count = gpu_qty_val.value.to_i if gpu_qty_val.present?
+          end
+
+          @freshest_cpu_quantity_data << { edition: edition, rank: rank, lag: (freshest_cpu_count > 0 ? freshest_cpu_count : nil), total_cpu: total_cpu_count, total_gpu: total_gpu_count }
+          @freshest_gpu_quantity_data << { edition: edition, rank: rank, lag: (freshest_gpu_count > 0 ? freshest_gpu_count : nil), total_cpu: total_cpu_count, total_gpu: total_gpu_count }
+        end
+      end
+
+      # Summary per edition: systems with new CPU, new GPU, and union (CPU or GPU, no double count).
+      # 1) systems with new CPU  2) systems with new GPU  3) intersection = both
+      # Display: 1), 2), and union = 1) + 2) - 3).
+      # Exclude the first list from the chart — in the first list all components appear "new"
+      chart_editions = @freshest_quantity_chart_dates.keys.sort.drop(1)
+      cpu_by_edition = @freshest_cpu_quantity_data.group_by { |h| h[:edition] }
+      gpu_by_edition = @freshest_gpu_quantity_data.group_by { |h| h[:edition] }
+      @freshest_quantity_summary = chart_editions.map do |ed|
+        cpu_entries = cpu_by_edition[ed] || []
+        gpu_entries = gpu_by_edition[ed] || []
+        ranks_fresh_cpu = cpu_entries.select { |h| h[:lag].to_i > 0 }.map { |h| h[:rank] }.uniq
+        ranks_fresh_gpu = gpu_entries.select { |h| h[:lag].to_i > 0 }.map { |h| h[:rank] }.uniq
+        systems_fresh_cpu = ranks_fresh_cpu.size
+        systems_fresh_gpu = ranks_fresh_gpu.size
+        ranks_fresh_both = ranks_fresh_cpu & ranks_fresh_gpu
+        systems_fresh_intersection = ranks_fresh_both.size
+        systems_fresh_union = systems_fresh_cpu + systems_fresh_gpu - systems_fresh_intersection
+        {
+          edition: ed,
+          date_label: @freshest_quantity_chart_dates[ed],
+          systems_fresh_cpu: systems_fresh_cpu,
+          systems_fresh_gpu: systems_fresh_gpu,
+          systems_fresh_union: systems_fresh_union
+        }
+      end
+      @freshest_quantity_chart_data = [
+        { name: "С новыми CPU", data: @freshest_quantity_summary.map { |s| [s[:date_label], s[:systems_fresh_cpu]] }, color: "#2ca02c" },
+        { name: "С новыми GPU", data: @freshest_quantity_summary.map { |s| [s[:date_label], s[:systems_fresh_gpu]] }, color: "#ff7f0e" },
+        { name: "С новыми CPU или GPU", data: @freshest_quantity_summary.map { |s| [s[:date_label], s[:systems_fresh_union]] }, color: "#0000FF" }
+      ]
+
+      # Summary per edition: count of distinct new (fresh) component models (e.g. 2 new GPU models: A100, Tesla)
+      @freshest_quantity_models_summary = chart_editions.map do |ed|
+        cpu_ids = @freshest_cpu_model_ids_by_edition[ed] || Set.new
+        gpu_ids = @freshest_gpu_model_ids_by_edition[ed] || Set.new
+        models_fresh_cpu = cpu_ids.size
+        models_fresh_gpu = gpu_ids.size
+        models_fresh_union = (cpu_ids | gpu_ids).size
+        {
+          edition: ed,
+          date_label: @freshest_quantity_chart_dates[ed],
+          models_fresh_cpu: models_fresh_cpu,
+          models_fresh_gpu: models_fresh_gpu,
+          models_fresh_union: models_fresh_union
+        }
+      end
+      @freshest_quantity_models_chart_data = [
+        { name: "Новые модели CPU", data: @freshest_quantity_models_summary.map { |s| [s[:date_label], s[:models_fresh_cpu]] }, color: "#2ca02c" },
+        { name: "Новые модели GPU", data: @freshest_quantity_models_summary.map { |s| [s[:date_label], s[:models_fresh_gpu]] }, color: "#ff7f0e" },
+        { name: "Новые модели CPU + GPU", data: @freshest_quantity_models_summary.map { |s| [s[:date_label], s[:models_fresh_union]] }, color: "#0000FF" }
+      ]
+
+      # Summary per edition: total quantity of new (fresh) components (for second chart)
+      @freshest_quantity_components_summary = chart_editions.map do |ed|
+        cpu_entries = cpu_by_edition[ed] || []
+        gpu_entries = gpu_by_edition[ed] || []
+        components_fresh_cpu = cpu_entries.sum { |h| h[:lag].to_i }
+        components_fresh_gpu = gpu_entries.sum { |h| h[:lag].to_i }
+        components_fresh_both = components_fresh_cpu + components_fresh_gpu
+        {
+          edition: ed,
+          date_label: @freshest_quantity_chart_dates[ed],
+          components_fresh_cpu: components_fresh_cpu,
+          components_fresh_gpu: components_fresh_gpu,
+          components_fresh_both: components_fresh_both
+        }
+      end
+      @freshest_quantity_components_chart_data = [
+        { name: "Новые CPU", data: @freshest_quantity_components_summary.map { |s| [s[:date_label], s[:components_fresh_cpu]] }, color: "#2ca02c" },
+        { name: "Новые GPU", data: @freshest_quantity_components_summary.map { |s| [s[:date_label], s[:components_fresh_gpu]] }, color: "#ff7f0e" },
+        { name: "Новые CPU + GPU", data: @freshest_quantity_components_summary.map { |s| [s[:date_label], s[:components_fresh_both]] }, color: "#0000FF" }
+      ]
+
+      # Percentage of new components: all systems vs only systems with new components
+      pct_all_data = []
+      pct_new_systems_data = []
+      chart_editions.each do |ed|
+        cpu_entries = cpu_by_edition[ed] || []
+        comp_summary = @freshest_quantity_components_summary.find { |s| s[:edition] == ed }
+        components_fresh_cpu = comp_summary ? comp_summary[:components_fresh_cpu] : 0
+        components_fresh_gpu = comp_summary ? comp_summary[:components_fresh_gpu] : 0
+        components_fresh_both = comp_summary ? comp_summary[:components_fresh_both] : 0
+
+        total_cpu_all = cpu_entries.sum { |h| h[:total_cpu].to_i }
+        total_gpu_all = cpu_entries.sum { |h| h[:total_gpu].to_i }
+        total_components_all = total_cpu_all + total_gpu_all
+
+        ranks_fresh_cpu = cpu_entries.select { |h| h[:lag].to_i > 0 }.map { |h| h[:rank] }.uniq
+        ranks_fresh_gpu = (gpu_by_edition[ed] || []).select { |h| h[:lag].to_i > 0 }.map { |h| h[:rank] }.uniq
+        ranks_with_new = ranks_fresh_cpu | ranks_fresh_gpu
+        entries_with_new = cpu_entries.select { |h| ranks_with_new.include?(h[:rank]) }
+        total_cpu_new_systems = entries_with_new.sum { |h| h[:total_cpu].to_i }
+        total_gpu_new_systems = entries_with_new.sum { |h| h[:total_gpu].to_i }
+        total_components_new_systems = total_cpu_new_systems + total_gpu_new_systems
+
+        pct_cpu_all = total_cpu_all > 0 ? 100.0 * components_fresh_cpu / total_cpu_all : 0.0
+        pct_gpu_all = total_gpu_all > 0 ? 100.0 * components_fresh_gpu / total_gpu_all : 0.0
+        pct_both_all = total_components_all > 0 ? 100.0 * components_fresh_both / total_components_all : 0.0
+
+        pct_cpu_new = total_cpu_new_systems > 0 ? 100.0 * components_fresh_cpu / total_cpu_new_systems : 0.0
+        pct_gpu_new = total_gpu_new_systems > 0 ? 100.0 * components_fresh_gpu / total_gpu_new_systems : 0.0
+        pct_both_new = total_components_new_systems > 0 ? 100.0 * components_fresh_both / total_components_new_systems : 0.0
+
+        date_label = @freshest_quantity_chart_dates[ed]
+        pct_all_data << { date_label: date_label, pct_cpu: pct_cpu_all, pct_gpu: pct_gpu_all, pct_both: pct_both_all }
+        pct_new_systems_data << { date_label: date_label, pct_cpu: pct_cpu_new, pct_gpu: pct_gpu_new, pct_both: pct_both_new }
+      end
+
+      @freshest_quantity_pct_all_chart_data = [
+        { name: "Новые CPU, %", data: pct_all_data.map { |s| [s[:date_label], s[:pct_cpu]] }, color: "#2ca02c" },
+        { name: "Новые GPU, %", data: pct_all_data.map { |s| [s[:date_label], s[:pct_gpu]] }, color: "#ff7f0e" },
+        { name: "Новые CPU+GPU, %", data: pct_all_data.map { |s| [s[:date_label], s[:pct_both]] }, color: "#0000FF" }
+      ]
+      @freshest_quantity_pct_new_systems_chart_data = [
+        { name: "Новые CPU, %", data: pct_new_systems_data.map { |s| [s[:date_label], s[:pct_cpu]] }, color: "#2ca02c" },
+        { name: "Новые GPU, %", data: pct_new_systems_data.map { |s| [s[:date_label], s[:pct_gpu]] }, color: "#ff7f0e" },
+        { name: "Новые CPU+GPU, %", data: pct_new_systems_data.map { |s| [s[:date_label], s[:pct_both]] }, color: "#0000FF" }
+      ]
+
+      # Rpeak/Rmax share of systems with new components (like new_upg section)
+      if @rpeak_attrid.present? && @rmax_benchid.present?
+        rmax_by_machine = Top50BenchmarkResult.where(benchmark_id: @rmax_benchid).index_by(&:machine_id)
+        rpeak_rows = ActiveRecord::Base.connection.select_all(
+          "SELECT obj_id, cast(encode(value, 'escape') as double precision) as num FROM top50_attribute_val_dbvals WHERE attr_id = #{@rpeak_attrid}"
+        )
+        rpeak_by_machine = rpeak_rows.rows.each_with_object({}) do |row, h|
+          val = (row[1] || 0).to_f
+          h[row[0].to_i] = val
+          h[row[0].to_s] = val
+        end
+
+        rpeak_pct_cpu = []
+        rpeak_pct_gpu = []
+        rpeak_pct_union = []
+        rmax_pct_cpu = []
+        rmax_pct_gpu = []
+        rmax_pct_union = []
+        chart_editions.each do |ed|
+          date_label = @freshest_quantity_chart_dates[ed]
+          parts = date_label.to_s.split("-")
+          next if parts.size < 2
+          list_id = get_list_id_by_date(parts[0], parts[1])
+          next if list_id.to_i <= 0
+          benchmark_results = Top50BenchmarkResult.where(benchmark_id: list_id).order(result: :asc).limit(50)
+          rank_to_machine = benchmark_results.each_with_index.map { |br, i| [i + 1, br.machine_id] }.to_h
+
+          cpu_entries = cpu_by_edition[ed] || []
+          ranks_fresh_cpu = cpu_entries.select { |h| h[:lag].to_i > 0 }.map { |h| h[:rank] }.uniq
+          ranks_fresh_gpu = (gpu_by_edition[ed] || []).select { |h| h[:lag].to_i > 0 }.map { |h| h[:rank] }.uniq
+          ranks_with_new = ranks_fresh_cpu | ranks_fresh_gpu
+
+          sum_rpeak_total = rank_to_machine.values.sum { |mid| (rpeak_by_machine[mid] || rpeak_by_machine[mid.to_s] || 0).to_f }
+          sum_rmax_total = rank_to_machine.values.sum { |mid| (rmax_by_machine[mid] || rmax_by_machine[mid.to_i])&.result.to_f || 0 }
+          sum_rpeak_cpu = ranks_fresh_cpu.sum { |rank| (rpeak_by_machine[rank_to_machine[rank]] || rpeak_by_machine[rank_to_machine[rank].to_s] || 0).to_f }
+          sum_rpeak_gpu = ranks_fresh_gpu.sum { |rank| (rpeak_by_machine[rank_to_machine[rank]] || rpeak_by_machine[rank_to_machine[rank].to_s] || 0).to_f }
+          sum_rpeak_union = ranks_with_new.sum { |rank| (rpeak_by_machine[rank_to_machine[rank]] || rpeak_by_machine[rank_to_machine[rank].to_s] || 0).to_f }
+          sum_rmax_cpu = ranks_fresh_cpu.sum { |rank| (rmax_by_machine[rank_to_machine[rank]] || rmax_by_machine[rank_to_machine[rank].to_i])&.result.to_f || 0 }
+          sum_rmax_gpu = ranks_fresh_gpu.sum { |rank| (rmax_by_machine[rank_to_machine[rank]] || rmax_by_machine[rank_to_machine[rank].to_i])&.result.to_f || 0 }
+          sum_rmax_union = ranks_with_new.sum { |rank| (rmax_by_machine[rank_to_machine[rank]] || rmax_by_machine[rank_to_machine[rank].to_i])&.result.to_f || 0 }
+
+          pct_rpeak_cpu = sum_rpeak_total > 0 ? (100.0 * sum_rpeak_cpu / sum_rpeak_total).round(2) : 0.0
+          pct_rpeak_gpu = sum_rpeak_total > 0 ? (100.0 * sum_rpeak_gpu / sum_rpeak_total).round(2) : 0.0
+          pct_rpeak_u = sum_rpeak_total > 0 ? (100.0 * sum_rpeak_union / sum_rpeak_total).round(2) : 0.0
+          pct_rmax_cpu = sum_rmax_total > 0 ? (100.0 * sum_rmax_cpu / sum_rmax_total).round(2) : 0.0
+          pct_rmax_gpu = sum_rmax_total > 0 ? (100.0 * sum_rmax_gpu / sum_rmax_total).round(2) : 0.0
+          pct_rmax_u = sum_rmax_total > 0 ? (100.0 * sum_rmax_union / sum_rmax_total).round(2) : 0.0
+          rpeak_pct_cpu << [date_label, pct_rpeak_cpu]
+          rpeak_pct_gpu << [date_label, pct_rpeak_gpu]
+          rpeak_pct_union << [date_label, pct_rpeak_u]
+          rmax_pct_cpu << [date_label, pct_rmax_cpu]
+          rmax_pct_gpu << [date_label, pct_rmax_gpu]
+          rmax_pct_union << [date_label, pct_rmax_u]
+        end
+
+        @freshest_quantity_rpeak_pct_chart_data = [
+          { name: "С новыми CPU", data: rpeak_pct_cpu, color: "#2ca02c" },
+          { name: "С новыми GPU", data: rpeak_pct_gpu, color: "#ff7f0e" },
+          { name: "С новыми CPU или GPU", data: rpeak_pct_union, color: "#0000FF" }
+        ]
+        @freshest_quantity_rmax_pct_chart_data = [
+          { name: "С новыми CPU", data: rmax_pct_cpu, color: "#2ca02c" },
+          { name: "С новыми GPU", data: rmax_pct_gpu, color: "#ff7f0e" },
+          { name: "С новыми CPU или GPU", data: rmax_pct_union, color: "#0000FF" }
+        ]
+      else
+        @freshest_quantity_rpeak_pct_chart_data = []
+        @freshest_quantity_rmax_pct_chart_data = []
+      end
+
+      # Table for export: one row per edition with all chart metrics
+      @freshest_comp_stats_table = chart_editions.each_with_index.map do |ed, idx|
+        sum = @freshest_quantity_summary.find { |s| s[:edition] == ed } || {}
+        mod = @freshest_quantity_models_summary.find { |s| s[:edition] == ed } || {}
+        comp = @freshest_quantity_components_summary.find { |s| s[:edition] == ed } || {}
+        date_label = sum[:date_label] || @freshest_quantity_chart_dates[ed]
+        parts = date_label.to_s.split("-")
+        list_id = parts.size >= 2 ? get_list_id_by_date(parts[0], parts[1]) : nil
+        row = {
+          date_label: date_label,
+          list_id: list_id,
+          systems_cpu: sum[:systems_fresh_cpu],
+          systems_gpu: sum[:systems_fresh_gpu],
+          systems_union: sum[:systems_fresh_union],
+          models_cpu: mod[:models_fresh_cpu],
+          models_gpu: mod[:models_fresh_gpu],
+          models_union: mod[:models_fresh_union],
+          components_cpu: comp[:components_fresh_cpu],
+          components_gpu: comp[:components_fresh_gpu],
+          components_both: comp[:components_fresh_both],
+          pct_all_cpu: @freshest_quantity_pct_all_chart_data[0][:data][idx]&.at(1),
+          pct_all_gpu: @freshest_quantity_pct_all_chart_data[1][:data][idx]&.at(1),
+          pct_all_both: @freshest_quantity_pct_all_chart_data[2][:data][idx]&.at(1),
+          pct_new_cpu: @freshest_quantity_pct_new_systems_chart_data[0][:data][idx]&.at(1),
+          pct_new_gpu: @freshest_quantity_pct_new_systems_chart_data[1][:data][idx]&.at(1),
+          pct_new_both: @freshest_quantity_pct_new_systems_chart_data[2][:data][idx]&.at(1),
+          pct_rpeak_cpu: nil,
+          pct_rpeak_gpu: nil,
+          pct_rpeak_union: nil,
+          pct_rmax_cpu: nil,
+          pct_rmax_gpu: nil,
+          pct_rmax_union: nil
+        }
+        if (@freshest_quantity_rpeak_pct_chart_data || []).size >= 3 && (@freshest_quantity_rmax_pct_chart_data || []).size >= 3
+          row[:pct_rpeak_cpu] = @freshest_quantity_rpeak_pct_chart_data[0][:data][idx]&.at(1)
+          row[:pct_rpeak_gpu] = @freshest_quantity_rpeak_pct_chart_data[1][:data][idx]&.at(1)
+          row[:pct_rpeak_union] = @freshest_quantity_rpeak_pct_chart_data[2][:data][idx]&.at(1)
+          row[:pct_rmax_cpu] = @freshest_quantity_rmax_pct_chart_data[0][:data][idx]&.at(1)
+          row[:pct_rmax_gpu] = @freshest_quantity_rmax_pct_chart_data[1][:data][idx]&.at(1)
+          row[:pct_rmax_union] = @freshest_quantity_rmax_pct_chart_data[2][:data][idx]&.at(1)
+        end
+        row
+      end
+
+      # CSV lines for download (header + one row per edition)
+      @freshest_comp_stats_csv_header = "Редакция,Системы с новыми CPU,Системы с новыми GPU,Системы с новыми CPU или GPU,Новых моделей CPU,Новых моделей GPU,Новых моделей CPU+GPU,Кол-во новых CPU,Кол-во новых GPU,Кол-во новых CPU+GPU,% новых CPU (все),% новых GPU (все),% новых CPU+GPU (все),% новых CPU (сист. с нов.),% новых GPU (сист. с нов.),% новых CPU+GPU (сист. с нов.),% Rpeak CPU,% Rmax CPU,% Rpeak GPU,% Rmax GPU,% Rpeak CPU или GPU,% Rmax CPU или GPU"
+      @freshest_comp_stats_csv_lines = [@freshest_comp_stats_csv_header]
+      @freshest_comp_stats_table.reverse.each do |r|
+        list_num = r[:list_id].present? ? @num_vals.find_by(obj_id: r[:list_id]) : nil
+        date_val = r[:list_id].present? ? @date_vals.find_by(obj_id: r[:list_id]) : nil
+        edition_csv = list_num.present? && date_val.present? ? "#{list_num.value} (#{date_val.value})" : r[:date_label].to_s
+        pct = ->(v) { v.present? ? v.to_f.round(2).to_s : "" }
+        csv_row = [
+          edition_csv,
+          r[:systems_cpu].to_s,
+          r[:systems_gpu].to_s,
+          r[:systems_union].to_s,
+          r[:models_cpu].to_s,
+          r[:models_gpu].to_s,
+          r[:models_union].to_s,
+          r[:components_cpu].to_s,
+          r[:components_gpu].to_s,
+          r[:components_both].to_s,
+          pct.call(r[:pct_all_cpu]),
+          pct.call(r[:pct_all_gpu]),
+          pct.call(r[:pct_all_both]),
+          pct.call(r[:pct_new_cpu]),
+          pct.call(r[:pct_new_gpu]),
+          pct.call(r[:pct_new_both]),
+          pct.call(r[:pct_rpeak_cpu]),
+          pct.call(r[:pct_rmax_cpu]),
+          pct.call(r[:pct_rpeak_gpu]),
+          pct.call(r[:pct_rmax_gpu]),
+          pct.call(r[:pct_rpeak_union]),
+          pct.call(r[:pct_rmax_union])
+        ]
+        @freshest_comp_stats_csv_lines << csv_row.join(",")
+      end
+
+      # Exclude the first list from heatmaps (same as charts)
+      @freshest_cpu_quantity_data = @freshest_cpu_quantity_data.select { |h| chart_editions.include?(h[:edition]) }
+      @freshest_gpu_quantity_data = @freshest_gpu_quantity_data.select { |h| chart_editions.include?(h[:edition]) }
 
     elsif  @stat_section == 'list_upg'
       precedes_type_id = Top50RelationType.find_by(name_eng: "Precedes")&.id

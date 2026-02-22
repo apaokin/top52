@@ -2563,18 +2563,41 @@ document.addEventListener("DOMContentLoaded", ->
     freshestIncludeGpuEl = document.getElementById("freshest-include-gpu")
     if freshestIncludeGpuEl
       freshestIncludeGpuEl.addEventListener("change", updateComponentAll)
+
+  # Инициализация freshest_comp_stats (количество самых свежих CPU/GPU по дате упоминания или анонса)
+  if typeof freshestCpuQuantityData != "undefined"
+    getFreshestQuantityScale = () -> (document.getElementById("scale-selector-freshest-quantity") or {}).value or "quantile"
+    updateFreshestQuantityHeatmaps = () ->
+      dataCpu = freshestCpuQuantityData or []
+      dataGpu = freshestGpuQuantityData or []
+      scaleMethod = getFreshestQuantityScale()
+      drawComponentHeatmap(dataCpu, "freshest_cpu_quantity_heatmap", "Самые свежие CPU: количество", scaleMethod)
+      drawComponentHeatmap(dataGpu, "freshest_gpu_quantity_heatmap", "Самые свежие GPU: количество", scaleMethod)
+      if document.getElementById("download_freshest_cpu_quantity")
+        csvCpu = buildComponentCsv(dataCpu)
+        d3.select("#download_freshest_cpu_quantity").attr("href", "data:text/csv;charset=utf-8," + encodeURIComponent(csvCpu))
+      if document.getElementById("download_freshest_gpu_quantity")
+        csvGpu = buildComponentCsv(dataGpu)
+        d3.select("#download_freshest_gpu_quantity").attr("href", "data:text/csv;charset=utf-8," + encodeURIComponent(csvGpu))
+    updateFreshestQuantityHeatmaps()
+    scaleFreshestEl = document.getElementById("scale-selector-freshest-quantity")
+    if scaleFreshestEl
+      scaleFreshestEl.addEventListener("change", updateFreshestQuantityHeatmaps)
 )
 
 @draw_new_vs_upgraded_new = (data, src_id, title, x_label, y_label) ->
+  return unless data and data.length > 0 and data[0].data and data[0].data.length > 0
   # Подготовка данных
   for i in [0..data.length - 1]
     for j in [0..data[i].data.length - 1]
-      s = data[i].data[j][0].split("-")
+      s = String(data[i].data[j][0]).split("-")
       data[i].data[j][0] = new Date(+s[0], +s[1] - 1)
 
   # Функция загрузки
   func = () ->
-    width = document.getElementById(src_id).offsetWidth # Увеличиваем ширину на 50%
+    el = document.getElementById(src_id)
+    return unless el
+    width = el.offsetWidth
     height = 550
 
     margin =
@@ -2594,6 +2617,25 @@ document.addEventListener("DOMContentLoaded", ->
               .style("text-align", "center")
               .style("margin-bottom", "20px")
 
+    # Функция обновления шкалы Y по видимым сериям (гибкая шкала при скрытии серий)
+    updateYScale = () ->
+      visibleMax = 0
+      for idx in [0...data.length]
+        sel = svg.selectAll(".layer-" + idx)
+        continue if sel.empty()
+        isHidden = sel.classed("hidden")
+        unless isHidden
+          seriesMax = d3.max(data[idx].data, (d) -> d[1])
+          visibleMax = Math.max(visibleMax, seriesMax) if seriesMax?
+      visibleMax = Math.max(visibleMax, 1)
+      y_scale.domain([0, visibleMax])
+      svg.select("g.axis-y").call(y_axis)
+      data.forEach((dataset, idx) ->
+        layerSel = svg.selectAll(".layer-" + idx)
+        layerSel.filter("rect").attr("y", (d) -> y_scale(d[1])).attr("height", (d) -> height - margin.bottom - y_scale(d[1]))
+        layerSel.filter("circle").attr("cy", (d) -> y_scale(d[1]))
+      )
+
     # Кнопки для переключения
     buttons = container.append("div").style("margin-bottom", "10px")
     data.forEach((dataset, i) ->
@@ -2609,14 +2651,14 @@ document.addEventListener("DOMContentLoaded", ->
              .style("font-weight", "bold")
              .attr("class", "toggle-btn-" + i)
              .on("click", () ->
-               d3.selectAll(".layer-" + i)
-                 .classed("hidden", (d, j, nodes) ->
-                   !d3.select(nodes[j]).classed("hidden")
-                 )
-               # Меняем прозрачность кнопки в зависимости от состояния
-               btn = d3.select(".toggle-btn-" + i)
-               isHidden = d3.select(".layer-" + i).classed("hidden")
+               chartLayers = svg.selectAll(".layer-" + i)
+               chartLayers.classed("hidden", (d, j, nodes) ->
+                 !d3.select(nodes[j]).classed("hidden")
+               )
+               isHidden = chartLayers.classed("hidden")
+               btn = container.select(".toggle-btn-" + i)
                btn.style("opacity", if isHidden then 0.5 else 1)
+               updateYScale()
              )
     )
 
@@ -2647,6 +2689,7 @@ document.addEventListener("DOMContentLoaded", ->
        .style("font-size", "12px")
 
     svg.append("g")
+       .attr("class", "axis-y")
        .attr("transform", "translate(" + margin.left + ",0)")
        .call(y_axis)
 
@@ -2707,6 +2750,23 @@ document.addEventListener("DOMContentLoaded", ->
            .attr("x", (d) -> x_scale(d[0]) + x_scale.bandwidth() * 0.6) # Смещаем вправо
            .attr("y", (d) -> y_scale(d[1]))
            .attr("width", x_scale.bandwidth() * 0.3) # Уменьшаем ширину
+           .attr("height", (d) -> height - margin.bottom - y_scale(d[1]))
+           .attr("fill", dataset.color)
+           .attr("stroke", "black")
+           .attr("stroke-width", "1px")
+           .attr("class", "layer-" + i)
+      else
+        # Произвольные серии (напр. "С свежими CPU/GPU"): столбцы рядом по дате
+        n = data.length
+        barW = x_scale.bandwidth() * (0.9 / n) * 0.85
+        barOffset = (x_scale.bandwidth() * (0.05 + i * (0.9 / n)))
+        svg.selectAll(".bar-gen-" + i)
+           .data(dataset.data)
+           .enter()
+           .append("rect")
+           .attr("x", (d) -> x_scale(d[0]) + barOffset)
+           .attr("y", (d) -> y_scale(d[1]))
+           .attr("width", barW)
            .attr("height", (d) -> height - margin.bottom - y_scale(d[1]))
            .attr("fill", dataset.color)
            .attr("stroke", "black")

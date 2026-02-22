@@ -2377,6 +2377,155 @@ br
       | const gpuMicrocoresOnlyPerNodeData = #{raw (@gpu_microcores_only_per_node_data || []).to_json};
       | const editionDatesComponent = #{raw (@edition_dates_component || []).to_json};
 
+- elsif @stat_section == "freshest_comp_stats"
+  head
+    title Количество самых свежих компонент
+    style
+      | .cell { stroke-width: 1; }
+      | .heatmap-wrapper { position: relative; display: inline-block; }
+      | .heatmap-footer { position: absolute; bottom: 15px; right: 20px; }
+  body
+    div style="margin-bottom: 1em;"
+      label for="scale-selector-freshest-quantity" Шкала:
+      select#scale-selector-freshest-quantity
+        option value="quantile" selected="selected" По квантилям
+        option value="linear" Равные интервалы
+        option value="log" Лог. интервалы
+        option value="fixed" Равные интервалы (0–max)
+        option value="gradient_linear" Градиент (линейный)
+        option value="gradient" Градиент (лог.)
+        option value="gradient_sqrt" Градиент (sqrt)
+
+    div.heatmap-section
+      h2 Новые CPU
+      div.heatmap-wrapper
+        #freshest_cpu_quantity_heatmap
+        div.heatmap-footer
+          a.button style="background: #6699CC;" id="download_freshest_cpu_quantity" download="Freshest_CPU_quantity.csv" Скачать CSV
+
+    div.heatmap-section
+      h2 Новые GPU
+      div.heatmap-wrapper
+        #freshest_gpu_quantity_heatmap
+        div.heatmap-footer
+          a.button style="background: #6699CC;" id="download_freshest_gpu_quantity" download="Freshest_GPU_quantity.csv" Скачать CSV
+
+    script
+      | const freshestCpuQuantityData = #{raw (@freshest_cpu_quantity_data || []).to_json};
+      | const freshestGpuQuantityData = #{raw (@freshest_gpu_quantity_data || []).to_json};
+      | const editionDatesComponent = #{raw (@edition_dates_freshest_quantity || []).to_json};
+
+    div id="chart_freshest_quantity_systems" style="margin-top: 2em;"
+    javascript:
+      var chartDataFreshestQuantity = #{raw (@freshest_quantity_chart_data || []).to_json};
+    coffee:
+      draw_new_vs_upgraded_new(chartDataFreshestQuantity, "chart_freshest_quantity_systems", "Количество систем с новыми компонентами по редакциям", "Дата (ММ.ГГ)", "Количество систем")
+    div id="chart_freshest_quantity_models" style="margin-top: 2em;"
+    javascript:
+      var chartDataFreshestQuantityModels = #{raw (@freshest_quantity_models_chart_data || []).to_json};
+    coffee:
+      draw_new_vs_upgraded_new(chartDataFreshestQuantityModels, "chart_freshest_quantity_models", "Количество новых моделей компонент по редакциям", "Дата (ММ.ГГ)", "Количество моделей")
+    div id="chart_freshest_quantity_components" style="margin-top: 2em;"
+    javascript:
+      var chartDataFreshestQuantityComponents = #{raw (@freshest_quantity_components_chart_data || []).to_json};
+    coffee:
+      draw_new_vs_upgraded_new(chartDataFreshestQuantityComponents, "chart_freshest_quantity_components", "Количество новых компонент по редакциям", "Дата (ММ.ГГ)", "Количество компонентов")
+    div id="chart_freshest_quantity_pct_all" style="margin-top: 2em;"
+    javascript:
+      var chartDataFreshestQuantityPctAll = #{raw (@freshest_quantity_pct_all_chart_data || []).to_json};
+    coffee:
+      draw_new_vs_upgraded_new(chartDataFreshestQuantityPctAll, "chart_freshest_quantity_pct_all", "Доля новых компонент (от компонент всех систем), %", "Дата (ММ.ГГ)", "% от всех компонентов")
+    div id="chart_freshest_quantity_pct_new_systems" style="margin-top: 2em;"
+    javascript:
+      var chartDataFreshestQuantityPctNewSystems = #{raw (@freshest_quantity_pct_new_systems_chart_data || []).to_json};
+    coffee:
+      draw_new_vs_upgraded_new(chartDataFreshestQuantityPctNewSystems, "chart_freshest_quantity_pct_new_systems", "Доля новых компонент (от компонент систем с новыми), %", "Дата (ММ.ГГ)", "% от всех компонентов")
+    - if (@freshest_quantity_rpeak_pct_chart_data || []).any?
+      div id="chart_freshest_quantity_rpeak_pct" style="margin-top: 2em;"
+      javascript:
+        var chartDataFreshestQuantityRpeakPct = #{raw (@freshest_quantity_rpeak_pct_chart_data || []).to_json};
+      coffee:
+        draw_new_vs_upgraded_new(chartDataFreshestQuantityRpeakPct, "chart_freshest_quantity_rpeak_pct", "Процент Rpeak (от общего) систем с новыми компонентами", "Дата (ММ.ГГ)", "% Rpeak")
+    - if (@freshest_quantity_rmax_pct_chart_data || []).any?
+      div id="chart_freshest_quantity_rmax_pct" style="margin-top: 2em;"
+      javascript:
+        var chartDataFreshestQuantityRmaxPct = #{raw (@freshest_quantity_rmax_pct_chart_data || []).to_json};
+      coffee:
+        draw_new_vs_upgraded_new(chartDataFreshestQuantityRmaxPct, "chart_freshest_quantity_rmax_pct", "Процент Rmax (от общего) систем с новыми компонентами", "Дата (ММ.ГГ)", "% Rmax")
+    div style="clear: both;"
+    - if (@freshest_comp_stats_table || []).any?
+      a class="button" style="background: #6699CC; float: right; margin-bottom: 15px;" target="_blank" download="Freshest_comp_stats.csv" id="download_freshest_comp_stats"
+        = "Скачать CSV"
+      table class="table table-hover" style="width: 1400px; margin: 0 auto; table-layout: fixed;"
+        thead
+          tr
+            th style="text-align: center; min-width: 160px;" Редакция
+            th style="text-align: center;" Системы с нов. CPU
+            th style="text-align: center;" Системы с нов. GPU
+            th style="text-align: center;" Системы с нов. CPU или GPU
+            th style="text-align: center;" Новых моделей CPU
+            th style="text-align: center;" Новых моделей GPU
+            th style="text-align: center;" Новых моделей CPU+GPU
+            th style="text-align: center;" Кол-во новых CPU
+            th style="text-align: center;" Кол-во новых GPU
+            th style="text-align: center;" Кол-во новых CPU+GPU
+            th style="text-align: center;" % новых CPU (от всех сист.)
+            th style="text-align: center;" % новых GPU (от всех сист.)
+            th style="text-align: center;" % новых CPU + GPU (от всех сист.)
+            th style="text-align: center;" % новых CPU (от сист. с нов.)
+            th style="text-align: center;" % новых GPU (сист. с нов.)
+            th style="text-align: center;" % новых CPU + GPU (сист. с нов.)
+            th style="text-align: center;" % Rpeak/Rmax с нов. CPU
+            th style="text-align: center;" % Rpeak/Rmax с нов. GPU
+            th style="text-align: center;" % Rpeak/Rmax с нов. CPU или GPU
+        tbody
+          - (@freshest_comp_stats_table || []).reverse.each do |r|
+            - list_num = r[:list_id].present? ? @num_vals.find_by(obj_id: r[:list_id]) : nil
+            - date_val = r[:list_id].present? ? @date_vals.find_by(obj_id: r[:list_id]) : nil
+            - list_year = date_val.present? ? date_val.value.split(".")[2] : nil
+            - list_month = date_val.present? ? date_val.value.split(".")[1] : nil
+            - pct_all_cpu_s = r[:pct_all_cpu].present? ? "#{r[:pct_all_cpu].to_f.round(2)}%" : "—"
+            - pct_all_gpu_s = r[:pct_all_gpu].present? ? "#{r[:pct_all_gpu].to_f.round(2)}%" : "—"
+            - pct_all_both_s = r[:pct_all_both].present? ? "#{r[:pct_all_both].to_f.round(2)}%" : "—"
+            - pct_new_cpu_s = r[:pct_new_cpu].present? ? "#{r[:pct_new_cpu].to_f.round(2)}%" : "—"
+            - pct_new_gpu_s = r[:pct_new_gpu].present? ? "#{r[:pct_new_gpu].to_f.round(2)}%" : "—"
+            - pct_new_both_s = r[:pct_new_both].present? ? "#{r[:pct_new_both].to_f.round(2)}%" : "—"
+            - rpeak_cpu_s = r[:pct_rpeak_cpu].present? ? "#{r[:pct_rpeak_cpu].to_f.round(2)}%" : "—"
+            - rmax_cpu_s = r[:pct_rmax_cpu].present? ? "#{r[:pct_rmax_cpu].to_f.round(2)}%" : "—"
+            - rpeak_gpu_s = r[:pct_rpeak_gpu].present? ? "#{r[:pct_rpeak_gpu].to_f.round(2)}%" : "—"
+            - rmax_gpu_s = r[:pct_rmax_gpu].present? ? "#{r[:pct_rmax_gpu].to_f.round(2)}%" : "—"
+            - rpeak_union_s = r[:pct_rpeak_union].present? ? "#{r[:pct_rpeak_union].to_f.round(2)}%" : "—"
+            - rmax_union_s = r[:pct_rmax_union].present? ? "#{r[:pct_rmax_union].to_f.round(2)}%" : "—"
+            tr
+              td style="text-align: center; min-width: 160px;"
+                - if list_num.present? && date_val.present?
+                  = link_to "#{list_num.value}#{8209.chr}я (#{date_val.value})", get_archive_path(list_year, list_month)
+                - else
+                  = r[:date_label]
+              td style="text-align: right;" = r[:systems_cpu]
+              td style="text-align: right;" = r[:systems_gpu]
+              td style="text-align: right;" = r[:systems_union]
+              td style="text-align: right;" = r[:models_cpu]
+              td style="text-align: right;" = r[:models_gpu]
+              td style="text-align: right;" = r[:models_union]
+              td style="text-align: right;" = r[:components_cpu]
+              td style="text-align: right;" = r[:components_gpu]
+              td style="text-align: right;" = r[:components_both]
+              td style="text-align: right;" = pct_all_cpu_s
+              td style="text-align: right;" = pct_all_gpu_s
+              td style="text-align: right;" = pct_all_both_s
+              td style="text-align: right;" = pct_new_cpu_s
+              td style="text-align: right;" = pct_new_gpu_s
+              td style="text-align: right;" = pct_new_both_s
+              td style="text-align: right;" = (r[:pct_rpeak_cpu].blank? && r[:pct_rmax_cpu].blank?) ? "—" : "#{rpeak_cpu_s} / #{rmax_cpu_s}"
+              td style="text-align: right;" = (r[:pct_rpeak_gpu].blank? && r[:pct_rmax_gpu].blank?) ? "—" : "#{rpeak_gpu_s} / #{rmax_gpu_s}"
+              td style="text-align: right;" = (r[:pct_rpeak_union].blank? && r[:pct_rmax_union].blank?) ? "—" : "#{rpeak_union_s} / #{rmax_union_s}"
+      javascript:
+        var csvFreshestCompStats = #{raw (@freshest_comp_stats_csv_lines || []).to_json};
+      coffee:
+        csvStr = (csvFreshestCompStats || []).join("\n")
+        d3.selectAll("a").filter(() -> d3.select(this).attr("id") == "download_freshest_comp_stats").attr("href", "data:text/csv;charset=utf-8," + encodeURIComponent(csvStr))
+
 - elsif @stat_section == "debug"
   / Тепловые карты общего отставания компонентов (common_lag) — закомментировано
   p Debug section — содержимое закомментировано
