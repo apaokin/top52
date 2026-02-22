@@ -31,6 +31,7 @@ class Top50ObjectsController < Top50BaseController
     @cpu_model_attr_vals = Top50AttributeValDict.all.joins(:top50_attribute_dict).merge(cpu_model_attrs)
     gpu_model_attrs = Top50AttributeDict.all.joins(:top50_attribute).merge(Top50Attribute.where(name_eng: "GPU model"))
     @gpu_model_attr_vals = Top50AttributeValDict.all.joins(:top50_attribute_dict).merge(gpu_model_attrs)
+    @show_component_dates_link = %w[CPU GPU Coprocessor].include?(Top50ObjectType.find_by(id: params[:tid])&.name_eng)
   end
 
   def attribute_vals
@@ -44,7 +45,28 @@ class Top50ObjectsController < Top50BaseController
   def show_info
     @top50_object = Top50Object.find(params[:id])
     @first_appearance_date = fetch_first_appearance_date(@top50_object.id) #delishakov
-  end 
+  end
+
+  def component_dates
+    @component_types = Top50ObjectType.where(name_eng: %w[CPU GPU Coprocessor]).order(:name_eng)
+  end
+
+  def edit_component_info
+    @top50_object = Top50Object.find(params[:id])
+    @component_info = ComponentInfo.find_or_initialize_by(component_id: @top50_object.id)
+  end
+
+  def update_component_info
+    @top50_object = Top50Object.find(params[:id])
+    @component_info = ComponentInfo.find_or_initialize_by(component_id: @top50_object.id)
+    @component_info.assign_attributes(component_info_params)
+    @component_info.component_id = @top50_object.id if @component_info.new_record?
+    if @component_info.save
+      redirect_to top50_objects_show_info_path(@top50_object), notice: t("messages.updated", default: "Updated successfully")
+    else
+      render :edit_component_info
+    end
+  end
 
   ### delishakov ###
   
@@ -271,6 +293,10 @@ class Top50ObjectsController < Top50BaseController
 
   def top50_relation_params
     params.require(:top50_relation).permit(:type_id, :sec_obj_qty, :is_valid, :sec_obj_id)
+  end
+
+  def component_info_params
+    params.require(:component_info).permit(:date_announced, :date_mentioned)
   end
 
 end

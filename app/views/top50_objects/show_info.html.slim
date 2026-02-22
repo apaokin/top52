@@ -28,3 +28,6 @@ div class="panel panel-default"
               = @first_appearance_date.strftime("%d-%m-%Y")
             - else
               = "Не входила в системы рейтинга"
+- if current_user && User.superadmins.include?(current_user) && %w[CPU GPU Coprocessor].include?(@top50_object.top50_object_type.name_eng)
+  p
+    = link_to "Изменить даты (анонс / первое использование)", edit_component_info_path(@top50_object), class: "btn btn-default btn-sm"

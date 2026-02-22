@@ -169,6 +169,10 @@ Octoshell::Application.routes.draw do
 
   get 'components/info/:id', to: 'top50_objects#show_info', as:'top50_objects_show_info'
 
+  get 'component_dates', to: 'top50_objects#component_dates', as: 'component_dates'
+  get 'objects/:id/component_info/edit', to: 'top50_objects#edit_component_info', as: 'edit_component_info'
+  patch 'objects/:id/component_info', to: 'top50_objects#update_component_info', as: 'update_component_info'
+
   get 'systems/:id/benchmark_results', to: 'top50_machines#benchmark_results', as:'top50_machine_top50_benchmark_results'
   post 'systems/:id/benchmark_results', to: 'top50_machines#create_benchmark_result'
   get 'systems/:id/benchmark_results/add', to: 'top50_machines#add_benchmark_result', as:'new_top50_machine_top50_benchmark_result'
