@@ -7,9 +7,25 @@ table
         button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown"
           span class="caret"
         ul class="dropdown-menu" role="menu"
-          - @section_headers.each do |section, header|
-            li = link_to header, top50_stats_path(section)
-          
+          - (@main_section_headers || @section_headers).each do |section, header|
+            - url = (section == "upgradability") ? top50_stats_upgradability_path : top50_stats_path(section)
+            li = link_to header, url
+
+- if @stat_section == "upgradability" || (@upgradability_section_keys && @upgradability_section_keys.include?(@stat_section))
+  - current_upgradability_name = (@stat_section == "upgradability") ? @section_headers["freshest_components_lag"] : @section_headers[@stat_section]
+  - current_upgradability_name = current_upgradability_name.to_s.sub(/\Aобновляемость:\s*/i, "")
+  table
+    tr
+      td
+        h4 = "Обновляемость: " + current_upgradability_name
+      td
+        div class="btn-group"
+          button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown"
+            span class="caret"
+          ul class="dropdown-menu" role="menu"
+            - (@upgradability_section_keys || []).each do |section|
+              - if @section_headers[section].present?
+                li = link_to @section_headers[section], top50_upgradability_stats_path(section)
 - if @stat_section.present? and @stat_section[0..6] == "vendors"
   table
     tr
@@ -2191,7 +2207,7 @@ br
         draw_type(data, "chart_1", "Типы систем", "Дата (ММ.ГГ)", "Количество систем")
       /= area_chart achart_data, max: 50, stacked: true, height: "500px"
   
-- elsif @stat_section == "freshest_components_lag"
+- elsif @stat_section == "freshest_components_lag" || @stat_section == "upgradability"
   head
     title Тепловые карты отставания самых свежих компонент
     style
@@ -2534,26 +2550,6 @@ br
         csvStr = (csvFreshestCompStats || []).join("\n")
         d3.selectAll("a").filter(() -> d3.select(this).attr("id") == "download_freshest_comp_stats").attr("href", "data:text/csv;charset=utf-8," + encodeURIComponent(csvStr))
 
-- elsif @stat_section == "debug"
-  / Тепловые карты общего отставания компонентов (common_lag) — закомментировано
-  p Debug section — содержимое закомментировано
-  /
-    head
-      title Тепловые карты общего отставания компонентов
-    body
-      h1 Тепловые карты общего отставания компонент
-      - @unique_machines.each do |machine|
-        strong Машина:
-        = machine.name
-        = " "
-        = machine.id
-        = " "
-        = link_to machine.name, top50_machines_show_path(machine.id)
-        - if machine.website.present? and machine.website.length > 0
-          p
-            strong = "Веб-сайт: "
-            = link_to nil, ext_url(machine.website)
-        br
 - elsif @stat_section == "new_upg"
   - @csv_string_new_upg = ["Редакция,Новые машины,Обновлённые машины,Новые и обновлённые машины,% Новых машин,% Обновлённых машин,% Новых и обновлённых машин,% Rpeak новых машин,% Rmax новых машин,% Rpeak обновлённых машин,% Rmax обновлённых машин,% Rpeak новых и обновлённых машин,% Rmax новых и обновлённых машин"]
   div id="chart_new_vs_upgraded"

@@ -1337,6 +1337,13 @@ class Top50MachinesController < Top50BaseController
     @list_id = get_top50_lists.find(eid).id
     stats(1)
     @top50_mtypes = get_avail_mtypes
+    @back_to_stats_url = if @upgradability_section_keys && @stat_section.present? && @upgradability_section_keys.include?(@stat_section)
+                           top50_upgradability_stats_path(@stat_section)
+                         elsif @stat_section.present?
+                           top50_stats_path(@stat_section)
+                         else
+                           top50_stats_def_path
+                         end
   end
 
   def get_stats_per_list
@@ -1445,23 +1452,47 @@ class Top50MachinesController < Top50BaseController
     @section_headers["cpu_fam"] = "семейства CPU"
     @section_headers["cpu_gen"] = "микроархитектура CPU"
     @section_headers["cpu_cnt"] = "количество CPU"
-    @section_headers["freshest_components_lag"] = "обновляемость: отставание самых свежих компонент"
-    @section_headers["new_upg"] = "обновляемость: количество новых и обновлённых систем и их доля в производительности"
-    @section_headers["debug"] = "debug"
-    @section_headers["ram_stats"] = "обновляемость: среднее количество памяти"
-    @section_headers["component_stats"] = "обновляемость: количество компонент"
-    @section_headers["freshest_comp_stats"] = "обновляемость: статистика новых компонент"
-    @section_headers["list_upg"] = "обновляемость: изменение позиций машин в рейтинге"
+    @section_headers["freshest_components_lag"] = "отставание самых свежих компонент"
+    @section_headers["new_upg"] = "количество новых и обновлённых систем и их доля в производительности"
+    @section_headers["ram_stats"] = "среднее количество памяти"
+    @section_headers["component_stats"] = "количество компонент"
+    @section_headers["freshest_comp_stats"] = "статистика новых компонент"
+    @section_headers["list_upg"] = "изменение позиций машин в рейтинге"
     @section_headers["core_cnt"] = "количество вычислительных ядер"
     @section_headers["comm_net"] = "семейства коммуникационных сетей"
     @section_headers["comm_net_sep"] = "коммуникационные сети"
     @section_headers["performance_3d_with_machine_status"] = "обновляемость систем (3D)"
     @section_headers["heatmap_streaks"] = "количество лет в рейтинге от номера редакции"
     @section_headers["heatmap_rank_vs_years"] = "количество лет в рейтинге от начальной позиции"
-    
+    @section_headers["upgradability"] = "обновляемость"
+
+    # Subsections under stats/upgradability/ (welcome = freshest_components_lag, rest choosable)
+    @upgradability_section_keys = %w[
+      freshest_components_lag
+      new_upg
+      ram_stats
+      component_stats
+      freshest_comp_stats
+      list_upg
+      performance_3d_with_machine_status
+      heatmap_streaks
+      heatmap_rank_vs_years
+    ].freeze
+    # Main stats dropdown: exclude upgradability subsections (they live under stats/upgradability)
+    @main_section_headers = @section_headers.reject { |k, _| @upgradability_section_keys.include?(k) }
+
+    # Upgradability landing: show welcome section (freshest_components_lag); load its data
+    go_section = params[:go].is_a?(Array) ? params[:go].first : params[:go]
+    if @stat_section == "upgradability" && go_section.present? && @upgradability_section_keys.include?(go_section)
+      redirect_to top50_upgradability_stats_path(go_section), allow_other_host: false and return
+    end
+    @stat_section_for_loading = (@stat_section == "upgradability") ? "freshest_components_lag" : @stat_section
+
     @header_text = "Статистика: " + @section_headers["performance"]
-    if @stat_section.present? 
-      if @section_headers.has_key?(@stat_section)
+    if @stat_section.present?
+      if @stat_section == "upgradability" || (@upgradability_section_keys && @upgradability_section_keys.include?(@stat_section))
+        @header_text = "Статистика: " + @section_headers["upgradability"]
+      elsif @section_headers.has_key?(@stat_section)
         @header_text = "Статистика: " + @section_headers[@stat_section]
       elsif @stat_section[0..6] == 'vendors'
         @header_text = "Статистика: " + @section_headers["vendors"]
@@ -2217,7 +2248,7 @@ class Top50MachinesController < Top50BaseController
       @prec_vendors = prec_relation.joins(:top50_object).merge(Top50Object.joins(:top50_object_type).merge(Top50ObjectType.where(name_eng: "Vendor")))
     elsif  @stat_section == 'type'
       @top50_mtypes = get_avail_mtypes
-    elsif @stat_section == 'freshest_components_lag'
+    elsif (@stat_section_for_loading || @stat_section) == 'freshest_components_lag'
       @all_ratings_data = []
       top50_slists = get_top50_lists_sorted
       top_50_dates = []
@@ -2559,24 +2590,6 @@ class Top50MachinesController < Top50BaseController
         color: "#ff7f0e"
       }
     ]      
-    elsif @stat_section == 'debug'
-      # common_lag: тепловые карты общего отставания компонентов (закомментировано)
-      # top50_slists = get_top50_lists_sorted
-      # top_50_dates = []
-      # top50_slists.each do |top50_list|
-      #   list_num = @num_vals.find_by(obj_id: top50_list.id)
-      #   date_val = @date_vals.find_by(obj_id: top50_list.id)
-      #   list_year = date_val.value.split(".")[2]
-      #   list_month = date_val.value.split(".")[1]
-      #   top_50_dates.push([list_year, list_month])
-      # end
-      # @top50_machines_arr = []
-      # top_50_dates.each do |top50_date|
-      #   top50_machines = fetch_archive_list(get_list_id_by_date(top50_date[0], top50_date[1]))
-      #   @top50_machines_arr.push(top50_machines)
-      # end
-      # @unique_machines = @top50_machines_arr.flatten.uniq
-
     elsif @stat_section == 'ram_stats'
       @ram_per_core_data = []
       @ram_per_cpu_data = []
