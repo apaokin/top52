@@ -2259,11 +2259,6 @@ class Top50MachinesController < Top50BaseController
       # Root = oldest in chain; same grouping as tree_prec_sql(obj_id) on the systems page
       find_root = ->(mid) { mid.nil? ? nil : (while precedes_map[mid]; mid = precedes_map[mid]; end; mid) }
 
-      # Display name: machine name or organization (as on list/archive)
-      all_list_ids_lag = top_50_dates.map { |y, m| get_list_id_by_date(y, m) }.compact
-      all_machine_ids_lag = all_list_ids_lag.any? ? Top50BenchmarkResult.where(benchmark_id: all_list_ids_lag).pluck(:machine_id).uniq : []
-      machine_display_names_lag = all_machine_ids_lag.any? ? Top50Machine.where(id: all_machine_ids_lag).includes(:top50_organization).each_with_object({}) { |m, h| h[m.id] = m.name.presence || m.top50_organization&.name.presence || "н/д" } : {}
-
       # Получаем список дат для каждой редакции
       top50_slists.each do |top50_list|
         list_num = @num_vals.find_by(obj_id: top50_list.id)
@@ -2272,6 +2267,11 @@ class Top50MachinesController < Top50BaseController
         list_month = date_val.value.split(".")[1]
         top_50_dates.push([list_year, list_month])
       end
+
+      # Display name: machine name or organization (as on list/archive) — after top_50_dates is populated
+      all_list_ids_lag = top_50_dates.map { |y, m| get_list_id_by_date(y, m) }.compact
+      all_machine_ids_lag = all_list_ids_lag.any? ? Top50BenchmarkResult.where(benchmark_id: all_list_ids_lag).pluck(:machine_id).uniq : []
+      machine_display_names_lag = all_machine_ids_lag.any? ? Top50Machine.where(id: all_machine_ids_lag).includes(:top50_organization).each_with_object({}) { |m, h| h[m.id] = m.name.presence || m.top50_organization&.name.presence || "н/д" } : {}
     
       # Для каждой даты собираем данные (minimal structure). Order by list position so rank matches /systems/ and archive.
       top_50_dates.each do |top50_date|
@@ -2363,21 +2363,20 @@ class Top50MachinesController < Top50BaseController
           freshest_cpu_count = nil if newest_cpu_diff.nil?
           freshest_gpu_count = nil if newest_gpu_diff.nil?
         
-          # Combined lag: minimum (freshest) between CPU and GPU
-          # If equal, prefer CPU
-          # (Previously: weighted average by component count)
-          # combined_diff = if newest_cpu_diff && newest_gpu_diff && cpu_count > 0 && gpu_count > 0
-          #                   ((newest_cpu_diff * cpu_count) + (newest_gpu_diff * gpu_count)) / (cpu_count + gpu_count)
-          #                 end
+          # Combined lag: min(CPU, GPU) if both present; otherwise min of present component
           combined_diff = if newest_cpu_diff && newest_gpu_diff
                             [newest_cpu_diff, newest_gpu_diff].min
+                          elsif newest_cpu_diff
+                            newest_cpu_diff
+                          elsif newest_gpu_diff
+                            newest_gpu_diff
                           end
           freshest_combined_count = if newest_cpu_diff && newest_gpu_diff
-                                       if newest_cpu_diff <= newest_gpu_diff
-                                         freshest_cpu_count
-                                       else
-                                         freshest_gpu_count
-                                       end
+                                       newest_cpu_diff <= newest_gpu_diff ? freshest_cpu_count : freshest_gpu_count
+                                     elsif newest_cpu_diff
+                                       freshest_cpu_count
+                                     elsif newest_gpu_diff
+                                       freshest_gpu_count
                                      end
         
           machine_id = machine["id"]
