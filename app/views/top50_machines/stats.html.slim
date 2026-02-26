@@ -2219,26 +2219,24 @@ br
       | .heatmap-footer { position: absolute; bottom: 15px; right: 20px; }
 
   body
-    h1 Тепловые карты отставания самых свежих компонент
-    / Выпадающий список для выбора шкалы
-    div
-      label for="scale-selector" Выберите шкалу:
+    div style="margin-bottom: 1em;"
+      label for="scale-selector" Шкала:
       select#scale-selector
-        option value="linear" Линейная шкала
-        option value="log_shifted" Логарифмическая шкала
-        option value="bidirectional" Двунаправленная шкала
-        option value="sqrt" Квадратный корень
+        option value="linear" selected="selected" Градиент (линейный)
+        option value="log" Градиент (log)
+        option value="sqrt" Градиент (sqrt)
+        option value="quantile" По квантилям
 
     / Контейнеры для тепловых карт
     div.heatmap-section
-      h2 CPU Тепловая карта
+      h2 Тепловая карта отставания самого нового CPU
       div.heatmap-wrapper
         #cpu_heatmap
         div.heatmap-footer
           a.button style="background: #6699CC;" id="download_cpu_lag" download="CPU_lag.csv" Скачать CSV
 
     div.heatmap-section
-      h2 GPU Тепловая карта
+      h2 Тепловая карта отставания самого нового GPU
       div.heatmap-wrapper
         #gpu_heatmap
         div.heatmap-footer

@@ -1923,7 +1923,126 @@ buildLagCsv = (data) ->
   )
   [header].concat(rows).join("\n")
 
-# Обновление графиков и кнопок экспорта
+LAG_RAINBOW = ["#00FF00", "#FFFF00", "#FFA500", "#FF0000", "#0000FF", "#800080"]
+lagFormatDay = (d) -> Math.round(d).toString()
+lagFlexibleScale = (data, method) ->
+  data = data or []
+  data = [] unless Array.isArray(data)
+  vals = data.map((d) -> d.lag).filter((v) -> v != null && v != undefined)
+  if vals.length == 0
+    scale = d3.scaleLinear().domain([0, 1]).range(LAG_RAINBOW).clamp(true)
+    return { colorScale: scale, minLag: 0, maxLag: 1 }
+  minLag = d3.min(vals)
+  maxLag = d3.max(vals)
+  if minLag >= maxLag then maxLag = minLag + 1
+  method = (method and method.toString()) or "plain"
+  if method == "log"
+    transform = (v) -> (if v >= 0 then 1 else -1) * Math.log(1 + Math.abs(v))
+    tVals = vals.map(transform)
+    tMin = d3.min(tVals)
+    tMax = d3.max(tVals)
+    if tMin >= tMax then tMax = tMin + 1
+    colorScale = d3.scaleSequential(d3.interpolateRgbBasis(LAG_RAINBOW)).domain([tMin, tMax])
+    return { colorScale: ((v) -> colorScale(transform(v))), minLag: minLag, maxLag: maxLag }
+  if method == "sqrt"
+    transform = (v) -> (if v >= 0 then 1 else -1) * Math.sqrt(Math.abs(v))
+    tVals = vals.map(transform)
+    tMin = d3.min(tVals)
+    tMax = d3.max(tVals)
+    if tMin >= tMax then tMax = tMin + 1
+    colorScale = d3.scaleSequential(d3.interpolateRgbBasis(LAG_RAINBOW)).domain([tMin, tMax])
+    return { colorScale: ((v) -> colorScale(transform(v))), minLag: minLag, maxLag: maxLag }
+  if method == "quantile"
+    scale = d3.scaleQuantile().domain(vals).range(LAG_RAINBOW)
+    return { colorScale: scale, minLag: minLag, maxLag: maxLag }
+  colorScale = d3.scaleSequential(d3.interpolateRgbBasis(LAG_RAINBOW)).domain([minLag, maxLag])
+  return { colorScale: colorScale, minLag: minLag, maxLag: maxLag }
+
+# Freshest-component lag heatmap: negative = before list date, positive = after; scale options like quantities; tooltip with component/vendor
+drawFreshestLagHeatmap = (data, containerId, title, scaleMethod, gradientId) ->
+  data = data or []
+  data = [] unless Array.isArray(data)
+  container = d3.select("##{containerId}")
+  return if container.empty()
+  container.selectAll("*").remove()
+  margin = { top: 20, right: 20, bottom: 80, left: 60 }
+  width = 1000 - margin.left - margin.right
+  height = 600 - margin.top - margin.bottom
+  fullValid = data.filter((d) -> d.lag != null)
+  editions = Array.from(new Set(data.map((d) -> d.edition))).sort((a, b) -> b - a)
+  ranks = Array.from({ length: 50 }, (_, i) -> 50 - i)
+  flexible = lagFlexibleScale(data, scaleMethod)
+  colorScale = flexible.colorScale
+  minLag = flexible.minLag
+  maxLag = flexible.maxLag
+  x = d3.scaleBand().range([width, 0]).domain(editions).padding(0.05)
+  y = d3.scaleBand().range([height, 0]).domain(ranks).padding(0.05)
+  svg = container.append("svg")
+    .attr("width", width + margin.left + margin.right)
+    .attr("height", height + margin.top + margin.bottom + 75)
+    .append("g")
+    .attr("transform", "translate(#{margin.left}, #{margin.top})")
+  xAxis = svg.append("g").attr("transform", "translate(0, #{height})")
+  xAxis.call(d3.axisBottom(x).tickFormat((d) ->
+    if typeof editionDatesLag != "undefined" && editionDatesLag && editionDatesLag[d - 1] then editionDatesLag[d - 1] else d
+  ))
+  xAxis.selectAll("text").attr("transform", "rotate(-45)").style("text-anchor", "end")
+  svg.append("text").attr("x", width / 2).attr("y", height + 55).attr("text-anchor", "middle").style("font-size", "16px").text("Редакция")
+  svg.append("g").call(d3.axisLeft(y))
+  svg.append("text").attr("transform", "rotate(-90)").attr("y", -margin.left + 20).attr("x", -height / 2).attr("text-anchor", "middle").style("font-size", "16px").text("Ранг")
+  validData = data.filter((d) -> d.lag != null)
+  cells = svg.selectAll(".cell").data(validData).enter().append("g").attr("class", "cell")
+  cells.append("rect").attr("class", "cell-fill")
+    .attr("x", (d) -> x(d.edition)).attr("y", (d) -> y(d.rank))
+    .attr("width", x.bandwidth()).attr("height", y.bandwidth())
+    .attr("fill", (d) -> colorScale(d.lag)).attr("stroke", "#000").attr("stroke-width", 0.5)
+  cells.append("rect").attr("class", "cell-contour-sign")
+    .attr("x", (d) -> x(d.edition)).attr("y", (d) -> y(d.rank))
+    .attr("width", x.bandwidth()).attr("height", y.bandwidth())
+    .attr("fill", "none")
+    .attr("stroke", (d) -> if d.show_before_announce_contour then "#e91e8c" else "none")
+    .attr("stroke-width", 2.5)
+  cells.append("rect").attr("class", "cell-hl-outer")
+    .attr("x", (d) -> x(d.edition)).attr("y", (d) -> y(d.rank))
+    .attr("width", x.bandwidth()).attr("height", y.bandwidth())
+    .attr("fill", "none").attr("stroke", "none").attr("stroke-width", 3)
+  cells.append("rect").attr("class", "cell-hl-inner")
+    .attr("x", (d) -> x(d.edition) + 2).attr("y", (d) -> y(d.rank) + 2)
+    .attr("width", x.bandwidth() - 4).attr("height", y.bandwidth() - 4)
+    .attr("fill", "none").attr("stroke", "none").attr("stroke-width", 2)
+  key = (d) -> if d.machine_key? then d.machine_key else d.machine_id
+  cells.filter((d) -> key(d) != null)
+    .on("mouseenter", (d) ->
+      k = key(d)
+      d3.select("##{containerId}").selectAll(".cell").classed("cell-same-machine", (d2) -> key(d2) == k)
+    )
+    .on("mouseleave", -> d3.select("##{containerId}").selectAll(".cell").classed("cell-same-machine", false))
+  cells.append("title").text((d) ->
+    absVal = Math.abs(d.lag)
+    suffix = if d.lag < 0 then " до анонса" else ""
+    header = if d.vendor_name and d.component_name then "#{d.vendor_name} #{d.component_name}" else if d.component_name then d.component_name else if d.vendor_name then d.vendor_name else title
+    info = "#{header},\nРедакция: #{d.edition}, Место: #{d.rank},\nЗначение: #{absVal} дн.#{suffix},"
+    if d.machine_id != null
+      name = if d.machine_name then d.machine_name else "н/д"
+      info += "\nСистема: #{name}"
+    info
+  )
+  legendWidth = 300
+  legendHeight = 20
+  legendX = width / 2 - legendWidth / 2
+  legendY = height + 75
+  defs = svg.append("defs")
+  grad = defs.append("linearGradient").attr("id", gradientId).attr("x1", "0%").attr("x2", "100%").attr("y1", "0%").attr("y2", "0%")
+  for i in [0...LAG_RAINBOW.length]
+    grad.append("stop").attr("offset", (100 * i / (LAG_RAINBOW.length - 1)) + "%").attr("stop-color", LAG_RAINBOW[i])
+  legend = svg.append("g").attr("class", "legend").attr("transform", "translate(#{legendX}, #{legendY})")
+  legend.append("rect").attr("width", legendWidth).attr("height", legendHeight).style("fill", "url(##{gradientId})").attr("stroke", "#333").attr("stroke-width", 0.5)
+  leftLabel = if minLag < 0 then lagFormatDay(Math.abs(minLag)) + " дн. до анонса" else lagFormatDay(minLag) + " дн."
+  rightLabel = if maxLag < 0 then lagFormatDay(Math.abs(maxLag)) + " дн. до анонса" else lagFormatDay(maxLag) + " дн."
+  leftColor = if minLag < 0 then "#2e7d32" else "#c62828"
+  legend.append("text").attr("x", 0).attr("y", legendHeight + 14).attr("text-anchor", "start").style("font-size", "12px").style("fill", leftColor).text(leftLabel)
+  legend.append("text").attr("x", legendWidth).attr("y", legendHeight + 14).attr("text-anchor", "end").style("font-size", "12px").style("fill", "#c62828").text(rightLabel)
+
 @updateHeatmaps = (scale, dataSets, containerIds, titles, colorScales, downloadIds, downloadFilenames) ->
   for i in [0...dataSets.length]
     data = transformLagData(dataSets[i], scale)
@@ -1936,17 +2055,13 @@ buildLagCsv = (data) ->
         base = downloadFilenames[i].replace(/\.csv$/, "")
         d3.select("#" + downloadIds[i]).attr("download", base + "_" + scale + ".csv")
 
-# --- RAM heatmaps: stepped green scale (all three use scale selector) ---
-# Green steps: light -> dark green; last step stays clearly green, not black
 RAM_STEP_COLORS = ["#f0fff0", "#c8e6c8", "#81c784", "#4caf50", "#388e3c", "#2e7d32", "#1b5e20"]
 
-# Format threshold for legend
 ramFmt = (x) ->
   if x >= 100 then Math.round(x)
   else if x >= 1 then d3.format(".1f")(x)
   else d3.format(".2f")(x)
 
-# Format component quantity for legend (integers)
 componentFmt = (x) ->
   if x >= 1000 then Math.round(x)
   else if x >= 100 then Math.round(x)
@@ -1954,9 +2069,6 @@ componentFmt = (x) ->
   else if x >= 1 then Math.round(x)
   else Math.round(x)
 
-# Build scale and legend for all RAM heatmaps. All methods are data-driven (no hardcoded values).
-# method: "fixed" = 7 equal steps from 0 to max; "quantile" = equal count per band; "linear" = 7 steps min–max; "log" = log-spaced; "gradient" = continuous gradient min–max
-# Returns { colorScale (function), labels (array) or gradient (minVal, maxVal) }
 ramFlexibleScale = (data, method) ->
   data = data or []
   data = [] unless Array.isArray(data)
@@ -2053,7 +2165,6 @@ ramFlexibleScale = (data, method) ->
   scale = d3.scaleThreshold().domain(thresholds).range(RAM_STEP_COLORS)
   return { colorScale: scale, labels: labels }
 
-# Legend: discrete steps (rects) or gradient bar. spec = { labels } or { gradient: true, minVal, maxVal, gradientId }
 drawRamLegend = (svg, width, height, spec) ->
   spec = spec or {}
   legendWidth = 320
@@ -2122,22 +2233,16 @@ drawRamLegend = (svg, width, height, spec) ->
     .style("font-size", "10px")
     .text((d) -> d + " ГБ")
 
-# --- Component quantity heatmaps: flexible color scale (reuse RAM scale logic) ---
-# Component scale: reuse ramFlexibleScale but with componentFmt for labels
 componentFlexibleScale = (data, method) ->
   result = ramFlexibleScale(data, method)
   if result.labels
     result.labels = result.labels.map((label) ->
-      # Labels from ramFlexibleScale are formatted strings like "0.5", "1.0", "100+"
-      # Ensure label is a string before processing
       labelStr = if typeof label == "string" then label else String(label)
-      # Remove "+" suffix and parse as float, then format as integer
       num = parseFloat(labelStr.replace(/\+$/, ""))
       if isNaN(num) then labelStr else componentFmt(num) + (if labelStr.match(/\+$/) then "+" else "")
     )
   return result
 
-# Legend for component quantities: same as RAM but no "ГБ" suffix
 drawComponentLegend = (svg, width, height, spec) ->
   spec = spec or {}
   legendWidth = 320
@@ -2424,14 +2529,12 @@ drawComponentTable = (data, containerId, title) ->
   editions = Array.from(new Set(data.map((d) -> d.edition))).sort((a, b) -> a - b)
   ranks = [1..50]
   
-  # Build lookup map
   lookup = {}
   data.forEach((d) ->
     if d.lag != null and d.lag != undefined
       lookup["#{d.edition}-#{d.rank}"] = d.lag
   )
   
-  # Get edition dates for headers
   editionLabels = editions.map((ed) ->
     if typeof editionDatesComponent != "undefined" && editionDatesComponent && editionDatesComponent[ed - 1]
       editionDatesComponent[ed - 1]
@@ -2439,13 +2542,11 @@ drawComponentTable = (data, containerId, title) ->
       ed.toString()
   )
   
-  # Create table
   table = d3.select("##{containerId}").append("table")
     .style("border-collapse", "collapse")
     .style("font-size", "12px")
     .style("margin", "10px 0")
   
-  # Header row
   thead = table.append("thead")
   headerRow = thead.append("tr")
   headerRow.append("th")
@@ -2469,14 +2570,12 @@ drawComponentTable = (data, containerId, title) ->
     .style("min-width", "50px")
     .style("text-align", "center")
   
-  # Body rows
   tbody = table.append("tbody")
   rows = tbody.selectAll("tr")
     .data(ranks)
     .enter()
     .append("tr")
   
-  # Rank column
   rows.append("td")
     .text((rank) -> rank)
     .style("border", "1px solid #ccc")
@@ -2485,7 +2584,6 @@ drawComponentTable = (data, containerId, title) ->
     .style("font-weight", "bold")
     .style("text-align", "right")
   
-  # Data cells
   rows.selectAll("td.data-cell")
     .data((rank) -> editions.map((ed) -> { edition: ed, rank: rank }))
     .enter()
@@ -2659,7 +2757,6 @@ buildRamCsv = (data) ->
       if downloadFilenames and downloadFilenames[i]
         d3.select("#" + downloadIds[i]).attr("download", downloadFilenames[i])
 
-# Инициализация freshest_components_lag
 document.addEventListener("DOMContentLoaded", ->
   scaleSelector = document.getElementById("scale-selector")
   if scaleSelector and typeof cpuDataLinear != "undefined"
@@ -2668,19 +2765,22 @@ document.addEventListener("DOMContentLoaded", ->
     downloadIds = ["download_cpu_lag", "download_gpu_lag", "download_combined_lag"]
     downloadFilenames = ["CPU_lag.csv", "GPU_lag.csv", "Combined_lag.csv"]
     titles = ["CPU Отставание", "GPU Отставание", "Общее Отставание min(CPU, GPU)"]
-    colorScales = [
-      d3.scaleLinear().domain([0, 1]).range(["#b3ffb3", "#ff4d4d"]),
-      d3.scaleLinear().domain([0, 1]).range(["#b3ffb3", "#ff4d4d"]),
-      d3.scaleLinear().domain([0, 1]).range(["#b3ffb3", "#ff4d4d"])
-    ]
-    updateAll = (scale) ->
-      updateHeatmaps(scale, dataSets, containerIds, titles, colorScales, downloadIds, downloadFilenames)
-    updateAll("linear")
-    scaleSelector.addEventListener("change", (event) ->
-      updateAll(event.target.value)
-    )
+    gradientIds = ["lag-legend-cpu", "lag-legend-gpu", "lag-legend-combined"]
+    getFreshestLagScale = () ->
+      (document.getElementById("scale-selector") or {}).value or "linear"
+    updateLagHeatmaps = () ->
+      scaleMethod = getFreshestLagScale()
+      for i in [0...dataSets.length]
+        data = dataSets[i] or []
+        drawFreshestLagHeatmap(data, containerIds[i], titles[i], scaleMethod, gradientIds[i])
+        if downloadIds and downloadIds[i]
+          csv = buildLagCsv(data)
+          d3.select("#" + downloadIds[i]).attr("href", "data:text/csv;charset=utf-8," + encodeURIComponent(csv))
+          if downloadFilenames and downloadFilenames[i]
+            d3.select("#" + downloadIds[i]).attr("download", downloadFilenames[i])
+    updateLagHeatmaps()
+    scaleSelector.addEventListener("change", updateLagHeatmaps)
 
-  # Инициализация ram_stats (тепловые карты RAM; шкала для core/CPU: квантили / равные интервалы / лог)
   if typeof ramPerCoreData != "undefined"
     ramDataSets = [
       ramPerCoreData || [],
@@ -2710,7 +2810,6 @@ document.addEventListener("DOMContentLoaded", ->
     if ramShowHybridEl
       ramShowHybridEl.addEventListener("change", updateRamAll)
 
-  # Инициализация component_stats (тепловые карты количества компонентов)
   if typeof cpuTotalData != "undefined"
     getComponentMetric = () -> (document.getElementById("metric-selector-component") or {}).value or "total"
     getComponentScale = () -> (document.getElementById("scale-selector-component") or {}).value or "quantile"
@@ -2759,7 +2858,6 @@ document.addEventListener("DOMContentLoaded", ->
     if freshestIncludeGpuEl
       freshestIncludeGpuEl.addEventListener("change", updateComponentAll)
 
-  # Инициализация freshest_comp_stats (количество самых свежих CPU/GPU по дате упоминания или анонса)
   if typeof freshestCpuQuantityData != "undefined"
     getFreshestQuantityScale = () -> (document.getElementById("scale-selector-freshest-quantity") or {}).value or "quantile"
     updateFreshestQuantityHeatmaps = () ->

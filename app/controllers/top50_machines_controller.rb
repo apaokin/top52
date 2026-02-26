@@ -2249,6 +2249,11 @@ class Top50MachinesController < Top50BaseController
     elsif  @stat_section == 'type'
       @top50_mtypes = get_avail_mtypes
     elsif (@stat_section_for_loading || @stat_section) == 'freshest_components_lag'
+      calc_machine_attrs
+      @cpu_model_attrid_lag = Top50Attribute.where(name_eng: "CPU model").first&.id
+      @gpu_model_attrid_lag = Top50Attribute.where(name_eng: "GPU model").first&.id
+      @cpu_vendor_attrid_lag = Top50Attribute.where(name_eng: "CPU Vendor").first&.id
+      @gpu_vendor_attrid_lag = Top50Attribute.where(name_eng: "GPU Vendor").first&.id
       @all_ratings_data = []
       top50_slists = get_top50_lists_sorted
       top_50_dates = []
@@ -2311,45 +2316,66 @@ class Top50MachinesController < Top50BaseController
           gpu_count = 0
           freshest_cpu_count = 0
           freshest_gpu_count = 0
-        
+          cpu_component_name = nil
+          cpu_vendor_name = nil
+          cpu_announced_after_mention = nil
+          gpu_component_name = nil
+          gpu_vendor_name = nil
+          gpu_announced_after_mention = nil
+
           mach_l1_nodes = rating_data[:mach_l1_hash][machine["id"]] || []
           mach_l1_nodes.each do |node|
             cpus = rating_data[:l1_l2_hash][node.id].select { |x| x.type_id == @cpu_typeid }
             gpus = rating_data[:l1_l2_hash][node.id].select { |x| x.type_id == @gpu_typeid }
-        
+
             cpus.each do |cpu|
               component_info = ComponentInfo.find_by(component_id: cpu.id)
               if component_info&.date_announced && component_info&.date_mentioned
-                # Вычисляем используемую дату (упоминания или анонса)
-                used_date = component_info.date_mentioned < component_info.date_announced ? 
-                            component_info.date_mentioned : 
-                            component_info.date_announced
-                # Вычисляем разницу с текущей датой
-                diff = (Date.parse(list_date) - used_date).to_i
-                #diff = (Date.today - used_date).to_i
+                list_date_parsed = Date.parse(list_date)
+                # Base: list_date - min(da, dm). For "announced after mentioning" (da > dm) use date_announced so lag can be negative when list is before announcement.
+                da = component_info.date_announced.to_date
+                dm = component_info.date_mentioned.to_date
+                used_date = (da > dm) ? da : [da, dm].min
+                diff = (list_date_parsed - used_date).to_i
                 if diff < newest_cpu_diff
                   newest_cpu_diff = diff
                   freshest_cpu_count = cpu.cnt
+                  cpu_announced_after_mention = (da > dm)
+                  if @cpu_model_attrid_lag.present?
+                    avd = Top50AttributeValDict.find_by(obj_id: cpu.id, attr_id: @cpu_model_attrid_lag)
+                    cpu_component_name = avd&.top50_dictionary_elem&.name
+                  end
+                  if @cpu_vendor_attrid_lag.present?
+                    avd_v = Top50AttributeValDict.find_by(obj_id: cpu.id, attr_id: @cpu_vendor_attrid_lag)
+                    cpu_vendor_name = avd_v&.top50_dictionary_elem&.name
+                  end
                 elsif diff == newest_cpu_diff
                   freshest_cpu_count += cpu.cnt
                 end
                 cpu_count += cpu.cnt
               end
             end
-        
+
             gpus.each do |gpu|
               component_info = ComponentInfo.find_by(component_id: gpu.id)
               if component_info&.date_announced && component_info&.date_mentioned
-                # Вычисляем используемую дату (упоминания или анонса)
-                used_date = component_info.date_mentioned < component_info.date_announced ? 
-                            component_info.date_mentioned : 
-                            component_info.date_announced
-                # Вычисляем разницу с текущей датой
-                diff = (Date.parse(list_date) - used_date).to_i
-                #diff = (Date.today - used_date).to_i
+                list_date_parsed = Date.parse(list_date)
+                da = component_info.date_announced.to_date
+                dm = component_info.date_mentioned.to_date
+                used_date = (da > dm) ? da : [da, dm].min
+                diff = (list_date_parsed - used_date).to_i
                 if diff < newest_gpu_diff
                   newest_gpu_diff = diff
                   freshest_gpu_count = gpu.cnt
+                  gpu_announced_after_mention = (da > dm)
+                  if @gpu_model_attrid_lag.present?
+                    avd = Top50AttributeValDict.find_by(obj_id: gpu.id, attr_id: @gpu_model_attrid_lag)
+                    gpu_component_name = avd&.top50_dictionary_elem&.name
+                  end
+                  if @gpu_vendor_attrid_lag.present?
+                    avd_v = Top50AttributeValDict.find_by(obj_id: gpu.id, attr_id: @gpu_vendor_attrid_lag)
+                    gpu_vendor_name = avd_v&.top50_dictionary_elem&.name
+                  end
                 elsif diff == newest_gpu_diff
                   freshest_gpu_count += gpu.cnt
                 end
@@ -2357,13 +2383,13 @@ class Top50MachinesController < Top50BaseController
               end
             end
           end
-        
+
           newest_cpu_diff = nil if newest_cpu_diff == Float::INFINITY
           newest_gpu_diff = nil if newest_gpu_diff == Float::INFINITY
           freshest_cpu_count = nil if newest_cpu_diff.nil?
           freshest_gpu_count = nil if newest_gpu_diff.nil?
-        
-          # Combined lag: min(CPU, GPU) if both present; otherwise min of present component
+
+          # Combined lag: min(CPU, GPU); component/vendor from the one that defines the min
           combined_diff = if newest_cpu_diff && newest_gpu_diff
                             [newest_cpu_diff, newest_gpu_diff].min
                           elsif newest_cpu_diff
@@ -2378,13 +2404,39 @@ class Top50MachinesController < Top50BaseController
                                      elsif newest_gpu_diff
                                        freshest_gpu_count
                                      end
-        
+          combined_component_name = if newest_cpu_diff && newest_gpu_diff
+                                       newest_cpu_diff <= newest_gpu_diff ? cpu_component_name : gpu_component_name
+                                     elsif newest_cpu_diff
+                                       cpu_component_name
+                                     elsif newest_gpu_diff
+                                       gpu_component_name
+                                     end
+          combined_vendor_name = if newest_cpu_diff && newest_gpu_diff
+                                    newest_cpu_diff <= newest_gpu_diff ? cpu_vendor_name : gpu_vendor_name
+                                  elsif newest_cpu_diff
+                                    cpu_vendor_name
+                                  elsif newest_gpu_diff
+                                    gpu_vendor_name
+                                  end
+          combined_announced_after_mention = if newest_cpu_diff && newest_gpu_diff
+                                                newest_cpu_diff <= newest_gpu_diff ? cpu_announced_after_mention : gpu_announced_after_mention
+                                              elsif newest_cpu_diff
+                                                cpu_announced_after_mention
+                                              elsif newest_gpu_diff
+                                                gpu_announced_after_mention
+                                              end
+
+          # Pink contour only when announced after mention AND lag < 0 (list date still before announcement)
+          show_cpu_contour_lag = cpu_announced_after_mention && newest_cpu_diff.present? && newest_cpu_diff < 0
+          show_gpu_contour_lag = gpu_announced_after_mention && newest_gpu_diff.present? && newest_gpu_diff < 0
+          show_combined_contour_lag = combined_announced_after_mention && combined_diff.present? && combined_diff < 0
+
           machine_id = machine["id"]
           machine_name = machine_display_names_lag[machine_id] || "н/д"
           machine_key = find_root.call(machine_id)
-          @cpu_data << { edition: edition, rank: rank_index + 1, lag: newest_cpu_diff, freshest_count: freshest_cpu_count, machine_id: machine_id, machine_name: machine_name, machine_key: machine_key }
-          @gpu_data << { edition: edition, rank: rank_index + 1, lag: newest_gpu_diff, freshest_count: freshest_gpu_count, machine_id: machine_id, machine_name: machine_name, machine_key: machine_key }
-          @combined_data << { edition: edition, rank: rank_index + 1, lag: combined_diff, freshest_count: freshest_combined_count, machine_id: machine_id, machine_name: machine_name, machine_key: machine_key }
+          @cpu_data << { edition: edition, rank: rank_index + 1, lag: newest_cpu_diff, freshest_count: freshest_cpu_count, machine_id: machine_id, machine_name: machine_name, machine_key: machine_key, component_name: cpu_component_name, vendor_name: cpu_vendor_name, show_before_announce_contour: show_cpu_contour_lag }
+          @gpu_data << { edition: edition, rank: rank_index + 1, lag: newest_gpu_diff, freshest_count: freshest_gpu_count, machine_id: machine_id, machine_name: machine_name, machine_key: machine_key, component_name: gpu_component_name, vendor_name: gpu_vendor_name, show_before_announce_contour: show_gpu_contour_lag }
+          @combined_data << { edition: edition, rank: rank_index + 1, lag: combined_diff, freshest_count: freshest_combined_count, machine_id: machine_id, machine_name: machine_name, machine_key: machine_key, component_name: combined_component_name, vendor_name: combined_vendor_name, show_before_announce_contour: show_combined_contour_lag }
         end
       end
     
