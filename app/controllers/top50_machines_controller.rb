@@ -2332,11 +2332,10 @@ class Top50MachinesController < Top50BaseController
               component_info = ComponentInfo.find_by(component_id: cpu.id)
               if component_info&.date_announced && component_info&.date_mentioned
                 list_date_parsed = Date.parse(list_date)
-                # Base: list_date - min(da, dm). For "announced after mentioning" (da > dm) use date_announced so lag can be negative when list is before announcement.
+                # Lag = d_l - d_a (list date minus announcement date); one metric, no mixing.
                 da = component_info.date_announced.to_date
                 dm = component_info.date_mentioned.to_date
-                used_date = (da > dm) ? da : [da, dm].min
-                diff = (list_date_parsed - used_date).to_i
+                diff = (list_date_parsed - da).to_i
                 if diff < newest_cpu_diff
                   newest_cpu_diff = diff
                   freshest_cpu_count = cpu.cnt
@@ -2362,8 +2361,7 @@ class Top50MachinesController < Top50BaseController
                 list_date_parsed = Date.parse(list_date)
                 da = component_info.date_announced.to_date
                 dm = component_info.date_mentioned.to_date
-                used_date = (da > dm) ? da : [da, dm].min
-                diff = (list_date_parsed - used_date).to_i
+                diff = (list_date_parsed - da).to_i
                 if diff < newest_gpu_diff
                   newest_gpu_diff = diff
                   freshest_gpu_count = gpu.cnt
