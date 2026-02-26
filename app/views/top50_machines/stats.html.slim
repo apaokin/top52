@@ -2421,22 +2421,42 @@ br
         option value="gradient_sqrt" Градиент (sqrt)
 
     div.heatmap-section
-      h2 Новые CPU
+      h2 Количество новых CPU
       div.heatmap-wrapper
         #freshest_cpu_quantity_heatmap
         div.heatmap-footer
           a.button style="background: #6699CC;" id="download_freshest_cpu_quantity" download="Freshest_CPU_quantity.csv" Скачать CSV
 
     div.heatmap-section
-      h2 Новые GPU
+      h2 Количество новых GPU
       div.heatmap-wrapper
         #freshest_gpu_quantity_heatmap
         div.heatmap-footer
           a.button style="background: #6699CC;" id="download_freshest_gpu_quantity" download="Freshest_GPU_quantity.csv" Скачать CSV
 
+    div.heatmap-section style="margin-top: 1.5em;"
+      p
+        label for="announce-to-mention-only-new"
+          input#announce-to-mention-only-new type="checkbox"
+          |  Показывать только новые компоненты (впервые появившиеся в этой редакции)
+      h2 CPU: разница между анонсом и первым упоминанием
+      div.heatmap-wrapper
+        #announce_to_mention_cpu_heatmap
+        div.heatmap-footer
+          a.button style="background: #6699CC;" id="download_announce_to_mention_cpu" download="CPU_announce_to_mention_days.csv" Скачать CSV
+
+    div.heatmap-section
+      h2 GPU: разница между анонсом и первым упоминанием
+      div.heatmap-wrapper
+        #announce_to_mention_gpu_heatmap
+        div.heatmap-footer
+          a.button style="background: #6699CC;" id="download_announce_to_mention_gpu" download="GPU_announce_to_mention_days.csv" Скачать CSV
+
     script
       | const freshestCpuQuantityData = #{raw (@freshest_cpu_quantity_data || []).to_json};
       | const freshestGpuQuantityData = #{raw (@freshest_gpu_quantity_data || []).to_json};
+      | const announceToMentionCpuData = #{raw (@announce_to_mention_cpu_data || []).to_json};
+      | const announceToMentionGpuData = #{raw (@announce_to_mention_gpu_data || []).to_json};
       | const editionDatesComponent = #{raw (@edition_dates_freshest_quantity || []).to_json};
 
     div id="chart_freshest_quantity_systems" style="margin-top: 2em;"

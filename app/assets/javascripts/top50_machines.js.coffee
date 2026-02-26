@@ -2206,7 +2206,7 @@ drawComponentLegend = (svg, width, height, spec) ->
     .style("font-size", "10px")
     .text((d) -> d)
 
-drawComponentHeatmap = (data, containerId, title, scaleMethod) ->
+drawComponentHeatmap = (data, containerId, title, scaleMethod, tooltipUnit = null) ->
   console.log("drawComponentHeatmap called for", containerId, "with", data.length, "data points")
   data = data or []
   data = [] unless Array.isArray(data)
@@ -2301,7 +2301,9 @@ drawComponentHeatmap = (data, containerId, title, scaleMethod) ->
     )
   cells.append("title")
     .text((d) ->
-      info = "#{title}\nРедакция: #{d.edition}, Место: #{d.rank}, Количество: #{Math.round(d.lag)}"
+      valStr = if tooltipUnit then "#{d.lag} #{tooltipUnit}" else "#{Math.round(d.lag)}"
+      header = if d.vendor_name and d.component_name then "#{d.vendor_name} #{d.component_name}" else if d.component_name then d.component_name else if d.vendor_name then d.vendor_name else title
+      info = "#{header},\nРедакция: #{d.edition}, Место: #{d.rank},\n#{if tooltipUnit then "Значение: " else "Количество: "}#{valStr},"
       if d.machine_id != null
         name = if d.machine_name then d.machine_name else "н/д"
         info += "\nСистема: #{name}"
@@ -2323,6 +2325,96 @@ buildComponentCsv = (data) ->
     rank + "," + cells.join(",")
   )
   [header].concat(rows).join("\n")
+
+drawAnnounceToMentionHeatmap = (data, containerId, title, gradientId) ->
+  data = data or []
+  data = [] unless Array.isArray(data)
+  fullData = data
+  onlyNewEl = document.getElementById("announce-to-mention-only-new")
+  if onlyNewEl and onlyNewEl.checked
+    data = data.filter((d) -> d.is_new == true)
+  container = d3.select("##{containerId}")
+  return if container.empty()
+  container.selectAll("*").remove()
+  margin = { top: 20, right: 20, bottom: 80, left: 60 }
+  width = 1000 - margin.left - margin.right
+  height = 600 - margin.top - margin.bottom
+  fullValid = fullData.filter((d) -> d.lag != null)
+  editions = Array.from(new Set(fullData.map((d) -> d.edition))).sort((a, b) -> b - a)
+  ranks = Array.from({ length: 50 }, (_, i) -> 50 - i)
+  minLag = if fullValid.length then d3.min(fullValid, (d) -> d.lag) else 0
+  maxLag = if fullValid.length then d3.max(fullValid, (d) -> d.lag) else 1
+  if minLag == null then minLag = 0
+  if maxLag == null then maxLag = 1
+  if minLag >= maxLag then maxLag = minLag + 1
+  rainbowColors = ["#00FF00", "#FFFF00", "#FFA500", "#FF0000", "#0000FF", "#800080"]
+  colorScale = d3.scaleSequential(d3.interpolateRgbBasis(rainbowColors)).domain([minLag, maxLag])
+  x = d3.scaleBand().range([width, 0]).domain(editions).padding(0.05)
+  y = d3.scaleBand().range([height, 0]).domain(ranks).padding(0.05)
+  validData = data.filter((d) -> d.lag != null)
+  svg = container.append("svg")
+    .attr("width", width + margin.left + margin.right)
+    .attr("height", height + margin.top + margin.bottom + 75)
+    .append("g")
+    .attr("transform", "translate(#{margin.left}, #{margin.top})")
+  xAxis = svg.append("g").attr("transform", "translate(0, #{height})")
+  xAxis.call(d3.axisBottom(x).tickFormat((d) ->
+    if typeof editionDatesComponent != "undefined" && editionDatesComponent && editionDatesComponent[d - 1] then editionDatesComponent[d - 1] else d
+  ))
+  xAxis.selectAll("text").attr("transform", "rotate(-45)").style("text-anchor", "end")
+  svg.append("text").attr("x", width / 2).attr("y", height + 55).attr("text-anchor", "middle").style("font-size", "16px").text("Редакция")
+  svg.append("g").call(d3.axisLeft(y))
+  svg.append("text").attr("transform", "rotate(-90)").attr("y", -margin.left + 20).attr("x", -height / 2).attr("text-anchor", "middle").style("font-size", "16px").text("Ранг")
+  cells = svg.selectAll(".cell").data(validData).enter().append("g").attr("class", "cell")
+  cells.append("rect").attr("class", "cell-fill")
+    .attr("x", (d) -> x(d.edition)).attr("y", (d) -> y(d.rank))
+    .attr("width", x.bandwidth()).attr("height", y.bandwidth())
+    .attr("fill", (d) -> colorScale(d.lag)).attr("stroke", "#000").attr("stroke-width", 0.5)
+  cells.append("rect").attr("class", "cell-contour-sign")
+    .attr("x", (d) -> x(d.edition)).attr("y", (d) -> y(d.rank))
+    .attr("width", x.bandwidth()).attr("height", y.bandwidth())
+    .attr("fill", "none")
+    .attr("stroke", (d) -> if d.show_before_announce_contour then "#e91e8c" else "none")
+    .attr("stroke-width", 2.5)
+  cells.append("rect").attr("class", "cell-hl-outer")
+    .attr("x", (d) -> x(d.edition)).attr("y", (d) -> y(d.rank))
+    .attr("width", x.bandwidth()).attr("height", y.bandwidth())
+    .attr("fill", "none").attr("stroke", "none").attr("stroke-width", 3)
+  cells.append("rect").attr("class", "cell-hl-inner")
+    .attr("x", (d) -> x(d.edition) + 2).attr("y", (d) -> y(d.rank) + 2)
+    .attr("width", x.bandwidth() - 4).attr("height", y.bandwidth() - 4)
+    .attr("fill", "none").attr("stroke", "none").attr("stroke-width", 2)
+  key = (d) -> if d.machine_key? then d.machine_key else d.machine_id
+  cells.filter((d) -> key(d) != null)
+    .on("mouseenter", (d) ->
+      k = key(d)
+      d3.select("##{containerId}").selectAll(".cell").classed("cell-same-machine", (d2) -> key(d2) == k)
+    )
+    .on("mouseleave", -> d3.select("##{containerId}").selectAll(".cell").classed("cell-same-machine", false))
+  cells.append("title").text((d) ->
+    absVal = Math.abs(d.lag)
+    suffix = if d.lag < 0 then " до анонса" else " после анонса"
+    header = if d.vendor_name and d.component_name then "#{d.vendor_name} #{d.component_name}" else if d.component_name then d.component_name else if d.vendor_name then d.vendor_name else title
+    info = "#{header},\nРедакция: #{d.edition}, Место: #{d.rank},\nЗначение: #{absVal} дн.#{suffix},"
+    if d.machine_id != null
+      name = if d.machine_name then d.machine_name else "н/д"
+      info += "\nСистема: #{name}"
+    info
+  )
+  legendWidth = 300
+  legendHeight = 20
+  legendX = width / 2 - legendWidth / 2
+  legendY = height + 75
+  defs = svg.append("defs")
+  grad = defs.append("linearGradient").attr("id", gradientId).attr("x1", "0%").attr("x2", "100%").attr("y1", "0%").attr("y2", "0%")
+  for i in [0...rainbowColors.length]
+    grad.append("stop").attr("offset", (100 * i / (rainbowColors.length - 1)) + "%").attr("stop-color", rainbowColors[i])
+  legend = svg.append("g").attr("class", "legend").attr("transform", "translate(#{legendX}, #{legendY})")
+  legend.append("rect").attr("width", legendWidth).attr("height", legendHeight).style("fill", "url(##{gradientId})").attr("stroke", "#333").attr("stroke-width", 0.5)
+  leftLabel = if minLag < 0 then Math.abs(minLag) + " дн. до анонса" else minLag + " дн. после анонса"
+  leftColor = if minLag < 0 then "#2e7d32" else "#c62828"
+  legend.append("text").attr("x", 0).attr("y", legendHeight + 14).attr("text-anchor", "start").style("font-size", "12px").style("fill", leftColor).text(leftLabel)
+  legend.append("text").attr("x", legendWidth).attr("y", legendHeight + 14).attr("text-anchor", "end").style("font-size", "12px").style("fill", "#c62828").text((if maxLag < 0 then Math.abs(maxLag) + " дн. до анонса" else maxLag + " дн. после анонса"))
 
 drawComponentTable = (data, containerId, title) ->
   data = data or []
@@ -2682,10 +2774,24 @@ document.addEventListener("DOMContentLoaded", ->
       if document.getElementById("download_freshest_gpu_quantity")
         csvGpu = buildComponentCsv(dataGpu)
         d3.select("#download_freshest_gpu_quantity").attr("href", "data:text/csv;charset=utf-8," + encodeURIComponent(csvGpu))
+      if typeof announceToMentionCpuData != "undefined"
+        dataAnnounceCpu = announceToMentionCpuData or []
+        dataAnnounceGpu = announceToMentionGpuData or []
+        drawAnnounceToMentionHeatmap(dataAnnounceCpu, "announce_to_mention_cpu_heatmap", "CPU: разница между анонсом и первым упоминанием", "announce-to-mention-legend-cpu")
+        drawAnnounceToMentionHeatmap(dataAnnounceGpu, "announce_to_mention_gpu_heatmap", "GPU: разница между анонсом и первым упоминанием", "announce-to-mention-legend-gpu")
+        if document.getElementById("download_announce_to_mention_cpu")
+          csvCpu = buildComponentCsv(dataAnnounceCpu)
+          d3.select("#download_announce_to_mention_cpu").attr("href", "data:text/csv;charset=utf-8," + encodeURIComponent(csvCpu))
+        if document.getElementById("download_announce_to_mention_gpu")
+          csvGpu = buildComponentCsv(dataAnnounceGpu)
+          d3.select("#download_announce_to_mention_gpu").attr("href", "data:text/csv;charset=utf-8," + encodeURIComponent(csvGpu))
     updateFreshestQuantityHeatmaps()
     scaleFreshestEl = document.getElementById("scale-selector-freshest-quantity")
     if scaleFreshestEl
       scaleFreshestEl.addEventListener("change", updateFreshestQuantityHeatmaps)
+    announceOnlyNewEl = document.getElementById("announce-to-mention-only-new")
+    if announceOnlyNewEl
+      announceOnlyNewEl.addEventListener("change", updateFreshestQuantityHeatmaps)
 )
 
 @draw_new_vs_upgraded_new = (data, src_id, title, x_label, y_label) ->

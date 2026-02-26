@@ -2911,6 +2911,8 @@ class Top50MachinesController < Top50BaseController
     elsif @stat_section == 'freshest_comp_stats'
       @freshest_cpu_quantity_data = []
       @freshest_gpu_quantity_data = []
+      @announce_to_mention_cpu_data = []
+      @announce_to_mention_gpu_data = []
       @freshest_quantity_chart_dates = {}
       @freshest_cpu_model_ids_by_edition = Hash.new { |h, k| h[k] = Set.new }
       @freshest_gpu_model_ids_by_edition = Hash.new { |h, k| h[k] = Set.new }
@@ -2924,6 +2926,10 @@ class Top50MachinesController < Top50BaseController
       # Machine-level quantity attributes (used when node/component relations give 0, like archive/show)
       @cpu_qty_attrid = Top50Attribute.where(name_eng: "Number of CPUs").first&.id
       @gpu_qty_attrid = Top50Attribute.where(name_eng: "Number of GPUs").first&.id
+      @cpu_model_attrid_fq = Top50Attribute.where(name_eng: "CPU model").first&.id
+      @gpu_model_attrid_fq = Top50Attribute.where(name_eng: "GPU model").first&.id
+      @cpu_vendor_attrid_fq = Top50Attribute.where(name_eng: "CPU Vendor").first&.id
+      @gpu_vendor_attrid_fq = Top50Attribute.where(name_eng: "GPU Vendor").first&.id
 
       top50_slists = get_top50_lists_sorted
       top_50_dates = []
@@ -2974,6 +2980,18 @@ class Top50MachinesController < Top50BaseController
           freshest_gpu_count = 0
           total_cpu_count = 0
           total_gpu_count = 0
+          min_cpu_announce_to_mention_days = nil
+          min_gpu_announce_to_mention_days = nil
+          cpu_contour_date_announced = nil
+          gpu_contour_date_announced = nil
+          cpu_component_name = nil
+          gpu_component_name = nil
+          cpu_vendor_name = nil
+          gpu_vendor_name = nil
+          cpu_new_component_name = nil
+          gpu_new_component_name = nil
+          cpu_new_vendor_name = nil
+          gpu_new_vendor_name = nil
 
           node_rels = Top50Relation.where(prim_obj_id: machine_id, type_id: @rel_contain_id)
           node_rels.each do |node_rel|
@@ -2996,10 +3014,48 @@ class Top50MachinesController < Top50BaseController
               ci = ComponentInfo.find_by(component_id: component_id)
               next unless ci
 
+              comp_model_name = nil
+              comp_vendor_name = nil
+              if component_obj.type_id == @cpu_typeid && @cpu_model_attrid_fq.present?
+                avd = Top50AttributeValDict.find_by(obj_id: component_id, attr_id: @cpu_model_attrid_fq)
+                comp_model_name = avd&.top50_dictionary_elem&.name
+                if @cpu_vendor_attrid_fq.present?
+                  avd_v = Top50AttributeValDict.find_by(obj_id: component_id, attr_id: @cpu_vendor_attrid_fq)
+                  comp_vendor_name = avd_v&.top50_dictionary_elem&.name
+                end
+              elsif component_obj.type_id == @gpu_typeid && @gpu_model_attrid_fq.present?
+                avd = Top50AttributeValDict.find_by(obj_id: component_id, attr_id: @gpu_model_attrid_fq)
+                comp_model_name = avd&.top50_dictionary_elem&.name
+                if @gpu_vendor_attrid_fq.present?
+                  avd_v = Top50AttributeValDict.find_by(obj_id: component_id, attr_id: @gpu_vendor_attrid_fq)
+                  comp_vendor_name = avd_v&.top50_dictionary_elem&.name
+                end
+              end
+
               dm = ci.date_mentioned
               da = ci.date_announced
               dm_date = dm.respond_to?(:to_date) ? dm.to_date : (dm.is_a?(Date) ? dm : nil)
               da_date = da.respond_to?(:to_date) ? da.to_date : (da.is_a?(Date) ? da : nil)
+
+              # Difference (date_mentioned - date_announced) in days for announce-to-mention heatmaps
+              if dm_date.present? && da_date.present?
+                diff_days = (dm_date - da_date).to_i
+                if component_obj.type_id == @cpu_typeid
+                  if min_cpu_announce_to_mention_days.nil? || diff_days < min_cpu_announce_to_mention_days
+                    min_cpu_announce_to_mention_days = diff_days
+                    cpu_contour_date_announced = da_date if diff_days < 0
+                    cpu_component_name = comp_model_name.presence
+                    cpu_vendor_name = comp_vendor_name.presence
+                  end
+                elsif component_obj.type_id == @gpu_typeid
+                  if min_gpu_announce_to_mention_days.nil? || diff_days < min_gpu_announce_to_mention_days
+                    min_gpu_announce_to_mention_days = diff_days
+                    gpu_contour_date_announced = da_date if diff_days < 0
+                    gpu_component_name = comp_model_name.presence
+                    gpu_vendor_name = comp_vendor_name.presence
+                  end
+                end
+              end
 
               is_freshest = (dm_date.present? && dm_date == list_date_parsed) ||
                             (da_date.present? && da_date >= list_date_parsed)
@@ -3008,9 +3064,13 @@ class Top50MachinesController < Top50BaseController
                 if component_obj.type_id == @cpu_typeid
                   freshest_cpu_count += component_qty
                   @freshest_cpu_model_ids_by_edition[edition].add(component_id)
+                  cpu_new_component_name ||= comp_model_name.presence
+                  cpu_new_vendor_name ||= comp_vendor_name.presence
                 elsif component_obj.type_id == @gpu_typeid
                   freshest_gpu_count += component_qty
                   @freshest_gpu_model_ids_by_edition[edition].add(component_id)
+                  gpu_new_component_name ||= comp_model_name.presence
+                  gpu_new_vendor_name ||= comp_vendor_name.presence
                 end
               end
             end
@@ -3028,8 +3088,14 @@ class Top50MachinesController < Top50BaseController
 
           machine_name_fq = machine_names_fq[machine_id] || "н/д"
           machine_key_fq = find_root_fq.call(machine_id)
-          @freshest_cpu_quantity_data << { edition: edition, rank: rank, lag: (freshest_cpu_count > 0 ? freshest_cpu_count : nil), total_cpu: total_cpu_count, total_gpu: total_gpu_count, machine_id: machine_id, machine_name: machine_name_fq, machine_key: machine_key_fq }
-          @freshest_gpu_quantity_data << { edition: edition, rank: rank, lag: (freshest_gpu_count > 0 ? freshest_gpu_count : nil), total_cpu: total_cpu_count, total_gpu: total_gpu_count, machine_id: machine_id, machine_name: machine_name_fq, machine_key: machine_key_fq }
+          @freshest_cpu_quantity_data << { edition: edition, rank: rank, lag: (freshest_cpu_count > 0 ? freshest_cpu_count : nil), total_cpu: total_cpu_count, total_gpu: total_gpu_count, machine_id: machine_id, machine_name: machine_name_fq, machine_key: machine_key_fq, component_name: cpu_new_component_name, vendor_name: cpu_new_vendor_name }
+          @freshest_gpu_quantity_data << { edition: edition, rank: rank, lag: (freshest_gpu_count > 0 ? freshest_gpu_count : nil), total_cpu: total_cpu_count, total_gpu: total_gpu_count, machine_id: machine_id, machine_name: machine_name_fq, machine_key: machine_key_fq, component_name: gpu_new_component_name, vendor_name: gpu_new_vendor_name }
+          # Announce-to-mention diff heatmaps (lag-style: days from date_announced to date_mentioned)
+          # Pink contour only when list date is before announcement (mentioned-before-announced case)
+          show_cpu_contour = min_cpu_announce_to_mention_days.present? && min_cpu_announce_to_mention_days < 0 && cpu_contour_date_announced.present? && list_date_parsed < cpu_contour_date_announced
+          show_gpu_contour = min_gpu_announce_to_mention_days.present? && min_gpu_announce_to_mention_days < 0 && gpu_contour_date_announced.present? && list_date_parsed < gpu_contour_date_announced
+          @announce_to_mention_cpu_data << { edition: edition, rank: rank, lag: min_cpu_announce_to_mention_days, freshest_count: 1, machine_id: machine_id, machine_name: machine_name_fq, machine_key: machine_key_fq, is_new: (freshest_cpu_count > 0), show_before_announce_contour: show_cpu_contour, component_name: cpu_component_name, vendor_name: cpu_vendor_name }
+          @announce_to_mention_gpu_data << { edition: edition, rank: rank, lag: min_gpu_announce_to_mention_days, freshest_count: 1, machine_id: machine_id, machine_name: machine_name_fq, machine_key: machine_key_fq, is_new: (freshest_gpu_count > 0), show_before_announce_contour: show_gpu_contour, component_name: gpu_component_name, vendor_name: gpu_vendor_name }
         end
       end
 
@@ -3304,6 +3370,8 @@ class Top50MachinesController < Top50BaseController
       # Exclude the first list from heatmaps (same as charts)
       @freshest_cpu_quantity_data = @freshest_cpu_quantity_data.select { |h| chart_editions.include?(h[:edition]) }
       @freshest_gpu_quantity_data = @freshest_gpu_quantity_data.select { |h| chart_editions.include?(h[:edition]) }
+      @announce_to_mention_cpu_data = @announce_to_mention_cpu_data.select { |h| chart_editions.include?(h[:edition]) }
+      @announce_to_mention_gpu_data = @announce_to_mention_gpu_data.select { |h| chart_editions.include?(h[:edition]) }
 
     elsif  @stat_section == 'list_upg'
       precedes_type_id = Top50RelationType.find_by(name_eng: "Precedes")&.id
