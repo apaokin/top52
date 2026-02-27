@@ -2226,6 +2226,7 @@ br
         option value="log" Градиент (log)
         option value="sqrt" Градиент (sqrt)
         option value="quantile" По квантилям
+        option value="quarters" Значения в кварталах
 
     / Контейнеры для тепловых карт
     div.heatmap-section
@@ -2437,6 +2438,11 @@ br
         label for="announce-to-mention-only-new"
           input#announce-to-mention-only-new type="checkbox"
           |  Показывать только новые компоненты (впервые появившиеся в рейтинге)
+      p
+        label for="announce-to-mention-unit" Единица измерения:
+        select#announce-to-mention-unit
+          option value="days" Дни
+          option value="quarters" Кварталы
       h2 CPU: разница между анонсом и первым упоминанием
       div.heatmap-wrapper
         #announce_to_mention_cpu_heatmap
@@ -2650,6 +2656,9 @@ br
     d3.selectAll("a").filter(() -> d3.select(this).attr("id") == "download_new_upg").attr("href", "data:attachment/csv," + csvNewUpg)
      
 - elsif @stat_section == "list_upg"
+  style
+    | .cell.cell-same-machine .cell-hl-outer { stroke: #000; }
+    | .cell.cell-same-machine .cell-hl-inner { stroke: #ffeb3b; }
   div id="matrix_chart"
     javascript:
       chartData = #{raw @chart_data};

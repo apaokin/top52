@@ -1907,35 +1907,42 @@ transformLagData = (data, method) ->
       out
     )
 
-# Build CSV from lag data (rows=rank, cols=edition)
-buildLagCsv = (data) ->
+# Build CSV from lag data (rows=rank, cols=edition). inQuarters: export values as quarters (lag/91.25)
+buildLagCsv = (data, inQuarters = false) ->
   editions = Array.from(new Set(data.map((d) -> d.edition))).sort((a, b) -> a - b)
   ranks = [1..50]
   lookup = {}
-  data.forEach((d) -> lookup["#{d.edition}-#{d.rank}"] = d.lag)
+  data.forEach((d) ->
+    if d.lag != null && d.lag != undefined
+      val = if inQuarters then d.lag / DAYS_PER_QUARTER else d.lag
+      lookup["#{d.edition}-#{d.rank}"] = val
+  )
   header = "Место | Редакция," + editions.join(",")
+  fmt = (v) -> if v == null or v == undefined then "" else (if inQuarters then (if Math.abs(v) >= 10 then Math.round(v) else d3.format(".2f")(v)) else v)
   rows = ranks.map((rank) ->
-    cells = editions.map((ed) ->
-      v = lookup["#{ed}-#{rank}"]
-      if v == null or v == undefined then "" else v
-    )
+    cells = editions.map((ed) -> fmt(lookup["#{ed}-#{rank}"]))
     rank + "," + cells.join(",")
   )
   [header].concat(rows).join("\n")
 
 LAG_RAINBOW = ["#00FF00", "#FFFF00", "#FFA500", "#FF0000", "#0000FF", "#800080"]
+DAYS_PER_QUARTER = 91.25
 lagFormatDay = (d) -> Math.round(d).toString()
+lagFormatQuarter = (q) -> (if Math.abs(q) >= 10 then Math.round(q) else d3.format(".1f")(q)).toString()
 lagFlexibleScale = (data, method) ->
   data = data or []
   data = [] unless Array.isArray(data)
   vals = data.map((d) -> d.lag).filter((v) -> v != null && v != undefined)
   if vals.length == 0
     scale = d3.scaleLinear().domain([0, 1]).range(LAG_RAINBOW).clamp(true)
-    return { colorScale: scale, minLag: 0, maxLag: 1 }
+    return { colorScale: scale, minLag: 0, maxLag: 1, inQuarters: false }
+  method = (method and method.toString()) or "plain"
+  inQuarters = (method == "quarters")
+  if inQuarters
+    vals = vals.map((v) -> v / DAYS_PER_QUARTER)
   minLag = d3.min(vals)
   maxLag = d3.max(vals)
   if minLag >= maxLag then maxLag = minLag + 1
-  method = (method and method.toString()) or "plain"
   if method == "log"
     transform = (v) -> (if v >= 0 then 1 else -1) * Math.log(1 + Math.abs(v))
     tVals = vals.map(transform)
@@ -1943,7 +1950,8 @@ lagFlexibleScale = (data, method) ->
     tMax = d3.max(tVals)
     if tMin >= tMax then tMax = tMin + 1
     colorScale = d3.scaleSequential(d3.interpolateRgbBasis(LAG_RAINBOW)).domain([tMin, tMax])
-    return { colorScale: ((v) -> colorScale(transform(v))), minLag: minLag, maxLag: maxLag }
+    toColor = if inQuarters then ((v) -> colorScale(transform(v / DAYS_PER_QUARTER))) else ((v) -> colorScale(transform(v)))
+    return { colorScale: toColor, minLag: minLag, maxLag: maxLag, inQuarters: inQuarters }
   if method == "sqrt"
     transform = (v) -> (if v >= 0 then 1 else -1) * Math.sqrt(Math.abs(v))
     tVals = vals.map(transform)
@@ -1951,12 +1959,18 @@ lagFlexibleScale = (data, method) ->
     tMax = d3.max(tVals)
     if tMin >= tMax then tMax = tMin + 1
     colorScale = d3.scaleSequential(d3.interpolateRgbBasis(LAG_RAINBOW)).domain([tMin, tMax])
-    return { colorScale: ((v) -> colorScale(transform(v))), minLag: minLag, maxLag: maxLag }
+    toColor = if inQuarters then ((v) -> colorScale(transform(v / DAYS_PER_QUARTER))) else ((v) -> colorScale(transform(v)))
+    return { colorScale: toColor, minLag: minLag, maxLag: maxLag, inQuarters: inQuarters }
   if method == "quantile"
     scale = d3.scaleQuantile().domain(vals).range(LAG_RAINBOW)
-    return { colorScale: scale, minLag: minLag, maxLag: maxLag }
+    toColor = if inQuarters then ((v) -> scale(v / DAYS_PER_QUARTER)) else scale
+    return { colorScale: toColor, minLag: minLag, maxLag: maxLag, inQuarters: inQuarters }
+  if method == "quarters"
+    colorScale = d3.scaleSequential(d3.interpolateRgbBasis(LAG_RAINBOW)).domain([minLag, maxLag])
+    toColor = (v) -> colorScale(v / DAYS_PER_QUARTER)
+    return { colorScale: toColor, minLag: minLag, maxLag: maxLag, inQuarters: true }
   colorScale = d3.scaleSequential(d3.interpolateRgbBasis(LAG_RAINBOW)).domain([minLag, maxLag])
-  return { colorScale: colorScale, minLag: minLag, maxLag: maxLag }
+  return { colorScale: colorScale, minLag: minLag, maxLag: maxLag, inQuarters: false }
 
 # Freshest-component lag heatmap: negative = before list date, positive = after; scale options like quantities; tooltip with component/vendor
 drawFreshestLagHeatmap = (data, containerId, title, scaleMethod, gradientId) ->
@@ -1975,6 +1989,7 @@ drawFreshestLagHeatmap = (data, containerId, title, scaleMethod, gradientId) ->
   colorScale = flexible.colorScale
   minLag = flexible.minLag
   maxLag = flexible.maxLag
+  inQuarters = flexible.inQuarters or false
   x = d3.scaleBand().range([width, 0]).domain(editions).padding(0.05)
   y = d3.scaleBand().range([height, 0]).domain(ranks).padding(0.05)
   svg = container.append("svg")
@@ -2018,10 +2033,16 @@ drawFreshestLagHeatmap = (data, containerId, title, scaleMethod, gradientId) ->
     )
     .on("mouseleave", -> d3.select("##{containerId}").selectAll(".cell").classed("cell-same-machine", false))
   cells.append("title").text((d) ->
-    absVal = Math.abs(d.lag)
+    if inQuarters
+      q = d.lag / DAYS_PER_QUARTER
+      absVal = (if Math.abs(q) >= 10 then Math.round(q) else d3.format(".1f")(Math.abs(q)))
+      unit = " кв."
+    else
+      absVal = Math.abs(d.lag)
+      unit = " дн."
     suffix = if d.lag < 0 then " до анонса" else ""
     header = if d.vendor_name and d.component_name then "#{d.vendor_name} #{d.component_name}" else if d.component_name then d.component_name else if d.vendor_name then d.vendor_name else title
-    info = "#{header},\nРедакция: #{d.edition}, Место: #{d.rank},\nЗначение: #{absVal} дн.#{suffix},"
+    info = "#{header},\nРедакция: #{d.edition}, Место: #{d.rank},\nЗначение: #{absVal}#{unit}#{suffix},"
     if d.machine_id != null
       name = if d.machine_name then d.machine_name else "н/д"
       info += "\nСистема: #{name}"
@@ -2037,8 +2058,10 @@ drawFreshestLagHeatmap = (data, containerId, title, scaleMethod, gradientId) ->
     grad.append("stop").attr("offset", (100 * i / (LAG_RAINBOW.length - 1)) + "%").attr("stop-color", LAG_RAINBOW[i])
   legend = svg.append("g").attr("class", "legend").attr("transform", "translate(#{legendX}, #{legendY})")
   legend.append("rect").attr("width", legendWidth).attr("height", legendHeight).style("fill", "url(##{gradientId})").attr("stroke", "#333").attr("stroke-width", 0.5)
-  leftLabel = if minLag < 0 then lagFormatDay(Math.abs(minLag)) + " дн. до анонса" else lagFormatDay(minLag) + " дн."
-  rightLabel = if maxLag < 0 then lagFormatDay(Math.abs(maxLag)) + " дн. до анонса" else lagFormatDay(maxLag) + " дн."
+  unitStr = if inQuarters then " кв." else " дн."
+  fmt = if inQuarters then lagFormatQuarter else lagFormatDay
+  leftLabel = if minLag < 0 then fmt(Math.abs(minLag)) + unitStr + " до анонса" else fmt(minLag) + unitStr
+  rightLabel = if maxLag < 0 then fmt(Math.abs(maxLag)) + unitStr + " до анонса" else fmt(maxLag) + unitStr
   leftColor = if minLag < 0 then "#2e7d32" else "#c62828"
   legend.append("text").attr("x", 0).attr("y", legendHeight + 14).attr("text-anchor", "start").style("font-size", "12px").style("fill", leftColor).text(leftLabel)
   legend.append("text").attr("x", legendWidth).attr("y", legendHeight + 14).attr("text-anchor", "end").style("font-size", "12px").style("fill", "#c62828").text(rightLabel)
@@ -2431,7 +2454,7 @@ buildComponentCsv = (data) ->
   )
   [header].concat(rows).join("\n")
 
-drawAnnounceToMentionHeatmap = (data, containerId, title, gradientId) ->
+drawAnnounceToMentionHeatmap = (data, containerId, title, gradientId, unit = "days") ->
   data = data or []
   data = [] unless Array.isArray(data)
   fullData = data
@@ -2445,15 +2468,18 @@ drawAnnounceToMentionHeatmap = (data, containerId, title, gradientId) ->
   width = 1000 - margin.left - margin.right
   height = 600 - margin.top - margin.bottom
   fullValid = fullData.filter((d) -> d.lag != null)
-  editions = Array.from(new Set(fullData.map((d) -> d.edition))).sort((a, b) -> b - a)
-  ranks = Array.from({ length: 50 }, (_, i) -> 50 - i)
-  minLag = if fullValid.length then d3.min(fullValid, (d) -> d.lag) else 0
-  maxLag = if fullValid.length then d3.max(fullValid, (d) -> d.lag) else 1
+  inQuarters = (unit == "quarters")
+  toVal = if inQuarters then ((d) -> d.lag / DAYS_PER_QUARTER) else ((d) -> d.lag)
+  minLag = if fullValid.length then d3.min(fullValid, toVal) else 0
+  maxLag = if fullValid.length then d3.max(fullValid, toVal) else 1
   if minLag == null then minLag = 0
   if maxLag == null then maxLag = 1
   if minLag >= maxLag then maxLag = minLag + 1
   rainbowColors = ["#00FF00", "#FFFF00", "#FFA500", "#FF0000", "#0000FF", "#800080"]
   colorScale = d3.scaleSequential(d3.interpolateRgbBasis(rainbowColors)).domain([minLag, maxLag])
+  cellColor = if inQuarters then ((d) -> colorScale(d.lag / DAYS_PER_QUARTER)) else ((d) -> colorScale(d.lag))
+  editions = Array.from(new Set(fullData.map((d) -> d.edition))).sort((a, b) -> b - a)
+  ranks = Array.from({ length: 50 }, (_, i) -> 50 - i)
   x = d3.scaleBand().range([width, 0]).domain(editions).padding(0.05)
   y = d3.scaleBand().range([height, 0]).domain(ranks).padding(0.05)
   validData = data.filter((d) -> d.lag != null)
@@ -2474,7 +2500,7 @@ drawAnnounceToMentionHeatmap = (data, containerId, title, gradientId) ->
   cells.append("rect").attr("class", "cell-fill")
     .attr("x", (d) -> x(d.edition)).attr("y", (d) -> y(d.rank))
     .attr("width", x.bandwidth()).attr("height", y.bandwidth())
-    .attr("fill", (d) -> colorScale(d.lag)).attr("stroke", "#000").attr("stroke-width", 0.5)
+    .attr("fill", (d) -> cellColor(d)).attr("stroke", "#000").attr("stroke-width", 0.5)
   cells.append("rect").attr("class", "cell-contour-sign")
     .attr("x", (d) -> x(d.edition)).attr("y", (d) -> y(d.rank))
     .attr("width", x.bandwidth()).attr("height", y.bandwidth())
@@ -2497,10 +2523,16 @@ drawAnnounceToMentionHeatmap = (data, containerId, title, gradientId) ->
     )
     .on("mouseleave", -> d3.select("##{containerId}").selectAll(".cell").classed("cell-same-machine", false))
   cells.append("title").text((d) ->
-    absVal = Math.abs(d.lag)
+    if inQuarters
+      q = d.lag / DAYS_PER_QUARTER
+      absVal = (if Math.abs(q) >= 10 then Math.round(q) else d3.format(".1f")(Math.abs(q)))
+      unitStr = " кв."
+    else
+      absVal = Math.abs(d.lag)
+      unitStr = " дн."
     suffix = if d.lag < 0 then " до анонса" else " после анонса"
     header = if d.vendor_name and d.component_name then "#{d.vendor_name} #{d.component_name}" else if d.component_name then d.component_name else if d.vendor_name then d.vendor_name else title
-    info = "#{header},\nРедакция: #{d.edition}, Место: #{d.rank},\nЗначение: #{absVal} дн.#{suffix},"
+    info = "#{header},\nРедакция: #{d.edition}, Место: #{d.rank},\nЗначение: #{absVal}#{unitStr}#{suffix},"
     if d.machine_id != null
       name = if d.machine_name then d.machine_name else "н/д"
       info += "\nСистема: #{name}"
@@ -2516,10 +2548,13 @@ drawAnnounceToMentionHeatmap = (data, containerId, title, gradientId) ->
     grad.append("stop").attr("offset", (100 * i / (rainbowColors.length - 1)) + "%").attr("stop-color", rainbowColors[i])
   legend = svg.append("g").attr("class", "legend").attr("transform", "translate(#{legendX}, #{legendY})")
   legend.append("rect").attr("width", legendWidth).attr("height", legendHeight).style("fill", "url(##{gradientId})").attr("stroke", "#333").attr("stroke-width", 0.5)
-  leftLabel = if minLag < 0 then Math.abs(minLag) + " дн. до анонса" else minLag + " дн. после анонса"
+  unitStr = if inQuarters then " кв." else " дн."
+  fmt = if inQuarters then lagFormatQuarter else ((d) -> Math.round(d).toString())
+  leftLabel = if minLag < 0 then fmt(Math.abs(minLag)) + unitStr + " до анонса" else fmt(minLag) + unitStr + " после анонса"
+  rightLabel = if maxLag < 0 then fmt(Math.abs(maxLag)) + unitStr + " до анонса" else fmt(maxLag) + unitStr + " после анонса"
   leftColor = if minLag < 0 then "#2e7d32" else "#c62828"
   legend.append("text").attr("x", 0).attr("y", legendHeight + 14).attr("text-anchor", "start").style("font-size", "12px").style("fill", leftColor).text(leftLabel)
-  legend.append("text").attr("x", legendWidth).attr("y", legendHeight + 14).attr("text-anchor", "end").style("font-size", "12px").style("fill", "#c62828").text((if maxLag < 0 then Math.abs(maxLag) + " дн. до анонса" else maxLag + " дн. после анонса"))
+  legend.append("text").attr("x", legendWidth).attr("y", legendHeight + 14).attr("text-anchor", "end").style("font-size", "12px").style("fill", "#c62828").text(rightLabel)
 
 drawComponentTable = (data, containerId, title) ->
   data = data or []
@@ -2770,14 +2805,17 @@ document.addEventListener("DOMContentLoaded", ->
       (document.getElementById("scale-selector") or {}).value or "linear"
     updateLagHeatmaps = () ->
       scaleMethod = getFreshestLagScale()
+      inQuarters = (scaleMethod == "quarters")
       for i in [0...dataSets.length]
         data = dataSets[i] or []
         drawFreshestLagHeatmap(data, containerIds[i], titles[i], scaleMethod, gradientIds[i])
         if downloadIds and downloadIds[i]
-          csv = buildLagCsv(data)
+          csv = buildLagCsv(data, inQuarters)
           d3.select("#" + downloadIds[i]).attr("href", "data:text/csv;charset=utf-8," + encodeURIComponent(csv))
           if downloadFilenames and downloadFilenames[i]
-            d3.select("#" + downloadIds[i]).attr("download", downloadFilenames[i])
+            base = downloadFilenames[i].replace(/\.csv$/, "")
+            ext = if inQuarters then "_quarters.csv" else ".csv"
+            d3.select("#" + downloadIds[i]).attr("download", base + ext)
     updateLagHeatmaps()
     scaleSelector.addEventListener("change", updateLagHeatmaps)
 
@@ -2875,14 +2913,16 @@ document.addEventListener("DOMContentLoaded", ->
       if typeof announceToMentionCpuData != "undefined"
         dataAnnounceCpu = announceToMentionCpuData or []
         dataAnnounceGpu = announceToMentionGpuData or []
-        drawAnnounceToMentionHeatmap(dataAnnounceCpu, "announce_to_mention_cpu_heatmap", "CPU: разница между анонсом и первым упоминанием", "announce-to-mention-legend-cpu")
-        drawAnnounceToMentionHeatmap(dataAnnounceGpu, "announce_to_mention_gpu_heatmap", "GPU: разница между анонсом и первым упоминанием", "announce-to-mention-legend-gpu")
+        announceUnit = (document.getElementById("announce-to-mention-unit") or {}).value or "days"
+        drawAnnounceToMentionHeatmap(dataAnnounceCpu, "announce_to_mention_cpu_heatmap", "CPU: разница между анонсом и первым упоминанием", "announce-to-mention-legend-cpu", announceUnit)
+        drawAnnounceToMentionHeatmap(dataAnnounceGpu, "announce_to_mention_gpu_heatmap", "GPU: разница между анонсом и первым упоминанием", "announce-to-mention-legend-gpu", announceUnit)
+        inQuarters = (announceUnit == "quarters")
         if document.getElementById("download_announce_to_mention_cpu")
-          csvCpu = buildComponentCsv(dataAnnounceCpu)
-          d3.select("#download_announce_to_mention_cpu").attr("href", "data:text/csv;charset=utf-8," + encodeURIComponent(csvCpu))
+          csvCpu = if inQuarters then buildLagCsv(dataAnnounceCpu, true) else buildComponentCsv(dataAnnounceCpu)
+          d3.select("#download_announce_to_mention_cpu").attr("href", "data:text/csv;charset=utf-8," + encodeURIComponent(csvCpu)).attr("download", if inQuarters then "CPU_announce_to_mention_quarters.csv" else "CPU_announce_to_mention_days.csv")
         if document.getElementById("download_announce_to_mention_gpu")
-          csvGpu = buildComponentCsv(dataAnnounceGpu)
-          d3.select("#download_announce_to_mention_gpu").attr("href", "data:text/csv;charset=utf-8," + encodeURIComponent(csvGpu))
+          csvGpu = if inQuarters then buildLagCsv(dataAnnounceGpu, true) else buildComponentCsv(dataAnnounceGpu)
+          d3.select("#download_announce_to_mention_gpu").attr("href", "data:text/csv;charset=utf-8," + encodeURIComponent(csvGpu)).attr("download", if inQuarters then "GPU_announce_to_mention_quarters.csv" else "GPU_announce_to_mention_days.csv")
     updateFreshestQuantityHeatmaps()
     scaleFreshestEl = document.getElementById("scale-selector-freshest-quantity")
     if scaleFreshestEl
@@ -2890,6 +2930,9 @@ document.addEventListener("DOMContentLoaded", ->
     announceOnlyNewEl = document.getElementById("announce-to-mention-only-new")
     if announceOnlyNewEl
       announceOnlyNewEl.addEventListener("change", updateFreshestQuantityHeatmaps)
+    announceUnitEl = document.getElementById("announce-to-mention-unit")
+    if announceUnitEl
+      announceUnitEl.addEventListener("change", updateFreshestQuantityHeatmaps)
 )
 
 @draw_new_vs_upgraded_new = (data, src_id, title, x_label, y_label) ->
@@ -2960,8 +3003,8 @@ document.addEventListener("DOMContentLoaded", ->
              .on("click", () ->
                chartLayers = svg.selectAll(".layer-" + i)
                chartLayers.classed("hidden", (d, j, nodes) ->
-                 !d3.select(nodes[j]).classed("hidden")
-               )
+                   !d3.select(nodes[j]).classed("hidden")
+                 )
                isHidden = chartLayers.classed("hidden")
                btn = container.select(".toggle-btn-" + i)
                btn.style("opacity", if isHidden then 0.5 else 1)
@@ -3208,6 +3251,12 @@ formatEditionDate = (s) ->
             # Ни один статус не активен: скрыть клетку
             cellGroup.selectAll("rect")
               .attr("visibility", "hidden")
+
+          # Подсветка должна оставаться доступной для видимых клеток
+          if (leftActive) or (rightActive)
+            cellGroup.selectAll(".cell-hl-outer, .cell-hl-inner").attr("visibility", "visible")
+          else
+            cellGroup.selectAll(".cell-hl-outer, .cell-hl-inner").attr("visibility", "hidden")
         )
       )
   )
@@ -3272,6 +3321,26 @@ formatEditionDate = (s) ->
         .attr("stroke", "black")
         .attr("stroke-width", 0.4)
 
+      # Подсветка одной системы по всем редакциям при наведении
+      cellGroup.append("rect")
+        .attr("class", "cell-hl-outer")
+        .attr("x", x(d.edition))
+        .attr("y", y(d.rank))
+        .attr("width", cellWidth)
+        .attr("height", cellHeight)
+        .attr("fill", "none")
+        .attr("stroke", "none")
+        .attr("stroke-width", 3)
+      cellGroup.append("rect")
+        .attr("class", "cell-hl-inner")
+        .attr("x", x(d.edition) + 2)
+        .attr("y", y(d.rank) + 2)
+        .attr("width", cellWidth - 4)
+        .attr("height", cellHeight - 4)
+        .attr("fill", "none")
+        .attr("stroke", "none")
+        .attr("stroke-width", 2)
+
       # Устанавливаем цвета и видимость
       leftActive = d.new_upd_status and activeFilters[d.new_upd_status]
       rightActive = d.pos_status and activeFilters[d.pos_status]
@@ -3312,6 +3381,15 @@ formatEditionDate = (s) ->
         cellGroup.selectAll("rect")
           .attr("visibility", "hidden")
 
+      # Подсветка одной системы по всем редакциям при наведении
+      if d.machine_id != null and d.machine_id != undefined
+        cellGroup.on("mouseenter", (d) ->
+          mid = d.machine_id
+          d3.select("##{containerId}").selectAll(".cell").classed("cell-same-machine", (d2) -> d2.machine_id == mid)
+        ).on("mouseleave", ->
+          d3.select("##{containerId}").selectAll(".cell").classed("cell-same-machine", false)
+        )
+
       # Добавляем подсказку
       cellGroup.append("title")
         .text((d) ->
@@ -3326,7 +3404,8 @@ formatEditionDate = (s) ->
 
           tagsText = if tags.length > 0 then tags.join(", ") else "Без тегов"
 
+          sysLine = if d.machine_id != null then "\nСистема: #{d.machine_name || 'н/д'} (ID: #{d.machine_id})" else ""
           "Редакция: #{d.edition}\nМесто: #{d.rank}\n" +
-          "Теги: #{tagsText}"
+          "Теги: #{tagsText}#{sysLine}"
         )
     )

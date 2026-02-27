@@ -3495,6 +3495,7 @@ class Top50MachinesController < Top50BaseController
           end
 
           list_num = @num_vals.find_by(obj_id: rating_data[:list_id])&.value
+          machine_name = (top50_machine["name"] || top50_machine.try(:name)).to_s.presence || (top50_machine.try(:top50_organization).try(:name)).to_s.presence || "н/д"
           @new_upd_data << {
             edition: top50_date.join('-'),
             list_id: rating_data[:list_id],
@@ -3502,7 +3503,9 @@ class Top50MachinesController < Top50BaseController
             rank: rank_pos,
             new_upd_status: new_upd_status,
             pos_status: pos_status,
-            rank_change: rank_change
+            rank_change: rank_change,
+            machine_id: machine_id,
+            machine_name: machine_name
           }
         end
       end
@@ -3543,7 +3546,9 @@ class Top50MachinesController < Top50BaseController
           rank: entry[:rank],
           new_upd_status: entry[:new_upd_status],
           pos_status: entry[:pos_status],
-          rank_change: entry[:rank_change]
+          rank_change: entry[:rank_change],
+          machine_id: entry[:machine_id],
+          machine_name: entry[:machine_name]
         }
       end.to_json      
                   
