@@ -2,6 +2,16 @@
   #dsdfgdsfsa
   console.log("AAAAAAAAAAAAAAAAAAAAAAA" + text)
 
+# Max rank (list size) from page or fallback; set by stats view as window.TOP50_MAX_RANK
+getMaxRank = () -> (typeof window != "undefined" && window.TOP50_MAX_RANK) || 50
+# Reference edition count
+BASE_EDITIONS = 38
+# Heatmap cell size (px): 1000/40 × 600/50; heatmaps scale with editions/ranks to keep this cell size
+HEATMAP_CELL_WIDTH = 25
+HEATMAP_CELL_HEIGHT = 12
+HEATMAP_MIN_WIDTH = 300
+HEATMAP_MIN_HEIGHT = 240
+
 # drawing performance chart
 @draw_performance = (data, src_id, title, x_label, y_label, COLORS = d3.schemeSet1, is_performance = false) ->
   for i in [0..data.length - 1]
@@ -1775,16 +1785,19 @@ drawLegend = (svg, colorScale, minLag, maxLag, width, height) ->
 
 drawHeatmap = (data, containerId, title) ->
   # Очищаем контейнер
-  d3.select("##{containerId}").selectAll("*").remove()
-
-  # Размеры графика
-  margin = { top: 20, right: 20, bottom: 80, left: 60 }
-  width = 1000 - margin.left - margin.right
-  height = 600 - margin.top - margin.bottom
+  containerSel = d3.select("##{containerId}")
+  containerSel.selectAll("*").remove()
 
   # Уникальные значения редакций и рангов
   editions = Array.from(new Set(data.map((d) -> d.edition))).sort((a, b) -> b - a)
-  ranks = Array.from({ length: 50 }, (_, i) -> 50 - i)
+  allRanks = Array.from(new Set(data.map((d) -> d.rank))).filter((r) -> r?).sort((a, b) -> b - a)
+  ranks = if allRanks.length > 0 then allRanks else Array.from({ length: getMaxRank() }, (_, i) -> getMaxRank() - i)
+
+  margin = { top: 20, right: 20, bottom: 80, left: 60 }
+  edCount = editions.length or 1
+  rankCount = ranks.length or 1
+  width = Math.max(edCount * HEATMAP_CELL_WIDTH, HEATMAP_MIN_WIDTH)
+  height = Math.max(rankCount * HEATMAP_CELL_HEIGHT, HEATMAP_MIN_HEIGHT)
 
   # Определяем минимальное и максимальное значение lag
   minLag = d3.min(data, (d) -> d.lag)
@@ -1910,7 +1923,7 @@ transformLagData = (data, method) ->
 # Build CSV from lag data (rows=rank, cols=edition). inQuarters: export values as quarters (lag/91.25)
 buildLagCsv = (data, inQuarters = false) ->
   editions = Array.from(new Set(data.map((d) -> d.edition))).sort((a, b) -> a - b)
-  ranks = [1..50]
+  ranks = Array.from({ length: getMaxRank() }, (_, i) -> i + 1)
   lookup = {}
   data.forEach((d) ->
     if d.lag != null && d.lag != undefined
@@ -1979,12 +1992,16 @@ drawFreshestLagHeatmap = (data, containerId, title, scaleMethod, gradientId) ->
   container = d3.select("##{containerId}")
   return if container.empty()
   container.selectAll("*").remove()
-  margin = { top: 20, right: 20, bottom: 80, left: 60 }
-  width = 1000 - margin.left - margin.right
-  height = 600 - margin.top - margin.bottom
   fullValid = data.filter((d) -> d.lag != null)
   editions = Array.from(new Set(data.map((d) -> d.edition))).sort((a, b) -> b - a)
-  ranks = Array.from({ length: 50 }, (_, i) -> 50 - i)
+  allRanks = Array.from(new Set(fullValid.map((d) -> d.rank))).filter((r) -> r?).sort((a, b) -> b - a)
+  ranks = if allRanks.length > 0 then allRanks else Array.from({ length: getMaxRank() }, (_, i) -> getMaxRank() - i)
+
+  margin = { top: 20, right: 20, bottom: 80, left: 60 }
+  edCount = editions.length or 1
+  rankCount = ranks.length or 1
+  width = Math.max(edCount * HEATMAP_CELL_WIDTH, HEATMAP_MIN_WIDTH)
+  height = Math.max(rankCount * HEATMAP_CELL_HEIGHT, HEATMAP_MIN_HEIGHT)
   flexible = lagFlexibleScale(data, scaleMethod)
   colorScale = flexible.colorScale
   minLag = flexible.minLag
@@ -2334,6 +2351,14 @@ drawComponentLegend = (svg, width, height, spec) ->
     .style("font-size", "10px")
     .text((d) -> d)
 
+getComponentHeatmapSize = (editions, rankCount) ->
+  margin = { top: 20, right: 20, bottom: 80, left: 60 }
+  edCount = (editions and editions.length) or 1
+  rankCount = rankCount or 1
+  width = Math.max(edCount * HEATMAP_CELL_WIDTH, HEATMAP_MIN_WIDTH)
+  height = Math.max(rankCount * HEATMAP_CELL_HEIGHT, HEATMAP_MIN_HEIGHT)
+  { width, height, margin }
+
 drawComponentHeatmap = (data, containerId, title, scaleMethod, tooltipUnit = null) ->
   console.log("drawComponentHeatmap called for", containerId, "with", data.length, "data points")
   data = data or []
@@ -2343,11 +2368,14 @@ drawComponentHeatmap = (data, containerId, title, scaleMethod, tooltipUnit = nul
     console.error("Container ##{containerId} not found!")
     return
   container.selectAll("*").remove()
-  margin = { top: 20, right: 20, bottom: 80, left: 60 }
-  width = 1000 - margin.left - margin.right
-  height = 600 - margin.top - margin.bottom
   editions = Array.from(new Set(data.map((d) -> d.edition))).sort((a, b) -> b - a)
-  ranks = Array.from({ length: 50 }, (_, i) -> 50 - i)
+  allRanks = Array.from(new Set(data.map((d) -> d.rank))).filter((r) -> r?).sort((a, b) -> b - a)
+  ranks = if allRanks.length > 0 then allRanks else Array.from({ length: getMaxRank() }, (_, i) -> getMaxRank() - i)
+
+  size = getComponentHeatmapSize(editions, ranks.length)
+  width = size.width
+  height = size.height
+  margin = size.margin
   method = (scaleMethod and scaleMethod.toString()) or "quantile"
   flexible = componentFlexibleScale(data, method)
   if !flexible or !flexible.colorScale
@@ -2441,7 +2469,7 @@ drawComponentHeatmap = (data, containerId, title, scaleMethod, tooltipUnit = nul
 
 buildComponentCsv = (data) ->
   editions = Array.from(new Set(data.map((d) -> d.edition))).sort((a, b) -> a - b)
-  ranks = [1..50]
+  ranks = Array.from({ length: getMaxRank() }, (_, i) -> i + 1)
   lookup = {}
   data.forEach((d) -> lookup["#{d.edition}-#{d.rank}"] = d.lag)
   header = "Место | Редакция," + editions.join(",")
@@ -2464,9 +2492,13 @@ drawAnnounceToMentionHeatmap = (data, containerId, title, gradientId, unit = "da
   container = d3.select("##{containerId}")
   return if container.empty()
   container.selectAll("*").remove()
-  margin = { top: 20, right: 20, bottom: 80, left: 60 }
-  width = 1000 - margin.left - margin.right
-  height = 600 - margin.top - margin.bottom
+  editions = Array.from(new Set(fullData.map((d) -> d.edition))).sort((a, b) -> b - a)
+  allRanks = Array.from(new Set(fullData.map((d) -> d.rank))).filter((r) -> r?).sort((a, b) -> b - a)
+  ranks = if allRanks.length > 0 then allRanks else Array.from({ length: getMaxRank() }, (_, i) -> getMaxRank() - i)
+  size = getComponentHeatmapSize(editions, ranks.length)
+  width = size.width
+  height = size.height
+  margin = size.margin
   fullValid = fullData.filter((d) -> d.lag != null)
   inQuarters = (unit == "quarters")
   toVal = if inQuarters then ((d) -> d.lag / DAYS_PER_QUARTER) else ((d) -> d.lag)
@@ -2478,8 +2510,6 @@ drawAnnounceToMentionHeatmap = (data, containerId, title, gradientId, unit = "da
   rainbowColors = ["#00FF00", "#FFFF00", "#FFA500", "#FF0000", "#0000FF", "#800080"]
   colorScale = d3.scaleSequential(d3.interpolateRgbBasis(rainbowColors)).domain([minLag, maxLag])
   cellColor = if inQuarters then ((d) -> colorScale(d.lag / DAYS_PER_QUARTER)) else ((d) -> colorScale(d.lag))
-  editions = Array.from(new Set(fullData.map((d) -> d.edition))).sort((a, b) -> b - a)
-  ranks = Array.from({ length: 50 }, (_, i) -> 50 - i)
   x = d3.scaleBand().range([width, 0]).domain(editions).padding(0.05)
   y = d3.scaleBand().range([height, 0]).domain(ranks).padding(0.05)
   validData = data.filter((d) -> d.lag != null)
@@ -2562,7 +2592,7 @@ drawComponentTable = (data, containerId, title) ->
   d3.select("##{containerId}").selectAll("*").remove()
   
   editions = Array.from(new Set(data.map((d) -> d.edition))).sort((a, b) -> a - b)
-  ranks = [1..50]
+  ranks = Array.from({ length: getMaxRank() }, (_, i) -> i + 1)
   
   lookup = {}
   data.forEach((d) ->
@@ -2655,12 +2685,18 @@ drawComponentTable = (data, containerId, title) ->
 drawRamHeatmap = (data, containerId, title, scaleMethod) ->
   data = data or []
   data = [] unless Array.isArray(data)
-  d3.select("##{containerId}").selectAll("*").remove()
-  margin = { top: 20, right: 20, bottom: 80, left: 60 }
-  width = 1000 - margin.left - margin.right
-  height = 600 - margin.top - margin.bottom
+  containerSel = d3.select("##{containerId}")
+  containerSel.selectAll("*").remove()
   editions = Array.from(new Set(data.map((d) -> d.edition))).sort((a, b) -> b - a)
-  ranks = Array.from({ length: 50 }, (_, i) -> 50 - i)
+  allRanks = Array.from(new Set(data.map((d) -> d.rank))).filter((r) -> r?).sort((a, b) -> b - a)
+  ranks = if allRanks.length > 0 then allRanks else Array.from({ length: getMaxRank() }, (_, i) -> getMaxRank() - i)
+
+  # Размеры: 1000×600 при ≤40 редакциях и 50 рангах; иначе масштаб по ячейке 25×12 px; не меньше min для оси и подписи
+  margin = { top: 20, right: 20, bottom: 80, left: 60 }
+  edCount = editions.length or 1
+  rankCount = ranks.length or 1
+  width = Math.max(edCount * HEATMAP_CELL_WIDTH, HEATMAP_MIN_WIDTH)
+  height = Math.max(rankCount * HEATMAP_CELL_HEIGHT, HEATMAP_MIN_HEIGHT)
   method = (scaleMethod and scaleMethod.toString()) or "quantile"
   flexible = ramFlexibleScale(data, method)
   colorScale = flexible.colorScale
@@ -2767,7 +2803,7 @@ drawRamHeatmap = (data, containerId, title, scaleMethod) ->
 
 buildRamCsv = (data) ->
   editions = Array.from(new Set(data.map((d) -> d.edition))).sort((a, b) -> a - b)
-  ranks = [1..50]
+  ranks = Array.from({ length: getMaxRank() }, (_, i) -> i + 1)
   lookup = {}
   data.forEach((d) -> lookup["#{d.edition}-#{d.rank}"] = d.lag)
   header = "Место | Редакция," + editions.join(",")
@@ -2792,7 +2828,13 @@ buildRamCsv = (data) ->
       if downloadFilenames and downloadFilenames[i]
         d3.select("#" + downloadIds[i]).attr("download", downloadFilenames[i])
 
-document.addEventListener("DOMContentLoaded", ->
+runStatsWhenReady = (fn) ->
+  if document.readyState == "loading"
+    document.addEventListener("DOMContentLoaded", fn)
+  else
+    fn()
+
+runStatsWhenReady ->
   scaleSelector = document.getElementById("scale-selector")
   if scaleSelector and typeof cpuDataLinear != "undefined"
     dataSets = [cpuDataLinear, gpuDataLinear, combinedDataLinear]
@@ -2803,11 +2845,70 @@ document.addEventListener("DOMContentLoaded", ->
     gradientIds = ["lag-legend-cpu", "lag-legend-gpu", "lag-legend-combined"]
     getFreshestLagScale = () ->
       (document.getElementById("scale-selector") or {}).value or "linear"
+
+    updateLagEditionEndOptions = () ->
+      startSel = document.getElementById("lag-edition-start")
+      endSel = document.getElementById("lag-edition-end")
+      return unless startSel and endSel
+      startIdx = parseInt(startSel.selectedIndex)
+      for i in [0...endSel.options.length]
+        endSel.options[i].hidden = i < startIdx
+      if endSel.selectedIndex < startIdx
+        endSel.selectedIndex = startIdx
+
+    updateLagEditionStartOptions = () ->
+      startSel = document.getElementById("lag-edition-start")
+      endSel = document.getElementById("lag-edition-end")
+      return unless startSel and endSel
+      endIdx = parseInt(endSel.selectedIndex)
+      for i in [0...startSel.options.length]
+        startSel.options[i].hidden = i > endIdx
+      if startSel.selectedIndex > endIdx
+        startSel.selectedIndex = endIdx
+
+    updateLagRankEndOptions = () ->
+      startSel = document.getElementById("lag-rank-start")
+      endSel = document.getElementById("lag-rank-end")
+      return unless startSel and endSel
+      startIdx = parseInt(startSel.selectedIndex)
+      for i in [0...endSel.options.length]
+        endSel.options[i].hidden = i < startIdx
+      if endSel.selectedIndex < startIdx
+        endSel.selectedIndex = startIdx
+
+    updateLagRankStartOptions = () ->
+      startSel = document.getElementById("lag-rank-start")
+      endSel = document.getElementById("lag-rank-end")
+      return unless startSel and endSel
+      endIdx = parseInt(endSel.selectedIndex)
+      for i in [0...startSel.options.length]
+        startSel.options[i].hidden = i > endIdx
+      if startSel.selectedIndex > endIdx
+        startSel.selectedIndex = endIdx
+
     updateLagHeatmaps = () ->
+      updateLagEditionEndOptions()
+      updateLagEditionStartOptions()
+      updateLagRankEndOptions()
+      updateLagRankStartOptions()
       scaleMethod = getFreshestLagScale()
       inQuarters = (scaleMethod == "quarters")
+      # Текущие значения диапазонов
+      edStartSel = document.getElementById("lag-edition-start")
+      edEndSel   = document.getElementById("lag-edition-end")
+      rkStartSel = document.getElementById("lag-rank-start")
+      rkEndSel   = document.getElementById("lag-rank-end")
+      edFrom = parseInt(edStartSel?.value) or 1
+      edTo   = parseInt(edEndSel?.value)   or (editionDatesLag?.length or edFrom)
+      rkFrom = parseInt(rkStartSel?.value) or 1
+      rkTo   = parseInt(rkEndSel?.value)   or getMaxRank()
       for i in [0...dataSets.length]
-        data = dataSets[i] or []
+        fullData = dataSets[i] or []
+        data = fullData.filter((d) ->
+          ed = d.edition
+          rk = d.rank
+          ed? and rk? and ed >= edFrom and ed <= edTo and rk >= rkFrom and rk <= rkTo
+        )
         drawFreshestLagHeatmap(data, containerIds[i], titles[i], scaleMethod, gradientIds[i])
         if downloadIds and downloadIds[i]
           csv = buildLagCsv(data, inQuarters)
@@ -2816,8 +2917,17 @@ document.addEventListener("DOMContentLoaded", ->
             base = downloadFilenames[i].replace(/\.csv$/, "")
             ext = if inQuarters then "_quarters.csv" else ".csv"
             d3.select("#" + downloadIds[i]).attr("download", base + ext)
+
     updateLagHeatmaps()
     scaleSelector.addEventListener("change", updateLagHeatmaps)
+    lagStartEd = document.getElementById("lag-edition-start")
+    lagEndEd = document.getElementById("lag-edition-end")
+    lagStartRank = document.getElementById("lag-rank-start")
+    lagEndRank = document.getElementById("lag-rank-end")
+    if lagStartEd then lagStartEd.addEventListener("change", updateLagHeatmaps)
+    if lagEndEd then lagEndEd.addEventListener("change", updateLagHeatmaps)
+    if lagStartRank then lagStartRank.addEventListener("change", updateLagHeatmaps)
+    if lagEndRank then lagEndRank.addEventListener("change", updateLagHeatmaps)
 
   if typeof ramPerCoreData != "undefined"
     ramDataSets = [
@@ -2833,12 +2943,38 @@ document.addEventListener("DOMContentLoaded", ->
     getRamShowHybrid = () ->
       el = document.getElementById("ram-show-hybrid")
       el and el.checked
+    getRamRanges = () ->
+      parseVal = (id, fallback) ->
+        el = document.getElementById(id)
+        v = parseInt(el?.value)
+        if isNaN(v) then fallback else v
+      maxEdition = (editionDatesRam || []).length or 1
+      es = parseVal("ram-edition-start", 1)
+      ee = parseVal("ram-edition-end", maxEdition)
+      rs = parseVal("ram-rank-start", 1)
+      re = parseVal("ram-rank-end", getMaxRank())
+      if es > ee then [es, ee] = [ee, es]
+      if rs > re then [rs, re] = [re, rs]
+      {
+        editionStart: Math.max(1, es)
+        editionEnd: Math.max(1, Math.min(maxEdition, ee))
+        rankStart: Math.max(1, rs)
+        rankEnd: Math.min(getMaxRank(), re)
+      }
+    filterByRangesRam = (data, ranges) ->
+      (data or []).filter((d) ->
+        ed = d.edition
+        rk = d.rank
+        ed? and rk? and ed >= ranges.editionStart and ed <= ranges.editionEnd and rk >= ranges.rankStart and rk <= ranges.rankEnd
+      )
     updateRamAll = () ->
       showHybrid = getRamShowHybrid()
-      filtered = if showHybrid
+      ranges = getRamRanges()
+      baseSets = if showHybrid
         ramDataSets
       else
         ramDataSets.map((data) -> (data or []).filter((d) -> !d.has_gpu))
+      filtered = baseSets.map((data) -> filterByRangesRam(data, ranges))
       updateRamHeatmaps(filtered, ramContainerIds, ramTitles, ramDownloadIds, ramDownloadFilenames, getRamScale())
     updateRamAll()
     ramScaleEl = document.getElementById("scale-selector-ram")
@@ -2847,6 +2983,11 @@ document.addEventListener("DOMContentLoaded", ->
     ramShowHybridEl = document.getElementById("ram-show-hybrid")
     if ramShowHybridEl
       ramShowHybridEl.addEventListener("change", updateRamAll)
+    ["ram-edition-start","ram-edition-end","ram-rank-start","ram-rank-end"].forEach((id) ->
+      el = document.getElementById(id)
+      if el
+        el.addEventListener("change", updateRamAll)
+    )
 
   if typeof cpuTotalData != "undefined"
     getComponentMetric = () -> (document.getElementById("metric-selector-component") or {}).value or "total"
@@ -2854,14 +2995,41 @@ document.addEventListener("DOMContentLoaded", ->
     getFreshestIncludeGpu = () ->
       el = document.getElementById("freshest-include-gpu")
       el and el.checked
+    getComponentRanges = () ->
+      parseVal = (id, fallback) ->
+        el = document.getElementById(id)
+        v = parseInt(el?.value)
+        if isNaN(v) then fallback else v
+      maxEdition = (editionDatesComponent || []).length or 1
+      es = parseVal("component-edition-start", 1)
+      ee = parseVal("component-edition-end", maxEdition)
+      rs = parseVal("component-rank-start", 1)
+      re = parseVal("component-rank-end", getMaxRank())
+      if es > ee then [es, ee] = [ee, es]
+      if rs > re then [rs, re] = [re, rs]
+      {
+        editionStart: Math.max(1, es)
+        editionEnd: Math.max(1, Math.min(maxEdition, ee))
+        rankStart: Math.max(1, rs)
+        rankEnd: Math.min(getMaxRank(), re)
+      }
+
+    filterByRangesComponent = (data, ranges) ->
+      (data or []).filter((d) ->
+        ed = d.edition
+        rk = d.rank
+        ed? and rk? and ed >= ranges.editionStart and ed <= ranges.editionEnd and rk >= ranges.rankStart and rk <= ranges.rankEnd
+      )
+
     updateComponentAll = () ->
       metric = getComponentMetric()
       scaleMethod = getComponentScale()
       includeGpu = getFreshestIncludeGpu()
+      ranges = getComponentRanges()
       freshestTotal = if includeGpu then (freshestTotalData || []) else (freshestTotalDataCpuOnly || [])
       freshestPerNode = if includeGpu then (freshestPerNodeData || []) else (freshestPerNodeDataCpuOnly || [])
       if metric == "total"
-        componentDataSets = [
+        baseSets = [
           cpuTotalData || [],
           gpuTotalData || [],
           freshestTotal,
@@ -2872,7 +3040,7 @@ document.addEventListener("DOMContentLoaded", ->
         componentTitles = ["CPU: всего", "GPU: всего", "Самые свежие компоненты: всего", "Ядра: всего", "GPU ядра (мультипроцессорные блоки): всего", "GPU микроядра (CUDA): всего"]
         componentDownloadFilenames = ["CPU_total.csv", "GPU_total.csv", "Freshest_total.csv", "Cores_total.csv", "GPU_cores_total.csv", "GPU_microcores_total.csv"]
       else
-        componentDataSets = [
+        baseSets = [
           cpuPerNodeData || [],
           gpuPerNodeData || [],
           freshestPerNode,
@@ -2882,6 +3050,7 @@ document.addEventListener("DOMContentLoaded", ->
         ]
         componentTitles = ["CPU: на узел", "GPU: на узел", "Самые свежие компоненты: на узел", "Ядра: на узел", "GPU ядра (мультипроцессорные блоки): на узел", "GPU микроядра (CUDA): на узел"]
         componentDownloadFilenames = ["CPU_per_node.csv", "GPU_per_node.csv", "Freshest_per_node.csv", "Cores_per_node.csv", "GPU_cores_per_node.csv", "GPU_microcores_per_node.csv"]
+      componentDataSets = baseSets.map((data) -> filterByRangesComponent(data, ranges))
       componentContainerIds = ["cpu_component_heatmap", "gpu_component_heatmap", "freshest_component_heatmap", "cores_component_heatmap", "gpu_cores_component_heatmap", "gpu_microcores_only_component_heatmap"]
       componentDownloadIds = ["download_cpu_component", "download_gpu_component", "download_freshest_component", "download_cores_component", "download_gpu_cores_component", "download_gpu_microcores_only_component"]
       updateComponentHeatmaps(componentDataSets, componentContainerIds, componentTitles, componentDownloadIds, componentDownloadFilenames, scaleMethod)
@@ -2895,12 +3064,75 @@ document.addEventListener("DOMContentLoaded", ->
     freshestIncludeGpuEl = document.getElementById("freshest-include-gpu")
     if freshestIncludeGpuEl
       freshestIncludeGpuEl.addEventListener("change", updateComponentAll)
+    ["component-edition-start","component-edition-end","component-rank-start","component-rank-end"].forEach((id) ->
+      el = document.getElementById(id)
+      if el
+        el.addEventListener("change", updateComponentAll)
+    )
 
+  # ---------- freshest_comp_stats: heatmaps — same pattern as freshest_components_lag (option constraining + filter + redraw) ----------
   if typeof freshestCpuQuantityData != "undefined"
     getFreshestQuantityScale = () -> (document.getElementById("scale-selector-freshest-quantity") or {}).value or "quantile"
+    updateFreshestHeatmapEditionEndOptions = () ->
+      startSel = document.getElementById("freshest-heatmap-edition-start")
+      endSel = document.getElementById("freshest-heatmap-edition-end")
+      return unless startSel and endSel
+      startIdx = parseInt(startSel.selectedIndex)
+      for i in [0...endSel.options.length]
+        endSel.options[i].hidden = i < startIdx
+      if endSel.selectedIndex < startIdx
+        endSel.selectedIndex = startIdx
+    updateFreshestHeatmapEditionStartOptions = () ->
+      startSel = document.getElementById("freshest-heatmap-edition-start")
+      endSel = document.getElementById("freshest-heatmap-edition-end")
+      return unless startSel and endSel
+      endIdx = parseInt(endSel.selectedIndex)
+      for i in [0...startSel.options.length]
+        startSel.options[i].hidden = i > endIdx
+      if startSel.selectedIndex > endIdx
+        startSel.selectedIndex = endIdx
+    updateFreshestHeatmapRankEndOptions = () ->
+      startSel = document.getElementById("freshest-heatmap-rank-start")
+      endSel = document.getElementById("freshest-heatmap-rank-end")
+      return unless startSel and endSel
+      startIdx = parseInt(startSel.selectedIndex)
+      for i in [0...endSel.options.length]
+        endSel.options[i].hidden = i < startIdx
+      if endSel.selectedIndex < startIdx
+        endSel.selectedIndex = startIdx
+    updateFreshestHeatmapRankStartOptions = () ->
+      startSel = document.getElementById("freshest-heatmap-rank-start")
+      endSel = document.getElementById("freshest-heatmap-rank-end")
+      return unless startSel and endSel
+      endIdx = parseInt(endSel.selectedIndex)
+      for i in [0...startSel.options.length]
+        startSel.options[i].hidden = i > endIdx
+      if startSel.selectedIndex > endIdx
+        startSel.selectedIndex = endIdx
+    filterByEditionAndRank = (data, ranges) ->
+      (data or []).filter((d) ->
+        ed = d.edition
+        rk = d.rank
+        ed? and rk? and ed >= ranges.editionStart and ed <= ranges.editionEnd and rk >= ranges.rankStart and rk <= ranges.rankEnd
+      )
     updateFreshestQuantityHeatmaps = () ->
-      dataCpu = freshestCpuQuantityData or []
-      dataGpu = freshestGpuQuantityData or []
+      updateFreshestHeatmapEditionEndOptions()
+      updateFreshestHeatmapEditionStartOptions()
+      updateFreshestHeatmapRankEndOptions()
+      updateFreshestHeatmapRankStartOptions()
+      container = document.getElementById("freshest_cpu_quantity_heatmap")
+      return unless container
+      edStartSel = document.getElementById("freshest-heatmap-edition-start")
+      edEndSel = document.getElementById("freshest-heatmap-edition-end")
+      rkStartSel = document.getElementById("freshest-heatmap-rank-start")
+      rkEndSel = document.getElementById("freshest-heatmap-rank-end")
+      edFrom = parseInt(edStartSel?.value) or 1
+      edTo = parseInt(edEndSel?.value) or (editionDatesFreshestQuantity?.length or edFrom)
+      rkFrom = parseInt(rkStartSel?.value) or 1
+      rkTo = parseInt(rkEndSel?.value) or getMaxRank()
+      ranges = { editionStart: edFrom, editionEnd: edTo, rankStart: rkFrom, rankEnd: rkTo }
+      dataCpu = filterByEditionAndRank(freshestCpuQuantityData or [], ranges)
+      dataGpu = filterByEditionAndRank(freshestGpuQuantityData or [], ranges)
       scaleMethod = getFreshestQuantityScale()
       drawComponentHeatmap(dataCpu, "freshest_cpu_quantity_heatmap", "Самые свежие CPU: количество", scaleMethod)
       drawComponentHeatmap(dataGpu, "freshest_gpu_quantity_heatmap", "Самые свежие GPU: количество", scaleMethod)
@@ -2911,8 +3143,8 @@ document.addEventListener("DOMContentLoaded", ->
         csvGpu = buildComponentCsv(dataGpu)
         d3.select("#download_freshest_gpu_quantity").attr("href", "data:text/csv;charset=utf-8," + encodeURIComponent(csvGpu))
       if typeof announceToMentionCpuData != "undefined"
-        dataAnnounceCpu = announceToMentionCpuData or []
-        dataAnnounceGpu = announceToMentionGpuData or []
+        dataAnnounceCpu = filterByEditionAndRank(announceToMentionCpuData or [], ranges)
+        dataAnnounceGpu = filterByEditionAndRank(announceToMentionGpuData or [], ranges)
         announceUnit = (document.getElementById("announce-to-mention-unit") or {}).value or "days"
         drawAnnounceToMentionHeatmap(dataAnnounceCpu, "announce_to_mention_cpu_heatmap", "CPU: разница между анонсом и первым упоминанием", "announce-to-mention-legend-cpu", announceUnit)
         drawAnnounceToMentionHeatmap(dataAnnounceGpu, "announce_to_mention_gpu_heatmap", "GPU: разница между анонсом и первым упоминанием", "announce-to-mention-legend-gpu", announceUnit)
@@ -2933,22 +3165,99 @@ document.addEventListener("DOMContentLoaded", ->
     announceUnitEl = document.getElementById("announce-to-mention-unit")
     if announceUnitEl
       announceUnitEl.addEventListener("change", updateFreshestQuantityHeatmaps)
-)
+    freshestHeatmapSelIds = ["freshest-heatmap-edition-start", "freshest-heatmap-edition-end", "freshest-heatmap-rank-start", "freshest-heatmap-rank-end"]
+    freshestHeatmapSelIds.forEach((id) ->
+      el = document.getElementById(id)
+      if el
+        el.addEventListener("change", updateFreshestQuantityHeatmaps)
+    )
+
+  # list_upg: матрица, фильтрация по редакциям и местам
+  if typeof chartData != "undefined" and document.getElementById("matrix_chart")
+    listStartEd = document.getElementById("list-upg-edition-start")
+    listEndEd   = document.getElementById("list-upg-edition-end")
+    listStartRank = document.getElementById("list-upg-rank-start")
+    listEndRank   = document.getElementById("list-upg-rank-end")
+    if listStartEd and listEndEd and listStartRank and listEndRank
+      origMatrixData = chartData.slice()
+      updateListUpg = ->
+        esVal = listStartEd.value
+        eeVal = listEndEd.value
+        rkFrom = parseInt(listStartRank.value) or minRank
+        rkTo   = parseInt(listEndRank.value) or maxRank
+        if rkFrom > rkTo then [rkFrom, rkTo] = [rkTo, rkFrom]
+        allowed = []
+        idxFrom = editions.indexOf(esVal)
+        idxTo   = editions.indexOf(eeVal)
+        if idxFrom < 0 or idxTo < 0
+          allowed = editions
+        else
+          if idxFrom > idxTo then [idxFrom, idxTo] = [idxTo, idxFrom]
+          allowed = editions.slice(idxFrom, idxTo + 1)
+        filteredMatrix = origMatrixData.filter((row) ->
+          ed = row.edition
+          rk = row.rank
+          allowed.includes(ed) and rk? and rk >= rkFrom and rk <= rkTo
+        )
+        drawMatrix(filteredMatrix, "matrix_chart", "Изменение систем в рейтинге")
+      # Инициализация списков редакций и мест
+      editions = Array.from(new Set(origMatrixData.map((r) -> r.edition))).sort()
+      ranks = Array.from(new Set(origMatrixData.map((r) -> r.rank))).sort((a, b) -> a - b)
+      minRank = ranks[0] or 1
+      maxRank = ranks[ranks.length - 1] or getMaxRank()
+      # Заполняем селекторы редакций
+      ;[listStartEd, listEndEd].forEach((sel, idx) ->
+        while sel.options.length > 0
+          sel.remove(0)
+        editions.forEach((ed, i) ->
+          opt = document.createElement("option")
+          opt.value = ed
+          opt.text = formatEditionDate(ed)
+          sel.appendChild(opt)
+        )
+        if idx == 0
+          sel.selectedIndex = 0
+        else
+          sel.selectedIndex = sel.options.length - 1
+      )
+      # Заполняем селекторы мест
+      ;[listStartRank, listEndRank].forEach((sel, idx) ->
+        while sel.options.length > 0
+          sel.remove(0)
+        ranks.forEach((rk) ->
+          opt = document.createElement("option")
+          opt.value = rk
+          opt.text = rk
+          sel.appendChild(opt)
+        )
+        if idx == 0
+          sel.selectedIndex = 0
+        else
+          sel.selectedIndex = sel.options.length - 1
+      )
+      # Начальная отрисовка с учетом селекторов
+      updateListUpg()
+      listStartEd.addEventListener("change", updateListUpg)
+      listEndEd.addEventListener("change", updateListUpg)
+      listStartRank.addEventListener("change", updateListUpg)
+      listEndRank.addEventListener("change", updateListUpg)
 
 @draw_new_vs_upgraded_new = (data, src_id, title, x_label, y_label) ->
   return unless data and data.length > 0 and data[0].data and data[0].data.length > 0
-  # Подготовка данных
+  # Подготовка данных: парсим даты только если это ещё строки (при повторной отрисовке уже Date)
   for i in [0..data.length - 1]
     for j in [0..data[i].data.length - 1]
-      s = String(data[i].data[j][0]).split("-")
-      data[i].data[j][0] = new Date(+s[0], +s[1] - 1)
+      d = data[i].data[j][0]
+      unless d instanceof Date
+        s = String(d).split("-")
+        data[i].data[j][0] = new Date(+s[0], +s[1] - 1)
 
   # Функция загрузки
   func = () ->
     el = document.getElementById(src_id)
     return unless el
     width = el.offsetWidth
-    height = 550
+    height = Math.max(320, Math.min(600, el.offsetWidth * 0.6))
 
     margin =
       top: 10
@@ -2957,6 +3266,7 @@ document.addEventListener("DOMContentLoaded", ->
       left: 80
 
     container = d3.selectAll("div").filter(() -> d3.select(this).attr("id") == src_id)
+    container.selectAll("*").remove()
 
     # Заголовок
     container.append("div")
@@ -3139,16 +3449,18 @@ formatEditionDate = (s) ->
 
 @drawMatrix = (data, containerId, title) ->
   # Очищаем контейнер
-  d3.select("##{containerId}").selectAll("*").remove()
-
-  # Размеры графика
-  margin = { top: 20, right: 20, bottom: 80, left: 70 }
-  width = 1000 - margin.left - margin.right
-  height = 600 - margin.top - margin.bottom
+  containerSel = d3.select("##{containerId}")
+  containerSel.selectAll("*").remove()
 
   # Уникальные значения для редакций (даты)
   editions = Array.from(new Set(data.map((d) -> d.edition))).sort()
   ranks = Array.from(new Set(data.map((d) -> d.rank))).sort((a, b) -> a - b)
+
+  margin = { top: 20, right: 20, bottom: 80, left: 70 }
+  edCount = editions.length or 1
+  rankCount = ranks.length or 1
+  width = Math.max(edCount * HEATMAP_CELL_WIDTH, HEATMAP_MIN_WIDTH)
+  height = Math.max(rankCount * HEATMAP_CELL_HEIGHT, HEATMAP_MIN_HEIGHT)
 
   # Цветовая шкала для статусов
   statusColors =

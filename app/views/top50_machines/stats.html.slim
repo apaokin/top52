@@ -40,6 +40,9 @@ table
               li = link_to header, top50_stats_path(section)
 
 br
+- if ["freshest_components_lag", "new_upg", "ram_stats", "component_stats", "freshest_comp_stats", "list_upg"].include?(@stat_section)
+  javascript:
+    window.TOP50_MAX_RANK = #{(@max_rank || 50).to_i};
 - if @stat_section == "hybrid_intra"
   - hlist_chart_data = {}
   - hlist_dates = {}
@@ -2219,14 +2222,36 @@ br
       | .heatmap-footer { position: absolute; bottom: 15px; right: 20px; }
 
   body
-    div style="margin-bottom: 1em;"
-      label for="scale-selector" Шкала:
-      select#scale-selector
-        option value="linear" selected="selected" Градиент (линейный)
-        option value="log" Градиент (log)
-        option value="sqrt" Градиент (sqrt)
-        option value="quantile" По квантилям
-        option value="quarters" Значения в кварталах
+    .container-fluid
+      .menu-container
+        table.mb-3 style="border: none;"
+          tr style="border: none; vertical-align: middle;"
+            td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Шкала:
+            td style="border: none; padding-right: 16px;"
+              select#scale-selector.form-control style="width: 180px;"
+                option value="linear" selected="selected" Градиент (линейный)
+                option value="log" Градиент (log)
+                option value="sqrt" Градиент (sqrt)
+                option value="quantile" По квантилям
+                option value="quarters" Значения в кварталах
+            td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Редакции:
+            td style="border: none; padding-right: 4px;"
+              select#lag-edition-start.form-control style="width: 120px;"
+                - (@edition_dates_lag || []).each_with_index do |label, i|
+                  option value=(i + 1) selected=(i == 0) = label
+            td style="border: none; padding-right: 16px;"
+              select#lag-edition-end.form-control style="width: 120px;"
+                - (@edition_dates_lag || []).each_with_index do |label, i|
+                  option value=(i + 1) selected=(i == (@edition_dates_lag.size - 1)) = label
+            td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Места:
+            td style="border: none; padding-right: 4px;"
+              select#lag-rank-start.form-control style="width: 70px;"
+                - (1..(@max_rank || 50)).each do |i|
+                  option value=i selected=(i == 1) = i
+            td style="border: none;"
+              select#lag-rank-end.form-control style="width: 70px;"
+                - (1..(@max_rank || 50)).each do |i|
+                  option value=i selected=(i == (@max_rank || 50)) = i
 
     / Контейнеры для тепловых карт
     div.heatmap-section
@@ -2268,19 +2293,43 @@ br
       | .heatmap-footer { position: absolute; bottom: 15px; right: 20px; }
   body
     h1 Среднее количество памяти
-    div style="margin-bottom: 1em;"
-      label for="scale-selector-ram" Шкала:
-      select#scale-selector-ram
-        option value="quantile" selected="selected" По квантилям
-        option value="linear" Равные интервалы
-        option value="log" Лог. интервалы
-        option value="fixed" Равные интервалы (0–max)
-        option value="gradient_linear" Градиент (линейный)
-        option value="gradient" Градиент (лог.)
-        option value="gradient_sqrt" Градиент (sqrt)
-    div style="margin-bottom: 1em;"
-      input#ram-show-hybrid type="checkbox" checked="checked"
-      label for="ram-show-hybrid" Показывать гибридные системы (с GPU)
+    .container-fluid
+      .menu-container
+        table.mb-3 style="border: none;"
+          tr style="border: none; vertical-align: middle;"
+            td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Шкала:
+            td style="border: none; padding-right: 16px;"
+              select#scale-selector-ram.form-control style="width: 180px;"
+                option value="quantile" selected="selected" По квантилям
+                option value="linear" Равные интервалы
+                option value="log" Лог. интервалы
+                option value="fixed" Равные интервалы (0–max)
+                option value="gradient_linear" Градиент (линейный)
+                option value="gradient" Градиент (лог.)
+                option value="gradient_sqrt" Градиент (sqrt)
+            td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Редакции:
+            td style="border: none; padding-right: 4px;"
+              select#ram-edition-start.form-control style="width: 120px;"
+                - (@edition_dates_ram || []).each_with_index do |label, i|
+                  option value=(i + 1) selected=(i == 0) = label
+            td style="border: none; padding-right: 16px;"
+              select#ram-edition-end.form-control style="width: 120px;"
+                - (@edition_dates_ram || []).each_with_index do |label, i|
+                  option value=(i + 1) selected=(i == (@edition_dates_ram.size - 1)) = label
+            td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Места:
+            td style="border: none; padding-right: 4px;"
+              select#ram-rank-start.form-control style="width: 70px;"
+                - (1..(@max_rank || 50)).each do |i|
+                  option value=i selected=(i == 1) = i
+            td style="border: none;"
+              select#ram-rank-end.form-control style="width: 70px;"
+                - (1..(@max_rank || 50)).each do |i|
+                  option value=i selected=(i == (@max_rank || 50)) = i
+
+      .row.mb-2
+        .col-md-12
+          input#ram-show-hybrid type="checkbox" checked="checked"
+          label for="ram-show-hybrid" Показывать гибридные системы (с GPU)
 
     div.heatmap-section
       h2 RAM на узел (ГБ)
@@ -2320,21 +2369,43 @@ br
       | .heatmap-footer { position: absolute; bottom: 15px; right: 20px; }
   body
     h1 Количество компонент
-    div style="margin-bottom: 1em;"
-      label for="metric-selector-component" Метрика:
-      select#metric-selector-component
-        option value="total" selected="selected" Всего
-        option value="per_node" На узел
-    div style="margin-bottom: 1em;"
-      label for="scale-selector-component" Шкала:
-      select#scale-selector-component
-        option value="quantile" selected="selected" По квантилям
-        option value="linear" Равные интервалы
-        option value="log" Лог. интервалы
-        option value="fixed" Равные интервалы (0–max)
-        option value="gradient_linear" Градиент (линейный)
-        option value="gradient" Градиент (лог.)
-        option value="gradient_sqrt" Градиент (sqrt)
+    .container-fluid
+      .menu-container
+        table.mb-3 style="border: none;"
+          tr style="border: none; vertical-align: middle;"
+            td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Метрика:
+            td style="border: none; padding-right: 16px;"
+              select#metric-selector-component.form-control style="width: 100px;"
+                option value="total" selected="selected" Всего
+                option value="per_node" На узел
+            td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Шкала:
+            td style="border: none; padding-right: 16px;"
+              select#scale-selector-component.form-control style="width: 150px;"
+                option value="quantile" selected="selected" По квантилям
+                option value="linear" Равные интервалы
+                option value="log" Лог. интервалы
+                option value="fixed" Равные интервалы (0–max)
+                option value="gradient_linear" Градиент (линейный)
+                option value="gradient" Градиент (лог.)
+                option value="gradient_sqrt" Градиент (sqrt)
+            td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Редакции:
+            td style="border: none; padding-right: 4px;"
+              select#component-edition-start.form-control style="width: 120px;"
+                - (@edition_dates_component || []).each_with_index do |label, i|
+                  option value=(i + 1) selected=(i == 0) = label
+            td style="border: none; padding-right: 16px;"
+              select#component-edition-end.form-control style="width: 120px;"
+                - (@edition_dates_component || []).each_with_index do |label, i|
+                  option value=(i + 1) selected=(i == (@edition_dates_component.size - 1)) = label
+            td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Места:
+            td style="border: none; padding-right: 4px;"
+              select#component-rank-start.form-control style="width: 65px;"
+                - (1..(@max_rank || 50)).each do |i|
+                  option value=i selected=(i == 1) = i
+            td style="border: none;"
+              select#component-rank-end.form-control style="width: 65px;"
+                - (1..(@max_rank || 50)).each do |i|
+                  option value=i selected=(i == (@max_rank || 50)) = i
 
     div.heatmap-section
       h2 CPU:
@@ -2408,16 +2479,38 @@ br
       | .heatmap-wrapper { position: relative; display: inline-block; }
       | .heatmap-footer { position: absolute; bottom: 15px; right: 20px; }
   body
-    div style="margin-bottom: 1em;"
-      label for="scale-selector-freshest-quantity" Шкала:
-      select#scale-selector-freshest-quantity
-        option value="quantile" selected="selected" По квантилям
-        option value="linear" Равные интервалы
-        option value="log" Лог. интервалы
-        option value="fixed" Равные интервалы (0–max)
-        option value="gradient_linear" Градиент (линейный)
-        option value="gradient" Градиент (лог.)
-        option value="gradient_sqrt" Градиент (sqrt)
+    .container-fluid
+      .menu-container
+        table.mb-3 style="border: none;"
+          tr style="border: none; vertical-align: middle;"
+            td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Шкала:
+            td style="border: none; padding-right: 16px;"
+              select#scale-selector-freshest-quantity.form-control style="width: 180px;"
+                option value="quantile" selected="selected" По квантилям
+                option value="linear" Равные интервалы
+                option value="log" Лог. интервалы
+                option value="fixed" Равные интервалы (0–max)
+                option value="gradient_linear" Градиент (линейный)
+                option value="gradient" Градиент (лог.)
+                option value="gradient_sqrt" Градиент (sqrt)
+            td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Редакции:
+            td style="border: none; padding-right: 4px;"
+              select#freshest-heatmap-edition-start.form-control style="width: 120px;"
+                - (@edition_dates_freshest_quantity || []).each_with_index do |label, i|
+                  option value=(i + 1) selected=(i == 0) = label
+            td style="border: none; padding-right: 16px;"
+              select#freshest-heatmap-edition-end.form-control style="width: 120px;"
+                - (@edition_dates_freshest_quantity || []).each_with_index do |label, i|
+                  option value=(i + 1) selected=(i == (@edition_dates_freshest_quantity.size - 1)) = label
+            td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Места:
+            td style="border: none; padding-right: 4px;"
+              select#freshest-heatmap-rank-start.form-control style="width: 65px;"
+                - (1..(@max_rank || 50)).each do |r|
+                  option value=r selected=(r == 1) = r
+            td style="border: none;"
+              select#freshest-heatmap-rank-end.form-control style="width: 65px;"
+                - (1..(@max_rank || 50)).each do |r|
+                  option value=r selected=(r == (@max_rank || 50)) = r
 
     div.heatmap-section
       h2 Количество новых CPU
@@ -2461,43 +2554,52 @@ br
       | const freshestGpuQuantityData = #{raw (@freshest_gpu_quantity_data || []).to_json};
       | const announceToMentionCpuData = #{raw (@announce_to_mention_cpu_data || []).to_json};
       | const announceToMentionGpuData = #{raw (@announce_to_mention_gpu_data || []).to_json};
+      | window.editionDatesFreshestQuantity = #{raw (@edition_dates_freshest_quantity || []).to_json};
+      | const editionDatesFreshestQuantity = window.editionDatesFreshestQuantity;
       | const editionDatesComponent = #{raw (@edition_dates_freshest_quantity || []).to_json};
 
     div id="chart_freshest_quantity_systems" style="margin-top: 2em;"
     javascript:
-      var chartDataFreshestQuantity = #{raw (@freshest_quantity_chart_data || []).to_json};
+      window.chartDataFreshestQuantity = #{raw (@freshest_quantity_chart_data || []).to_json};
+      var chartDataFreshestQuantity = window.chartDataFreshestQuantity;
     coffee:
       draw_new_vs_upgraded_new(chartDataFreshestQuantity, "chart_freshest_quantity_systems", "Количество систем с новыми компонентами по редакциям", "Дата (ММ.ГГ)", "Количество систем")
     div id="chart_freshest_quantity_models" style="margin-top: 2em;"
     javascript:
-      var chartDataFreshestQuantityModels = #{raw (@freshest_quantity_models_chart_data || []).to_json};
+      window.chartDataFreshestQuantityModels = #{raw (@freshest_quantity_models_chart_data || []).to_json};
+      var chartDataFreshestQuantityModels = window.chartDataFreshestQuantityModels;
     coffee:
       draw_new_vs_upgraded_new(chartDataFreshestQuantityModels, "chart_freshest_quantity_models", "Количество новых моделей компонент по редакциям", "Дата (ММ.ГГ)", "Количество моделей")
     div id="chart_freshest_quantity_components" style="margin-top: 2em;"
     javascript:
-      var chartDataFreshestQuantityComponents = #{raw (@freshest_quantity_components_chart_data || []).to_json};
+      window.chartDataFreshestQuantityComponents = #{raw (@freshest_quantity_components_chart_data || []).to_json};
+      var chartDataFreshestQuantityComponents = window.chartDataFreshestQuantityComponents;
     coffee:
       draw_new_vs_upgraded_new(chartDataFreshestQuantityComponents, "chart_freshest_quantity_components", "Количество новых компонент по редакциям", "Дата (ММ.ГГ)", "Количество компонентов")
     div id="chart_freshest_quantity_pct_all" style="margin-top: 2em;"
     javascript:
-      var chartDataFreshestQuantityPctAll = #{raw (@freshest_quantity_pct_all_chart_data || []).to_json};
+      window.chartDataFreshestQuantityPctAll = #{raw (@freshest_quantity_pct_all_chart_data || []).to_json};
+      var chartDataFreshestQuantityPctAll = window.chartDataFreshestQuantityPctAll;
     coffee:
       draw_new_vs_upgraded_new(chartDataFreshestQuantityPctAll, "chart_freshest_quantity_pct_all", "Доля новых компонент (от компонент всех систем), %", "Дата (ММ.ГГ)", "% от всех компонентов")
     div id="chart_freshest_quantity_pct_new_systems" style="margin-top: 2em;"
     javascript:
-      var chartDataFreshestQuantityPctNewSystems = #{raw (@freshest_quantity_pct_new_systems_chart_data || []).to_json};
+      window.chartDataFreshestQuantityPctNewSystems = #{raw (@freshest_quantity_pct_new_systems_chart_data || []).to_json};
+      var chartDataFreshestQuantityPctNewSystems = window.chartDataFreshestQuantityPctNewSystems;
     coffee:
       draw_new_vs_upgraded_new(chartDataFreshestQuantityPctNewSystems, "chart_freshest_quantity_pct_new_systems", "Доля новых компонент (от компонент систем с новыми), %", "Дата (ММ.ГГ)", "% от всех компонентов")
     - if (@freshest_quantity_rpeak_pct_chart_data || []).any?
       div id="chart_freshest_quantity_rpeak_pct" style="margin-top: 2em;"
       javascript:
-        var chartDataFreshestQuantityRpeakPct = #{raw (@freshest_quantity_rpeak_pct_chart_data || []).to_json};
+        window.chartDataFreshestQuantityRpeakPct = #{raw (@freshest_quantity_rpeak_pct_chart_data || []).to_json};
+        var chartDataFreshestQuantityRpeakPct = window.chartDataFreshestQuantityRpeakPct;
       coffee:
         draw_new_vs_upgraded_new(chartDataFreshestQuantityRpeakPct, "chart_freshest_quantity_rpeak_pct", "Процент Rpeak (от общего) систем с новыми компонентами", "Дата (ММ.ГГ)", "% Rpeak")
     - if (@freshest_quantity_rmax_pct_chart_data || []).any?
       div id="chart_freshest_quantity_rmax_pct" style="margin-top: 2em;"
       javascript:
-        var chartDataFreshestQuantityRmaxPct = #{raw (@freshest_quantity_rmax_pct_chart_data || []).to_json};
+        window.chartDataFreshestQuantityRmaxPct = #{raw (@freshest_quantity_rmax_pct_chart_data || []).to_json};
+        var chartDataFreshestQuantityRmaxPct = window.chartDataFreshestQuantityRmaxPct;
       coffee:
         draw_new_vs_upgraded_new(chartDataFreshestQuantityRmaxPct, "chart_freshest_quantity_rmax_pct", "Процент Rmax (от общего) систем с новыми компонентами", "Дата (ММ.ГГ)", "% Rmax")
     div style="clear: both;"
@@ -2576,23 +2678,27 @@ br
 
 - elsif @stat_section == "new_upg"
   - @csv_string_new_upg = ["Редакция,Новые машины,Обновлённые машины,Новые и обновлённые машины,% Новых машин,% Обновлённых машин,% Новых и обновлённых машин,% Rpeak новых машин,% Rmax новых машин,% Rpeak обновлённых машин,% Rmax обновлённых машин,% Rpeak новых и обновлённых машин,% Rmax новых и обновлённых машин"]
+
   div id="chart_new_vs_upgraded"
 
   javascript:
-    var chartData = JSON.parse("#{@ratings_chart_data.to_json}".replace(/&quot;/g, '"'));
+    window.chartData = JSON.parse("#{@ratings_chart_data.to_json}".replace(/&quot;/g, '"'));
+    var chartData = window.chartData;
 
   coffee:
     draw_new_vs_upgraded_new(chartData, "chart_new_vs_upgraded", "Новые и обновлённые системы по редакциям", "Дата (ММ.ГГ)", "Количество систем")
 
   div id="chart_new_vs_upgraded_rpeak_pct"
   javascript:
-    var chartDataRpeakPct = JSON.parse("#{@ratings_rpeak_pct_chart_data.to_json}".replace(/&quot;/g, '"'));
+    window.chartDataRpeakPct = JSON.parse("#{@ratings_rpeak_pct_chart_data.to_json}".replace(/&quot;/g, '"'));
+    var chartDataRpeakPct = window.chartDataRpeakPct;
   coffee:
     draw_new_vs_upgraded_new(chartDataRpeakPct, "chart_new_vs_upgraded_rpeak_pct", "Процент Rpeak (от общего) новых и обновлённых систем", "Дата (ММ.ГГ)", "% Rpeak")
 
   div id="chart_new_vs_upgraded_rmax_pct"
   javascript:
-    var chartDataRmaxPct = JSON.parse("#{@ratings_rmax_pct_chart_data.to_json}".replace(/&quot;/g, '"'));
+    window.chartDataRmaxPct = JSON.parse("#{@ratings_rmax_pct_chart_data.to_json}".replace(/&quot;/g, '"'));
+    var chartDataRmaxPct = window.chartDataRmaxPct;
   coffee:
     draw_new_vs_upgraded_new(chartDataRmaxPct, "chart_new_vs_upgraded_rmax_pct", "Процент Rmax (от общего) новых и обновлённых систем", "Дата (ММ.ГГ)", "% Rmax")
   div style="clear: both;"
@@ -2659,11 +2765,28 @@ br
   style
     | .cell.cell-same-machine .cell-hl-outer { stroke: #000; }
     | .cell.cell-same-machine .cell-hl-inner { stroke: #ffeb3b; }
+
+  .container-fluid
+    .menu-container
+      table.mb-3 style="border: none;"
+        tr style="border: none; vertical-align: middle;"
+          td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Редакции:
+          td style="border: none; padding-right: 4px;"
+            select#list-upg-edition-start.form-control style="width: 120px;"
+          td style="border: none; padding-right: 16px;"
+            select#list-upg-edition-end.form-control style="width: 120px;"
+          td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Места:
+          td style="border: none; padding-right: 4px;"
+            select#list-upg-rank-start.form-control style="width: 70px;"
+          td style="border: none;"
+            select#list-upg-rank-end.form-control style="width: 70px;"
+
+  <br>
   div id="matrix_chart"
     javascript:
       chartData = #{raw @chart_data};
     coffee:
-      @drawMatrix(chartData, "matrix_chart", "Эволюция машин в рейтинге")
+      @drawMatrix(chartData, "matrix_chart", "Эволюция систем в рейтинге")
 
   
   div style="clear: both;"

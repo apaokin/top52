@@ -1434,9 +1434,11 @@ class Top50MachinesController < Top50BaseController
   end
   #4 END: my code
   
+  TOP50_MAX_RANK = 50
+
   def stats(ext = 0)
     @stat_section = params[:section]
-    
+
     @section_headers = {}
     @section_headers["performance"] = "производительность систем"
     @section_headers["performance_3d"] = "производительность систем (LINPACK, 3D)"
@@ -1457,7 +1459,7 @@ class Top50MachinesController < Top50BaseController
     @section_headers["ram_stats"] = "среднее количество памяти"
     @section_headers["component_stats"] = "количество компонент"
     @section_headers["freshest_comp_stats"] = "статистика новых компонент"
-    @section_headers["list_upg"] = "изменение позиций машин в рейтинге"
+    @section_headers["list_upg"] = "изменение систем в рейтинге"
     @section_headers["core_cnt"] = "количество вычислительных ядер"
     @section_headers["comm_net"] = "семейства коммуникационных сетей"
     @section_headers["comm_net_sep"] = "коммуникационные сети"
@@ -1515,6 +1517,13 @@ class Top50MachinesController < Top50BaseController
     end
     @top50_lists = get_top50_lists
     @top50_slists = get_top50_lists_sorted
+    # Max rank = number of positions in the last (most recent) present list
+    last_list = @top50_slists.first
+    @max_rank = if last_list
+      Top50BenchmarkResult.where(benchmark_id: last_list.id).count
+    end
+    @max_rank = TOP50_MAX_RANK if @max_rank.to_i < 1
+
     if @stat_section == 'hybrid_inter'
       comp_node_id = Top50ObjectType.where(name_eng: 'Compute node').first.id
       @hybrid_mach = {}
@@ -2681,7 +2690,7 @@ class Top50MachinesController < Top50BaseController
           @edition_dates_ram[edition - 1] = parts.size >= 3 ? "#{parts[1]}.#{parts[2][-2..-1]}" : list_date
         end
         # Get machines directly from the benchmark results for this specific list
-        benchmark_results = Top50BenchmarkResult.where(benchmark_id: list_id).order(result: :asc).limit(50)
+        benchmark_results = Top50BenchmarkResult.where(benchmark_id: list_id).order(result: :asc).limit(@max_rank || TOP50_MAX_RANK)
 
         benchmark_results.each_with_index do |benchmark_result, rank_index|
           rank = rank_index + 1
@@ -2811,7 +2820,7 @@ class Top50MachinesController < Top50BaseController
           @edition_dates_component[edition - 1] = parts.size >= 3 ? "#{parts[1]}.#{parts[2][-2..-1]}" : list_date
         end
         
-        benchmark_results = Top50BenchmarkResult.where(benchmark_id: list_id).order(result: :asc).limit(50)
+        benchmark_results = Top50BenchmarkResult.where(benchmark_id: list_id).order(result: :asc).limit(@max_rank || TOP50_MAX_RANK)
 
         benchmark_results.each_with_index do |benchmark_result, rank_index|
           rank = rank_index + 1
@@ -3022,7 +3031,7 @@ class Top50MachinesController < Top50BaseController
         next unless list_date_parsed
 
         @freshest_quantity_chart_dates[edition] = list_date_parsed.strftime("%Y-%m")
-        benchmark_results = Top50BenchmarkResult.where(benchmark_id: list_id).order(result: :asc).limit(50)
+        benchmark_results = Top50BenchmarkResult.where(benchmark_id: list_id).order(result: :asc).limit(@max_rank || TOP50_MAX_RANK)
         benchmark_results.each_with_index do |benchmark_result, rank_index|
           rank = rank_index + 1
           machine_id = benchmark_result.machine_id
@@ -3292,7 +3301,7 @@ class Top50MachinesController < Top50BaseController
           next if parts.size < 2
           list_id = get_list_id_by_date(parts[0], parts[1])
           next if list_id.to_i <= 0
-          benchmark_results = Top50BenchmarkResult.where(benchmark_id: list_id).order(result: :asc).limit(50)
+          benchmark_results = Top50BenchmarkResult.where(benchmark_id: list_id).order(result: :asc).limit(@max_rank || TOP50_MAX_RANK)
           rank_to_machine = benchmark_results.each_with_index.map { |br, i| [i + 1, br.machine_id] }.to_h
 
           cpu_entries = cpu_by_edition[ed] || []
@@ -3516,7 +3525,7 @@ class Top50MachinesController < Top50BaseController
       lists_chronological = top50_slists.reverse
       @new_upd_list_ids = lists_chronological.map(&:id)
       @new_upd_list_nums = @new_upd_list_ids.map { |lid| @num_vals.find_by(obj_id: lid)&.value }.map { |v| v.presence || "—" }
-      @new_upd_matrix = (1..50).map do |rank|
+      @new_upd_matrix = (1..(@max_rank || TOP50_MAX_RANK)).map do |rank|
         @new_upd_list_ids.map do |list_id|
           @new_upd_data.find { |e| e[:rank] == rank && e[:list_id] == list_id }
         end
@@ -3698,6 +3707,186 @@ class Top50MachinesController < Top50BaseController
       @pop_cnets.each do |key, value|
         if !value
           @top50_cnets.delete_if{|el| el.cnet_name == key}
+        end
+      end
+    end
+
+    respond_to do |format|
+      format.html
+      format.json do
+        section = @stat_section_for_loading || @stat_section
+
+        # Helpers for edition/rank ranges (1-based indices as used in heatmap data)
+        parse_i = ->(val, default) do
+          v = val.to_i
+          v > 0 ? v : default
+        end
+
+        # For heatmap-style data where each entry has :edition and :rank
+        filter_by_ranges = ->(arr, ed_from, ed_to, rk_from, rk_to) do
+          (arr || []).select do |h|
+            ed = h[:edition] || h["edition"]
+            rk = h[:rank] || h["rank"]
+            ed && rk && ed >= ed_from && ed <= ed_to && rk >= rk_from && rk <= rk_to
+          end
+        end
+
+        # For data keyed only by :edition (no rank dimension)
+        filter_by_editions = ->(arr, ed_from, ed_to) do
+          (arr || []).select do |h|
+            ed = h[:edition] || h["edition"]
+            ed && ed >= ed_from && ed <= ed_to
+          end
+        end
+
+        case section
+        when "freshest_components_lag"
+          max_edition = (@edition_dates_lag || []).length
+          max_edition = 1 if max_edition <= 0
+          ed_from = parse_i.call(params[:edition_start], 1)
+          ed_to   = parse_i.call(params[:edition_end], max_edition)
+          ed_from, ed_to = ed_to, ed_from if ed_from > ed_to
+          rk_from = parse_i.call(params[:rank_start], 1)
+          rk_to   = parse_i.call(params[:rank_end], @max_rank || TOP50_MAX_RANK)
+          rk_from, rk_to = rk_to, rk_from if rk_from > rk_to
+
+          cpu = filter_by_ranges.call(@cpu_data, ed_from, ed_to, rk_from, rk_to)
+          gpu = filter_by_ranges.call(@gpu_data, ed_from, ed_to, rk_from, rk_to)
+          combined = filter_by_ranges.call(@combined_data, ed_from, ed_to, rk_from, rk_to)
+
+          render json: {
+            cpu_data: cpu,
+            gpu_data: gpu,
+            combined_data: combined,
+            edition_dates: @edition_dates_lag || [],
+            edition_start: ed_from,
+            edition_end: ed_to,
+            rank_start: rk_from,
+            rank_end: rk_to
+          }
+
+        when "ram_stats"
+          max_edition = (@edition_dates_ram || []).length
+          max_edition = 1 if max_edition <= 0
+          ed_from = parse_i.call(params[:edition_start], 1)
+          ed_to   = parse_i.call(params[:edition_end], max_edition)
+          ed_from, ed_to = ed_to, ed_from if ed_from > ed_to
+          rk_from = parse_i.call(params[:rank_start], 1)
+          rk_to   = parse_i.call(params[:rank_end], @max_rank || TOP50_MAX_RANK)
+          rk_from, rk_to = rk_to, rk_from if rk_from > rk_to
+
+          core = filter_by_ranges.call(@ram_per_core_data, ed_from, ed_to, rk_from, rk_to)
+          cpu  = filter_by_ranges.call(@ram_per_cpu_data,  ed_from, ed_to, rk_from, rk_to)
+          node = filter_by_ranges.call(@ram_per_node_data, ed_from, ed_to, rk_from, rk_to)
+
+          render json: {
+            ram_per_core_data: core,
+            ram_per_cpu_data: cpu,
+            ram_per_node_data: node,
+            edition_dates: @edition_dates_ram || [],
+            edition_start: ed_from,
+            edition_end: ed_to,
+            rank_start: rk_from,
+            rank_end: rk_to
+          }
+
+        when "component_stats"
+          max_edition = (@edition_dates_component || []).length
+          max_edition = 1 if max_edition <= 0
+          ed_from = parse_i.call(params[:edition_start], 1)
+          ed_to   = parse_i.call(params[:edition_end], max_edition)
+          ed_from, ed_to = ed_to, ed_from if ed_from > ed_to
+          rk_from = parse_i.call(params[:rank_start], 1)
+          rk_to   = parse_i.call(params[:rank_end], @max_rank || TOP50_MAX_RANK)
+          rk_from, rk_to = rk_to, rk_from if rk_from > rk_to
+
+          wrap = ->(arr) { filter_by_ranges.call(arr, ed_from, ed_to, rk_from, rk_to) }
+
+          render json: {
+            cpu_total_data:              wrap.call(@cpu_total_data),
+            cpu_per_node_data:           wrap.call(@cpu_per_node_data),
+            gpu_total_data:              wrap.call(@gpu_total_data),
+            gpu_per_node_data:           wrap.call(@gpu_per_node_data),
+            freshest_total_data:         wrap.call(@freshest_total_data),
+            freshest_per_node_data:      wrap.call(@freshest_per_node_data),
+            freshest_total_data_cpu_only:   wrap.call(@freshest_total_data_cpu_only),
+            freshest_per_node_data_cpu_only: wrap.call(@freshest_per_node_data_cpu_only),
+            cores_total_data:            wrap.call(@cores_total_data),
+            cores_per_node_data:         wrap.call(@cores_per_node_data),
+            gpu_cores_total_data:        wrap.call(@gpu_cores_total_data),
+            gpu_cores_per_node_data:     wrap.call(@gpu_cores_per_node_data),
+            gpu_microcores_only_total_data: wrap.call(@gpu_microcores_only_total_data),
+            gpu_microcores_only_per_node_data: wrap.call(@gpu_microcores_only_per_node_data),
+            edition_dates: @edition_dates_component || [],
+            edition_start: ed_from,
+            edition_end: ed_to,
+            rank_start: rk_from,
+            rank_end: rk_to
+          }
+
+        when "freshest_comp_stats"
+          # Edition-only range for newest component statistics
+          max_edition =
+            if defined?(@edition_dates_freshest_quantity) && @edition_dates_freshest_quantity
+              @edition_dates_freshest_quantity.length
+            else
+              1
+            end
+          ed_from = parse_i.call(params[:edition_start], 1)
+          ed_to   = parse_i.call(params[:edition_end], max_edition)
+          ed_from, ed_to = ed_to, ed_from if ed_from > ed_to
+
+          wrap_ed = ->(arr) { filter_by_editions.call(arr, ed_from, ed_to) }
+
+          render json: {
+            freshest_cpu_quantity_data: wrap_ed.call(@freshest_cpu_quantity_data),
+            freshest_gpu_quantity_data: wrap_ed.call(@freshest_gpu_quantity_data),
+            announce_to_mention_cpu_data: wrap_ed.call(@announce_to_mention_cpu_data),
+            announce_to_mention_gpu_data: wrap_ed.call(@announce_to_mention_gpu_data),
+            edition_dates: @edition_dates_freshest_quantity || [],
+            edition_start: ed_from,
+            edition_end: ed_to
+          }
+
+        when "new_upg"
+          render json: {
+            ratings_chart_data:          @ratings_chart_data,
+            ratings_rpeak_pct_chart_data: @ratings_rpeak_pct_chart_data,
+            ratings_rmax_pct_chart_data:  @ratings_rmax_pct_chart_data
+          }
+
+        when "list_upg"
+          # Matrix of rank changes; filter by edition string and rank
+          ed_from = params[:edition_start]
+          ed_to   = params[:edition_end]
+          rk_from = parse_i.call(params[:rank_start], 1)
+          rk_to   = parse_i.call(params[:rank_end], @max_rank || TOP50_MAX_RANK)
+          rk_from, rk_to = rk_to, rk_from if rk_from > rk_to
+
+          all_editions = (@new_upd_data || []).map { |e| e[:edition] }.uniq.sort
+          if ed_from.present? && ed_to.present?
+            from_idx = all_editions.index(ed_from) || 0
+            to_idx   = all_editions.index(ed_to)   || all_editions.length - 1
+            from_idx, to_idx = to_idx, from_idx if from_idx > to_idx
+            allowed_editions = all_editions[from_idx..to_idx]
+          else
+            allowed_editions = all_editions
+          end
+
+          matrix_entries = (@new_upd_data || []).select do |e|
+            rk = e[:rank]
+            allowed_editions.include?(e[:edition]) && rk && rk >= rk_from && rk <= rk_to
+          end
+
+          render json: {
+            matrix_data: matrix_entries,
+            editions: allowed_editions,
+            rank_start: rk_from,
+            rank_end: rk_to
+          }
+
+        else
+          render json: { error: "JSON stats not available for section=#{section}" }, status: :bad_request
         end
       end
     end
