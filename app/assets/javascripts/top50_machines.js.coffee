@@ -3172,6 +3172,65 @@ runStatsWhenReady ->
         el.addEventListener("change", updateFreshestQuantityHeatmaps)
     )
 
+  # freshest_comp_stats: bar charts — separate edition dropdowns (not heatmaps), filter + scroll + sticky Y
+  runStatsWhenReady ->
+    fqStartSel = document.getElementById("freshest-charts-edition-start")
+    fqEndSel   = document.getElementById("freshest-charts-edition-end")
+    fqChartEl  = document.getElementById("chart_freshest_quantity_systems")
+    return unless fqStartSel and fqEndSel and fqChartEl and typeof window.editionDatesFreshestQuantity != "undefined"
+    fqCharts = [
+      { id: "chart_freshest_quantity_systems", dataKey: "chartDataFreshestQuantity", title: "Количество систем с новыми компонентами по редакциям", xLabel: "Дата (ММ.ГГ)", yLabel: "Количество систем" }
+      { id: "chart_freshest_quantity_models", dataKey: "chartDataFreshestQuantityModels", title: "Количество новых моделей компонент по редакциям", xLabel: "Дата (ММ.ГГ)", yLabel: "Количество моделей" }
+      { id: "chart_freshest_quantity_components", dataKey: "chartDataFreshestQuantityComponents", title: "Количество новых компонент по редакциям", xLabel: "Дата (ММ.ГГ)", yLabel: "Количество компонентов" }
+      { id: "chart_freshest_quantity_pct_all", dataKey: "chartDataFreshestQuantityPctAll", title: "Доля новых компонент (от компонент всех систем), %", xLabel: "Дата (ММ.ГГ)", yLabel: "% от всех компонентов" }
+      { id: "chart_freshest_quantity_pct_new_systems", dataKey: "chartDataFreshestQuantityPctNewSystems", title: "Доля новых компонент (от компонент систем с новыми), %", xLabel: "Дата (ММ.ГГ)", yLabel: "% от всех компонентов" }
+      { id: "chart_freshest_quantity_rpeak_pct", dataKey: "chartDataFreshestQuantityRpeakPct", title: "Процент Rpeak (от общего) систем с новыми компонентами", xLabel: "Дата (ММ.ГГ)", yLabel: "% Rpeak" }
+      { id: "chart_freshest_quantity_rmax_pct", dataKey: "chartDataFreshestQuantityRmaxPct", title: "Процент Rmax (от общего) систем с новыми компонентами", xLabel: "Дата (ММ.ГГ)", yLabel: "% Rmax" }
+    ]
+    # Second dropdown (start) = main (all options). First dropdown (end) = dependent, limited by start.
+    updateFqStartOptions = () ->
+      return unless fqStartSel
+      for i in [0...fqStartSel.options.length]
+        fqStartSel.options[i].hidden = false
+    updateFqEndOptions = () ->
+      return unless fqStartSel and fqEndSel
+      startIdx = parseInt(fqStartSel.selectedIndex)
+      for i in [0...fqEndSel.options.length]
+        fqEndSel.options[i].hidden = i > startIdx
+      if fqEndSel.selectedIndex > startIdx
+        fqEndSel.selectedIndex = startIdx
+    sliceFqChartData = (chartData, edFrom, edTo) ->
+      return [] unless chartData and chartData.length > 0
+      chartData.map((s) ->
+        arr = (s.data or []).slice(edFrom - 1, edTo)
+        { name: s.name, color: s.color, data: arr.map((p) -> [p[0], p[1]]) }
+      )
+    updateFqBarCharts = () ->
+      updateFqStartOptions()
+      updateFqEndOptions()
+      startVal = parseInt(fqStartSel?.value, 10) or 1
+      maxEd = (window.editionDatesFreshestQuantity or []).length or 1
+      endVal = parseInt(fqEndSel?.value, 10) or maxEd
+      startVal = Math.max(1, Math.min(startVal, maxEd))
+      endVal = Math.max(1, Math.min(endVal, maxEd))
+      edFrom = Math.min(startVal, endVal)
+      edTo = Math.max(startVal, endVal)
+      numPoints = Math.max(0, edTo - edFrom + 1)
+      minChartWidth = Math.max(1000, numPoints * 40)
+      fqCharts.forEach((cfg) ->
+        el = document.getElementById(cfg.id)
+        if !el then return
+        el.style.minWidth = minChartWidth + "px"
+        data = window[cfg.dataKey]
+        if !data or !data.length or !data[0].data then return
+        filtered = sliceFqChartData(data, edFrom, edTo)
+        if filtered.length > 0 and filtered[0].data and filtered[0].data.length > 0
+          draw_new_vs_upgraded_new(filtered, cfg.id, cfg.title, cfg.xLabel, cfg.yLabel)
+      )
+    updateFqBarCharts()
+    fqStartSel.addEventListener("change", updateFqBarCharts)
+    fqEndSel.addEventListener("change", updateFqBarCharts)
+
   # list_upg: матрица, фильтрация по редакциям и местам
   if typeof chartData != "undefined" and document.getElementById("matrix_chart")
     listStartEd = document.getElementById("list-upg-edition-start")
@@ -3242,6 +3301,87 @@ runStatsWhenReady ->
       listStartRank.addEventListener("change", updateListUpg)
       listEndRank.addEventListener("change", updateListUpg)
 
+  # new_upg: edition range selector — filter charts, table, CSV (client-side)
+  # Run in a separate ready pass so inline scripts (chartData + initial draw) have run
+  runStatsWhenReady ->
+    newUpgStartSel = document.getElementById("new-upg-edition-start")
+    newUpgEndSel   = document.getElementById("new-upg-edition-end")
+    newUpgChartEl  = document.getElementById("chart_new_vs_upgraded")
+    return unless newUpgStartSel and newUpgEndSel and newUpgChartEl and typeof window.chartData != "undefined"
+    updateNewUpgEditionEndOptions = () ->
+      return unless newUpgEndSel
+      for i in [0...newUpgEndSel.options.length]
+        newUpgEndSel.options[i].hidden = false
+    updateNewUpgEditionStartOptions = () ->
+      return unless newUpgStartSel and newUpgEndSel
+      endIdx = parseInt(newUpgEndSel.selectedIndex)
+      for i in [0...newUpgStartSel.options.length]
+        newUpgStartSel.options[i].hidden = i < endIdx
+      if newUpgStartSel.selectedIndex < endIdx
+        newUpgStartSel.selectedIndex = endIdx
+    sliceNewUpgChartData = (chartData, edFrom, edTo) ->
+      return [] unless chartData and chartData.length > 0
+      chartData.map((s) ->
+        arr = (s.data or []).slice(edFrom - 1, edTo)
+        { name: s.name, color: s.color, data: arr.map((p) -> [p[0], p[1]]) }
+      )
+    updateNewUpg = () ->
+      updateNewUpgEditionEndOptions()
+      updateNewUpgEditionStartOptions()
+      startVal = parseInt(newUpgStartSel?.value, 10) or 1
+      maxEd = (window.editionDatesNewUpg or []).length or 1
+      endVal = parseInt(newUpgEndSel?.value, 10) or maxEd
+      startVal = Math.max(1, Math.min(startVal, maxEd))
+      endVal = Math.max(1, Math.min(endVal, maxEd))
+      edFrom = Math.min(startVal, endVal)
+      edTo = Math.max(startVal, endVal)
+      filteredMain = sliceNewUpgChartData(window.chartData, edFrom, edTo)
+      filteredRpeak = sliceNewUpgChartData(window.chartDataRpeakPct, edFrom, edTo)
+      filteredRmax   = sliceNewUpgChartData(window.chartDataRmaxPct, edFrom, edTo)
+      numPoints = (filteredMain[0]?.data?.length) or 0
+      minChartWidth = Math.max(1000, numPoints * 40)
+      newUpgChartIds = ["chart_new_vs_upgraded", "chart_new_vs_upgraded_rpeak_pct", "chart_new_vs_upgraded_rmax_pct"]
+      newUpgChartIds.forEach((id) ->
+        el = document.getElementById(id)
+        if el then el.style.minWidth = minChartWidth + "px"
+      )
+      if filteredMain.length > 0 and filteredMain[0].data and filteredMain[0].data.length > 0
+        draw_new_vs_upgraded_new(filteredMain, "chart_new_vs_upgraded", "Новые и обновлённые системы по редакциям", "Дата (ММ.ГГ)", "Количество систем")
+      if filteredRpeak.length > 0 and filteredRpeak[0].data and filteredRpeak[0].data.length > 0
+        draw_new_vs_upgraded_new(filteredRpeak, "chart_new_vs_upgraded_rpeak_pct", "Процент Rpeak (от общего) новых и обновлённых систем", "Дата (ММ.ГГ)", "% Rpeak")
+      if filteredRmax.length > 0 and filteredRmax[0].data and filteredRmax[0].data.length > 0
+        draw_new_vs_upgraded_new(filteredRmax, "chart_new_vs_upgraded_rmax_pct", "Процент Rmax (от общего) новых и обновлённых систем", "Дата (ММ.ГГ)", "% Rmax")
+      rows = document.querySelectorAll("table.table tbody tr[data-edition-index]")
+      for i in [0...rows.length]
+        idx = parseInt(rows[i].getAttribute("data-edition-index"), 10)
+        rows[i].style.display = (idx >= edFrom and idx <= edTo) ? "" : "none"
+      summary = window.ratingsSummaryNewUpg or []
+      filteredSummary = summary.filter((r) -> r.edition_index >= edFrom and r.edition_index <= edTo)
+      header = "Редакция,Новые машины,Обновлённые машины,Новые и обновлённые машины,% Новых машин,% Обновлённых машин,% Новых и обновлённых машин,% Rpeak новых машин,% Rmax новых машин,% Rpeak обновлённых машин,% Rmax обновлённых машин,% Rpeak новых и обновлённых машин,% Rmax новых и обновлённых машин"
+      csvLines = [header]
+      escapeCsvField = (v) ->
+        s = String(v)
+        if /[,"\n\r]/.test(s) then "\"" + s.replace(/\"/g, "\"\"") + "\"" else s
+      filteredSummary.forEach((r) ->
+        pctNew = if r.pct_new != null then r.pct_new else ""
+        pctUpg = if r.pct_upg != null then r.pct_upg else ""
+        pctNewUpg = if r.pct_new_upg != null then r.pct_new_upg else ""
+        pctRpeakNew = if r.pct_rpeak_new != null then r.pct_rpeak_new else ""
+        pctRmaxNew = if r.pct_rmax_new != null then r.pct_rmax_new else ""
+        pctRpeakUpg = if r.pct_rpeak_upg != null then r.pct_rpeak_upg else ""
+        pctRmaxUpg = if r.pct_rmax_upg != null then r.pct_rmax_upg else ""
+        pctRpeakNewUpg = if r.pct_rpeak_new_upg != null then r.pct_rpeak_new_upg else ""
+        pctRmaxNewUpg = if r.pct_rmax_new_upg != null then r.pct_rmax_new_upg else ""
+        csvLines.push([escapeCsvField(r.edition_label), r.new_machines, r.upgraded_machines, r.total_machines, pctNew, pctUpg, pctNewUpg, pctRpeakNew, pctRmaxNew, pctRpeakUpg, pctRmaxUpg, pctRpeakNewUpg, pctRmaxNewUpg].join(","))
+      )
+      csvStr = csvLines.join("\n")
+      linkEl = document.getElementById("download_new_upg")
+      if linkEl
+        linkEl.setAttribute("href", "data:text/csv;charset=utf-8," + encodeURIComponent(csvStr))
+    updateNewUpg()
+    newUpgStartSel.addEventListener("change", updateNewUpg)
+    newUpgEndSel.addEventListener("change", updateNewUpg)
+
 @draw_new_vs_upgraded_new = (data, src_id, title, x_label, y_label) ->
   return unless data and data.length > 0 and data[0].data and data[0].data.length > 0
   # Подготовка данных: парсим даты только если это ещё строки (при повторной отрисовке уже Date)
@@ -3267,9 +3407,14 @@ runStatsWhenReady ->
 
     container = d3.selectAll("div").filter(() -> d3.select(this).attr("id") == src_id)
     container.selectAll("*").remove()
+    headerEl = document.getElementById(src_id + "_header")
+    headerContainer = if headerEl then d3.select(headerEl) else container
+    if headerEl
+      headerContainer.selectAll("*").remove()
+    topContainer = headerContainer
 
     # Заголовок
-    container.append("div")
+    topContainer.append("div")
               .text(title)
               .style("font-family", "Arial")
               .style("font-size", "24px")
@@ -3277,6 +3422,7 @@ runStatsWhenReady ->
               .style("text-align", "center")
               .style("margin-bottom", "20px")
 
+    stickyYAxisSel = null
     # Функция обновления шкалы Y по видимым сериям (гибкая шкала при скрытии серий)
     updateYScale = () ->
       visibleMax = 0
@@ -3289,15 +3435,16 @@ runStatsWhenReady ->
           visibleMax = Math.max(visibleMax, seriesMax) if seriesMax?
       visibleMax = Math.max(visibleMax, 1)
       y_scale.domain([0, visibleMax])
-      svg.select("g.axis-y").call(y_axis)
+      axisSel = if stickyYAxisSel then stickyYAxisSel else svg.select("g.axis-y")
+      axisSel.call(y_axis)
       data.forEach((dataset, idx) ->
         layerSel = svg.selectAll(".layer-" + idx)
         layerSel.filter("rect").attr("y", (d) -> y_scale(d[1])).attr("height", (d) -> height - margin.bottom - y_scale(d[1]))
         layerSel.filter("circle").attr("cy", (d) -> y_scale(d[1]))
       )
 
-    # Кнопки для переключения
-    buttons = container.append("div").style("margin-bottom", "10px")
+    # Кнопки для переключения (в заголовке вне скролла, если есть _header)
+    buttons = topContainer.append("div").style("margin-bottom", "10px")
     data.forEach((dataset, i) ->
       buttons.append("button")
              .text(dataset.name)
@@ -3316,7 +3463,7 @@ runStatsWhenReady ->
                    !d3.select(nodes[j]).classed("hidden")
                  )
                isHidden = chartLayers.classed("hidden")
-               btn = container.select(".toggle-btn-" + i)
+               btn = topContainer.select(".toggle-btn-" + i)
                btn.style("opacity", if isHidden then 0.5 else 1)
                updateYScale()
              )
@@ -3353,6 +3500,35 @@ runStatsWhenReady ->
        .attr("transform", "translate(" + margin.left + ",0)")
        .call(y_axis)
 
+    scrollParent = container.node().parentNode
+    hasSticky = scrollParent and (d3.select(scrollParent).classed("new-upg-charts-scroll") or d3.select(scrollParent).classed("freshest-charts-scroll"))
+    if hasSticky
+      oldSticky = scrollParent.querySelector(".new-upg-sticky-y-axis")
+      if oldSticky then oldSticky.remove()
+      stickyW = margin.left
+      stickyDiv = document.createElement("div")
+      stickyDiv.className = "new-upg-sticky-y-axis"
+      stickyDiv.style.cssText = "position: sticky; left: 0; width: " + stickyW + "px; min-width: " + stickyW + "px; height: " + height + "px; flex-shrink: 0; background: #fff; z-index: 1; overflow: visible;"
+      scrollParent.insertBefore(stickyDiv, container.node())
+      stickySvg = d3.select(stickyDiv).append("svg").attr("width", stickyW).attr("height", height).attr("style", "display: block; overflow: visible;")
+      stickyYAxisSel = stickySvg.append("g").attr("class", "axis-y").attr("transform", "translate(" + (stickyW - 1) + ",0)").call(y_axis)
+      # Y-axis label in sticky so it stays visible (main svg is shifted left); extra gap from axis so it doesn't intersect tick values
+      yLabelGap = 70
+      yLabelX = (stickyW - 1) - yLabelGap
+      yLabelY = height / 2
+      stickySvg.append("text")
+        .attr("class", "y-axis-label")
+        .attr("transform", "rotate(-90, " + yLabelX + ", " + yLabelY + ")")
+        .attr("x", yLabelX)
+        .attr("y", yLabelY)
+        .attr("dy", "0.35em")
+        .style("text-anchor", "middle")
+        .style("font-family", "Arial")
+        .style("font-size", "14px")
+        .text(y_label)
+      svg.select("g.axis-y").remove()
+      container.node().style.marginLeft = "-" + margin.left + "px"
+
     # Подпись для оси X
     svg.append("text")
        .attr("transform", "translate(" + (width / 2) + "," + (height - margin.bottom + 70) + ")")
@@ -3361,16 +3537,17 @@ runStatsWhenReady ->
        .style("font-size", "14px")
        .text("Дата (ММ.ГГ)")
 
-    # Подпись для оси Y
-    svg.append("text")
-       .attr("transform", "rotate(-90)")
-       .attr("y", margin.left - 50)
-       .attr("x", 0 - (height / 2))
-       .attr("dy", "1em")
-       .style("text-anchor", "middle")
-       .style("font-family", "Arial")
-       .style("font-size", "14px")
-       .text(y_label)
+    # Подпись для оси Y (только если нет sticky — иначе она в sticky div)
+    unless hasSticky
+      svg.append("text")
+         .attr("transform", "rotate(-90)")
+         .attr("y", margin.left - 70)
+         .attr("x", 0 - (height / 2))
+         .attr("dy", "1em")
+         .style("text-anchor", "middle")
+         .style("font-family", "Arial")
+         .style("font-size", "14px")
+         .text(y_label)
 
     # Добавляем столбцы и точки
     data.forEach((dataset, i) ->
@@ -3439,6 +3616,8 @@ runStatsWhenReady ->
   window.onload = () ->
     if oldOnload then oldOnload()
     func()
+  # Вызываем сразу, чтобы график отрисовался при вызове (в т.ч. при смене диапазона редакций)
+  func()
 
 
 # "YYYY-MM" -> "MM.YY" for list_upg x-axis

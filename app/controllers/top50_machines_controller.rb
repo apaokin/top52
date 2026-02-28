@@ -2647,7 +2647,55 @@ class Top50MachinesController < Top50BaseController
         },
         color: "#ff7f0e"
       }
-    ]      
+    ]
+
+    # Edition labels for new_upg selector (same order as @ratings_summary)
+    denom = @all_ratings_data[0][:machines].size.to_f
+    @edition_dates_new_upg = @ratings_summary.map do |s|
+      parts = s[:date].to_s.split("-")
+      parts.size >= 2 ? "#{parts[1]}.#{parts[0][-2..-1]}" : s[:date].to_s
+    end
+
+    # Serializable summary for client-side filtering and CSV (no ActiveRecord)
+    @ratings_summary_for_js = @ratings_summary.each_with_index.map do |s, idx|
+      date_val = s[:date_vals].find_by(obj_id: s[:list_id])
+      list_num = s[:num_vals].find_by(obj_id: s[:list_id])
+      edition_label = if list_num.present? && date_val.present?
+        "#{list_num.value}#{8209.chr}я (#{date_val.value})"
+      elsif date_val.present?
+        date_val.value
+      else
+        s[:date].to_s
+      end
+      total_mach = s[:new_machines] + s[:upgraded_machines]
+      pct_new = denom > 0 ? (s[:new_machines].to_f / denom * 100).round(2) : nil
+      pct_upg = denom > 0 ? (s[:upgraded_machines].to_f / denom * 100).round(2) : nil
+      pct_new_upg = denom > 0 ? (total_mach / denom * 100).round(2) : nil
+      sum_rpeak = s[:sum_rpeak_total].to_f
+      sum_rmax = s[:sum_rmax_total].to_f
+      pct_rpeak_new = sum_rpeak > 0 ? (s[:sum_rpeak_new].to_f / sum_rpeak * 100).round(2) : nil
+      pct_rmax_new = sum_rmax > 0 ? (s[:sum_rmax_new].to_f / sum_rmax * 100).round(2) : nil
+      pct_rpeak_upg = sum_rpeak > 0 ? (s[:sum_rpeak_upg].to_f / sum_rpeak * 100).round(2) : nil
+      pct_rmax_upg = sum_rmax > 0 ? (s[:sum_rmax_upg].to_f / sum_rmax * 100).round(2) : nil
+      pct_rpeak_new_upg = sum_rpeak > 0 ? ((s[:sum_rpeak_new].to_f + s[:sum_rpeak_upg].to_f) / sum_rpeak * 100).round(2) : nil
+      pct_rmax_new_upg = sum_rmax > 0 ? ((s[:sum_rmax_new].to_f + s[:sum_rmax_upg].to_f) / sum_rmax * 100).round(2) : nil
+      {
+        edition_index: idx + 1,
+        edition_label: edition_label,
+        new_machines: s[:new_machines],
+        upgraded_machines: s[:upgraded_machines],
+        total_machines: total_mach,
+        pct_new: pct_new,
+        pct_upg: pct_upg,
+        pct_new_upg: pct_new_upg,
+        pct_rpeak_new: pct_rpeak_new,
+        pct_rmax_new: pct_rmax_new,
+        pct_rpeak_upg: pct_rpeak_upg,
+        pct_rmax_upg: pct_rmax_upg,
+        pct_rpeak_new_upg: pct_rpeak_new_upg,
+        pct_rmax_new_upg: pct_rmax_new_upg
+      }
+    end      
     elsif @stat_section == 'ram_stats'
       @ram_per_core_data = []
       @ram_per_cpu_data = []
