@@ -3,6 +3,9 @@ require "admin_constraint"
 
 Octoshell::Application.routes.draw do
 
+  # Игнорируем запросы от Chrome DevTools
+  get "/.well-known/*path", to: proc { [404, {}, ['']] }
+
   get "certificates/page1" => "certificates#page1"
   post "certificates/page2" => "certificates#page2"
   post "certificates/scr" => "certificates#scr"
@@ -126,6 +129,7 @@ Octoshell::Application.routes.draw do
   get 'archive', to: 'top50_machines#archive_lists', as:'top50_machines_archive_lists'
   get 'objects/:id/attribute_vals', to: 'top50_objects#attribute_vals', as:'top50_object_top50_attribute_vals'
   get 'systems/:id', to: 'top50_machines#show', as:'top50_machines_show'
+  get 'systems/:id/export_extratings_csv', to: 'top50_machines#export_extratings_csv', as: 'export_extratings_csv_top50_machine'
   get 'vendor_stats/:thres', to: 'top50_vendors#stats', as:'top50_vendors_stats'
   get 'stats', to: 'top50_machines#stats', as:'top50_stats_def'
   get 'stats/:section', to: 'top50_machines#stats', as:'top50_stats'

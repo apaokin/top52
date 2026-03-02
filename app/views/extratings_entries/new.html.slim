@@ -66,36 +66,133 @@ javascript:
       event.stopPropagation();
       
       let isValid = form.checkValidity();
+      const validationErrors = [];
       
       const unitsDiv = document.getElementById("units-list");
-      const scoreInputs = unitsDiv.querySelectorAll('input[name^="scores"]');
-      const unitSelects = unitsDiv.querySelectorAll('select[name^="selected_units"]');
-      
-      scoreInputs.forEach(input => {
-        if (input.value.trim() === '') {
-          input.classList.add('is-invalid');
-          isValid = false;
-        } else {
-          input.classList.remove('is-invalid');
+      if (unitsDiv) {
+        // Ищем все поля для scores и selected_units
+        const scoreInputs = unitsDiv.querySelectorAll('input[name^="scores["]');
+        const unitSelects = unitsDiv.querySelectorAll('select[name^="selected_units["]');
+        
+        // Проверяем, что есть хотя бы одна пара полей
+        if (scoreInputs.length === 0 && unitSelects.length === 0) {
+          const listSelect = document.querySelector('select[name="extratings_list_id"]');
+          if (listSelect && listSelect.value) {
+            validationErrors.push('Пожалуйста, дождитесь загрузки параметров рейтинга');
+            isValid = false;
+          }
         }
-      });
+        
+        scoreInputs.forEach(input => {
+          if (!input.value || input.value.trim() === '') {
+            input.classList.add('is-invalid');
+            isValid = false;
+            validationErrors.push(`Не указано значение для ${input.name}`);
+          } else {
+            input.classList.remove('is-invalid');
+          }
+        });
+        
+        unitSelects.forEach(select => {
+          if (!select.value || select.value === '') {
+            select.classList.add('is-invalid');
+            isValid = false;
+            validationErrors.push(`Не выбрана единица измерения для ${select.name}`);
+          } else {
+            select.classList.remove('is-invalid');
+          }
+        });
+      }
       
-      unitSelects.forEach(select => {
-        if (select.value === '') {
-          select.classList.add('is-invalid');
-          isValid = false;
-        } else {
-          select.classList.remove('is-invalid');
-        }
-      });
+      // Проверяем основные поля
+      const systemSelect = form.querySelector('select[name="extratings_entry[system_id]"]');
+      if (!systemSelect || !systemSelect.value) {
+        isValid = false;
+        validationErrors.push('Не выбрана система');
+      }
+      
+      const listSelect = form.querySelector('select[name="extratings_list_id"]');
+      if (!listSelect || !listSelect.value) {
+        isValid = false;
+        validationErrors.push('Не выбран лист рейтинга');
+      }
+      
+      const editionNumber = form.querySelector('input[name="edition_number"]');
+      if (!editionNumber || !editionNumber.value) {
+        isValid = false;
+        validationErrors.push('Не указан номер редакции');
+      }
+      
+      const publicationDate = form.querySelector('input[name="publication_date"]');
+      if (!publicationDate || !publicationDate.value) {
+        isValid = false;
+        validationErrors.push('Не указана дата публикации');
+      }
+      
+      const position = form.querySelector('input[name="extratings_entry[position]"]');
+      if (!position || !position.value) {
+        isValid = false;
+        validationErrors.push('Не указана позиция');
+      }
+      
+      if (validationErrors.length > 0) {
+        console.log('Ошибки валидации:', validationErrors);
+        showValidationError('Пожалуйста, заполните все обязательные поля: ' + validationErrors.join(', '));
+        form.classList.add('was-validated');
+        return;
+      }
       
       if (isValid) {
-        form.submit();
+        // Отправляем форму через AJAX используя jQuery
+        const formData = new FormData(form);
+        
+        // Добавляем CSRF токен
+        const csrfToken = document.querySelector('meta[name="csrf-token"]');
+        if (csrfToken) {
+          formData.append('authenticity_token', csrfToken.getAttribute('content'));
+        }
+        
+        // Логируем данные для отладки
+        console.log('Отправка формы:', {
+          url: form.action,
+          formData: Object.fromEntries(formData.entries())
+        });
+        
+        $.ajax({
+          url: form.action,
+          type: 'POST',
+          data: formData,
+          processData: false,
+          contentType: false,
+          dataType: 'script',
+          success: function(data, textStatus, jqXHR) {
+            // Обработка успешной отправки - ответ будет выполнен как JavaScript
+            console.log('Форма успешно отправлена');
+            // JavaScript код из create.js.erb будет выполнен автоматически
+          },
+          error: function(jqXHR, textStatus, errorThrown) {
+            console.error('Ошибка отправки формы:', errorThrown);
+            console.error('Response:', jqXHR.responseText);
+            // Если сервер вернул JavaScript с ошибкой, выполним его
+            if (jqXHR.responseText) {
+              try {
+                eval(jqXHR.responseText);
+              } catch (e) {
+                console.error('Ошибка выполнения ответа:', e);
+                showValidationError('Ошибка отправки формы. Пожалуйста, попробуйте еще раз.');
+              }
+            } else {
+              showValidationError('Ошибка отправки формы. Пожалуйста, попробуйте еще раз.');
+            }
+          }
+        });
       } else {
         showValidationError('Пожалуйста, заполните все обязательные поля');
       }
       
-      form.classList.add('was-validated');
+      if (!isValid) {
+        form.classList.add('was-validated');
+      }
     }, false);
     
     function showValidationError(message) {
@@ -173,6 +270,7 @@ javascript:
                          name="scores[${name}]"
                          class="form-control"
                          placeholder="Введите значение"
+                         step="any"
                          required>
                 </div>
               </div>

@@ -35,11 +35,11 @@ class ExtratingsEntriesController < Top50BaseController
       errors << "Не указана дата публикации"
     end
     
-    if params[:extratings_entry][:position].blank?
+    if params[:extratings_entry].blank? || params[:extratings_entry][:position].blank?
       errors << "Не указана позиция"
     end
     
-    if params[:extratings_entry][:system_id].blank?
+    if params[:extratings_entry].blank? || params[:extratings_entry][:system_id].blank?
       errors << "Не выбрана система"
     end
     
@@ -64,7 +64,10 @@ class ExtratingsEntriesController < Top50BaseController
     if errors.any?
       flash.now[:alert] = "Ошибки валидации: #{errors.join(', ')}"
       new
-      render :new
+      respond_to do |format|
+        format.html { render :new }
+        format.js { render :new }
+      end
       return
     end
 
@@ -103,16 +106,30 @@ class ExtratingsEntriesController < Top50BaseController
         ExtratingsScore.create!(
           extratings_entry: @extratings_entry,
           extratings_list_unit_id: unit_id,
-          score: score_value.to_i
+          score: score_value.to_f
         )
       end
     end
 
-    redirect_to top50_machines_show_path(@extratings_entry.system_id), notice: "Запись рейтинга и оценки успешно созданы."
+    respond_to do |format|
+      format.html { redirect_to top50_machines_show_path(@extratings_entry.system_id), notice: "Запись рейтинга и оценки успешно созданы." }
+      format.js { redirect_to top50_machines_show_path(@extratings_entry.system_id), notice: "Запись рейтинга и оценки успешно созданы." }
+    end
   rescue ActiveRecord::RecordInvalid => e
     flash.now[:alert] = "Ошибка создания записи: #{e.message}"
     new
-    render :new
+    respond_to do |format|
+      format.html { render :new }
+      format.js { render :new }
+    end
+  rescue => e
+    flash.now[:alert] = "Ошибка создания записи: #{e.message}"
+    Rails.logger.error "Error in extratings_entries#create: #{e.message}\n#{e.backtrace.join("\n")}"
+    new
+    respond_to do |format|
+      format.html { render :new }
+      format.js { render :new }
+    end
   end
 
   def show
@@ -212,7 +229,7 @@ class ExtratingsEntriesController < Top50BaseController
         ExtratingsScore.create!(
           extratings_entry: @extratings_entry,
           extratings_list_unit_id: unit_id,
-          score: score_value.to_i
+          score: score_value.to_f
         )
       end
     end

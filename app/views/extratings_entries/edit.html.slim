@@ -51,7 +51,7 @@
                       = text_field_tag "unit_display_#{score.id}", score.extratings_list_unit.extratings_unit.measure_unit, class: 'form-control', disabled: true
                       = hidden_field_tag "selected_units[#{score.extratings_list_unit.extratings_unit.name_eng}]", score.extratings_list_unit_id
                     .col-sm-6
-                      = number_field_tag "scores[#{score.extratings_list_unit.extratings_unit.name_eng}]", score.score, class: 'form-control'
+                      = number_field_tag "scores[#{score.extratings_list_unit.extratings_unit.name_eng}]", score.score, class: 'form-control', step: 'any'
 
       .form-group
         .col-sm-offset-3.col-sm-9
@@ -125,7 +125,7 @@ javascript:
                   '</select>' +
                 '</div>' +
                 '<div class="col-sm-6">' +
-                  '<input type="number" name="scores[' + name + ']" class="form-control" placeholder="Введите значение" value="' + scoreValue + '" required>' +
+                  '<input type="number" name="scores[' + name + ']" class="form-control" placeholder="Введите значение" value="' + scoreValue + '" step="any" required>' +
                 '</div>' +
               '</div>' +
             '</div>' +
