@@ -11,7 +11,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 20240416120000) do
+ActiveRecord::Schema.define(version: 20260319090000) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -66,6 +66,8 @@ ActiveRecord::Schema.define(version: 20240416120000) do
     t.datetime "created_at",     null: false
     t.datetime "updated_at",     null: false
   end
+
+  add_index "component_infos", ["component_id"], name: "index_component_infos_on_component_id", unique: true, using: :btree
 
   create_table "core_access_fields", force: :cascade do |t|
     t.integer "access_id"
@@ -855,12 +857,6 @@ ActiveRecord::Schema.define(version: 20240416120000) do
     t.string   "comment",    limit: 255
     t.datetime "created_at"
     t.datetime "updated_at"
-  end
-
-  create_table "top50_components", id: false, force: :cascade do |t|
-    t.integer  "id",             default: "nextval('top50_components_id_seq'::regclass)", null: false
-    t.datetime "date_announced"
-    t.datetime "date_mentioned"
   end
 
   create_table "top50_contacts", id: false, force: :cascade do |t|
