@@ -12,6 +12,19 @@ HEATMAP_CELL_HEIGHT = 12
 HEATMAP_MIN_WIDTH = 300
 HEATMAP_MIN_HEIGHT = 240
 
+# Upgradability heatmap native <title> tooltips: server sends machine_name = name || org || "н/д"
+heatmapTooltipMachineLabel = (d) ->
+  nm = d.machine_name
+  if nm? and String(nm).trim() != "" then String(nm).trim() else "н/д"
+
+heatmapTooltipSystemLine = (d) ->
+  return "" if d.machine_id == null or d.machine_id == undefined
+  "\nСистема: #{heatmapTooltipMachineLabel(d)}"
+
+heatmapTooltipSystemLineWithId = (d) ->
+  return "" if d.machine_id == null or d.machine_id == undefined
+  "\nСистема: #{heatmapTooltipMachineLabel(d)} (ID: #{d.machine_id})"
+
 # drawing performance chart
 @draw_performance = (data, src_id, title, x_label, y_label, COLORS = d3.schemeSet1, is_performance = false) ->
   for i in [0..data.length - 1]
@@ -1891,9 +1904,7 @@ drawHeatmap = (data, containerId, title) ->
   cells.append("title")
     .text((d) ->
       info = "#{title}\nРедакция: #{d.edition}, Место: #{d.rank}, Отставание: #{d.lag} дн."
-      if d.machine_id != null
-        name = if d.machine_name then d.machine_name else "н/д"
-        info += "\nСистема: #{name}"
+      info += heatmapTooltipSystemLine(d)
       info
     )
 
@@ -2060,9 +2071,7 @@ drawFreshestLagHeatmap = (data, containerId, title, scaleMethod, gradientId) ->
     suffix = if d.lag < 0 then " до анонса" else ""
     header = if d.vendor_name and d.component_name then "#{d.vendor_name} #{d.component_name}" else if d.component_name then d.component_name else if d.vendor_name then d.vendor_name else title
     info = "#{header},\nРедакция: #{d.edition}, Место: #{d.rank},\nЗначение: #{absVal}#{unit}#{suffix},"
-    if d.machine_id != null
-      name = if d.machine_name then d.machine_name else "н/д"
-      info += "\nСистема: #{name}"
+    info += heatmapTooltipSystemLine(d)
     info
   )
   legendWidth = 300
@@ -2460,9 +2469,7 @@ drawComponentHeatmap = (data, containerId, title, scaleMethod, tooltipUnit = nul
       valStr = if tooltipUnit then "#{d.lag} #{tooltipUnit}" else "#{Math.round(d.lag)}"
       header = if d.vendor_name and d.component_name then "#{d.vendor_name} #{d.component_name}" else if d.component_name then d.component_name else if d.vendor_name then d.vendor_name else title
       info = "#{header},\nРедакция: #{d.edition}, Место: #{d.rank},\n#{if tooltipUnit then "Значение: " else "Количество: "}#{valStr},"
-      if d.machine_id != null
-        name = if d.machine_name then d.machine_name else "н/д"
-        info += "\nСистема: #{name}"
+      info += heatmapTooltipSystemLine(d)
       info
     )
   drawComponentLegend(svg, width, height, legendSpec)
@@ -2563,9 +2570,7 @@ drawAnnounceToMentionHeatmap = (data, containerId, title, gradientId, unit = "da
     suffix = if d.lag < 0 then " до анонса" else " после анонса"
     header = if d.vendor_name and d.component_name then "#{d.vendor_name} #{d.component_name}" else if d.component_name then d.component_name else if d.vendor_name then d.vendor_name else title
     info = "#{header},\nРедакция: #{d.edition}, Место: #{d.rank},\nЗначение: #{absVal}#{unitStr}#{suffix},"
-    if d.machine_id != null
-      name = if d.machine_name then d.machine_name else "н/д"
-      info += "\nСистема: #{name}"
+    info += heatmapTooltipSystemLine(d)
     info
   )
   legendWidth = 300
@@ -2794,9 +2799,7 @@ drawRamHeatmap = (data, containerId, title, scaleMethod) ->
       info = "#{title}\nРедакция: #{d.edition}, Место: #{d.rank}, ГБ: #{d3.format(".2f")(d.lag)}"
       if d.has_gpu
         info += "\nГибридная система (с GPU)"
-      if d.machine_id != null
-        name = if d.machine_name then d.machine_name else "н/д"
-        info += "\nСистема: #{name}"
+      info += heatmapTooltipSystemLine(d)
       info
     )
   drawRamLegend(svg, width, height, legendSpec)
@@ -3895,7 +3898,7 @@ formatEditionDate = (s) ->
 
           tagsText = if tags.length > 0 then tags.join(", ") else "Без тегов"
 
-          sysLine = if d.machine_id != null then "\nСистема: #{d.machine_name || 'н/д'} (ID: #{d.machine_id})" else ""
+          sysLine = heatmapTooltipSystemLineWithId(d)
           "Редакция: #{d.edition}\nМесто: #{d.rank}\n" +
           "Теги: #{tagsText}#{sysLine}"
         )
