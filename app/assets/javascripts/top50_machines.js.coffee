@@ -18,12 +18,52 @@ heatmapTooltipMachineLabel = (d) ->
   if nm? and String(nm).trim() != "" then String(nm).trim() else "н/д"
 
 heatmapTooltipSystemLine = (d) ->
-  return "" if d.machine_id == null or d.machine_id == undefined
-  "\nСистема: #{heatmapTooltipMachineLabel(d)}"
+  lines = []
+  if d.machine_id != null and d.machine_id != undefined
+    lines.push "Система: #{heatmapTooltipMachineLabel(d)}"
+  if d.area_name?
+    lines.push "Область: #{d.area_name}"
+  return "" if lines.length == 0
+  "\n" + lines.join("\n")
 
 heatmapTooltipSystemLineWithId = (d) ->
-  return "" if d.machine_id == null or d.machine_id == undefined
-  "\nСистема: #{heatmapTooltipMachineLabel(d)} (ID: #{d.machine_id})"
+  lines = []
+  if d.machine_id != null and d.machine_id != undefined
+    lines.push "Система: #{heatmapTooltipMachineLabel(d)} (ID: #{d.machine_id})"
+  if d.area_name?
+    lines.push "Область: #{d.area_name}"
+  return "" if lines.length == 0
+  "\n" + lines.join("\n")
+
+# Stroke colors for cross-edition highlight; matches stats/area when area_color is set server-side
+heatmapAreaStrokeColors = (d) ->
+  if d.area_color?
+    inner = d.area_color
+    if typeof d3 != "undefined" and d3.color?
+      c = d3.color(d.area_color)
+      inner = c.brighter(0.55).hex() if c?
+    { outer: d.area_color, inner: inner }
+  else
+    { outer: "#000", inner: "#ffeb3b" }
+
+clearMachineHoverHighlight = (containerId) ->
+  root = d3.select("##{containerId}")
+  root.selectAll(".cell").classed("cell-same-machine", false)
+  root.selectAll(".cell .cell-hl-outer").style("stroke", "none")
+  root.selectAll(".cell .cell-hl-inner").style("stroke", "none")
+
+applyMachineHoverHighlight = (containerId, d, keyFn) ->
+  k = keyFn(d)
+  root = d3.select("##{containerId}")
+  root.selectAll(".cell").each((d2) ->
+    k2 = keyFn(d2)
+    same = k2 != null and k2 != undefined and k2 == k
+    cell = d3.select(this)
+    cell.classed("cell-same-machine", same)
+    cols = if same then heatmapAreaStrokeColors(d2) else { outer: "none", inner: "none" }
+    cell.select(".cell-hl-outer").style("stroke", cols.outer).style("stroke-width", 3)
+    cell.select(".cell-hl-inner").style("stroke", cols.inner).style("stroke-width", 2)
+  )
 
 # drawing performance chart
 @draw_performance = (data, src_id, title, x_label, y_label, COLORS = d3.schemeSet1, is_performance = false) ->
@@ -1895,11 +1935,10 @@ drawHeatmap = (data, containerId, title) ->
   key = (d) -> if d.machine_key? then d.machine_key else d.machine_id
   cells.filter((d) -> key(d) != null)
     .on("mouseenter", (d) ->
-      k = key(d)
-      d3.select("##{containerId}").selectAll(".cell").classed("cell-same-machine", (d2) -> key(d2) == k)
+      applyMachineHoverHighlight(containerId, d, key)
     )
     .on("mouseleave", ->
-      d3.select("##{containerId}").selectAll(".cell").classed("cell-same-machine", false)
+      clearMachineHoverHighlight(containerId)
     )
   cells.append("title")
     .text((d) ->
@@ -1928,6 +1967,8 @@ transformLagData = (data, method) ->
       out.machine_id = d.machine_id if d.machine_id != null
       out.machine_name = d.machine_name if d.machine_name != null
       out.machine_key = d.machine_key if d.machine_key != null
+      out.area_name = d.area_name if d.area_name?
+      out.area_color = d.area_color if d.area_color?
       out
     )
 
@@ -2056,10 +2097,9 @@ drawFreshestLagHeatmap = (data, containerId, title, scaleMethod, gradientId) ->
   key = (d) -> if d.machine_key? then d.machine_key else d.machine_id
   cells.filter((d) -> key(d) != null)
     .on("mouseenter", (d) ->
-      k = key(d)
-      d3.select("##{containerId}").selectAll(".cell").classed("cell-same-machine", (d2) -> key(d2) == k)
+      applyMachineHoverHighlight(containerId, d, key)
     )
-    .on("mouseleave", -> d3.select("##{containerId}").selectAll(".cell").classed("cell-same-machine", false))
+    .on("mouseleave", -> clearMachineHoverHighlight(containerId))
   cells.append("title").text((d) ->
     if inQuarters
       q = d.lag / DAYS_PER_QUARTER
@@ -2458,11 +2498,10 @@ drawComponentHeatmap = (data, containerId, title, scaleMethod, tooltipUnit = nul
   key = (d) -> if d.machine_key? then d.machine_key else d.machine_id
   cells.filter((d) -> key(d) != null)
     .on("mouseenter", (d) ->
-      k = key(d)
-      d3.select("##{containerId}").selectAll(".cell").classed("cell-same-machine", (d2) -> key(d2) == k)
+      applyMachineHoverHighlight(containerId, d, key)
     )
     .on("mouseleave", ->
-      d3.select("##{containerId}").selectAll(".cell").classed("cell-same-machine", false)
+      clearMachineHoverHighlight(containerId)
     )
   cells.append("title")
     .text((d) ->
@@ -2555,10 +2594,9 @@ drawAnnounceToMentionHeatmap = (data, containerId, title, gradientId, unit = "da
   key = (d) -> if d.machine_key? then d.machine_key else d.machine_id
   cells.filter((d) -> key(d) != null)
     .on("mouseenter", (d) ->
-      k = key(d)
-      d3.select("##{containerId}").selectAll(".cell").classed("cell-same-machine", (d2) -> key(d2) == k)
+      applyMachineHoverHighlight(containerId, d, key)
     )
-    .on("mouseleave", -> d3.select("##{containerId}").selectAll(".cell").classed("cell-same-machine", false))
+    .on("mouseleave", -> clearMachineHoverHighlight(containerId))
   cells.append("title").text((d) ->
     if inQuarters
       q = d.lag / DAYS_PER_QUARTER
@@ -2788,11 +2826,10 @@ drawRamHeatmap = (data, containerId, title, scaleMethod) ->
   key = (d) -> if d.machine_key? then d.machine_key else d.machine_id
   cells.filter((d) -> key(d) != null)
     .on("mouseenter", (d) ->
-      k = key(d)
-      d3.select("##{containerId}").selectAll(".cell").classed("cell-same-machine", (d2) -> key(d2) == k)
+      applyMachineHoverHighlight(containerId, d, key)
     )
     .on("mouseleave", ->
-      d3.select("##{containerId}").selectAll(".cell").classed("cell-same-machine", false)
+      clearMachineHoverHighlight(containerId)
     )
   cells.append("title")
     .text((d) ->
@@ -3877,11 +3914,11 @@ formatEditionDate = (s) ->
 
       # Подсветка одной системы по всем редакциям при наведении
       if d.machine_id != null and d.machine_id != undefined
+        keyMid = (row) -> row.machine_id
         cellGroup.on("mouseenter", (d) ->
-          mid = d.machine_id
-          d3.select("##{containerId}").selectAll(".cell").classed("cell-same-machine", (d2) -> d2.machine_id == mid)
+          applyMachineHoverHighlight(containerId, d, keyMid)
         ).on("mouseleave", ->
-          d3.select("##{containerId}").selectAll(".cell").classed("cell-same-machine", false)
+          clearMachineHoverHighlight(containerId)
         )
 
       # Добавляем подсказку

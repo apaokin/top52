@@ -2215,8 +2215,6 @@ br
     title Тепловые карты отставания самых свежих компонент
     style
       | .cell-fill { stroke-width: 0.5; }
-      | .cell.cell-same-machine .cell-hl-outer { stroke: #000; }
-      | .cell.cell-same-machine .cell-hl-inner { stroke: #ffeb3b; }
       | .tooltip { position: absolute; visibility: hidden; background: #fff; border: 1px solid #ccc; padding: 5px; border-radius: 5px; }
       | .heatmap-wrapper { position: relative; display: inline-block; }
       | .heatmap-footer { position: absolute; bottom: 15px; right: 20px; }
@@ -2287,8 +2285,6 @@ br
     title RAM: среднее на ядро/CPU/узел
     style
       | .cell-fill { stroke-width: 0.5; }
-      | .cell.cell-same-machine .cell-hl-outer { stroke: #000; }
-      | .cell.cell-same-machine .cell-hl-inner { stroke: #ffeb3b; }
       | .heatmap-wrapper { position: relative; display: inline-block; }
       | .heatmap-footer { position: absolute; bottom: 15px; right: 20px; }
   body
@@ -2363,8 +2359,6 @@ br
     title Количество компонент
     style
       | .cell-fill { stroke-width: 0.5; }
-      | .cell.cell-same-machine .cell-hl-outer { stroke: #000; }
-      | .cell.cell-same-machine .cell-hl-inner { stroke: #ffeb3b; }
       | .heatmap-wrapper { position: relative; display: inline-block; }
       | .heatmap-footer { position: absolute; bottom: 15px; right: 20px; }
   body
@@ -2474,8 +2468,6 @@ br
     title Количество самых свежих компонент
     style
       | .cell-fill { stroke-width: 0.5; }
-      | .cell.cell-same-machine .cell-hl-outer { stroke: #000; }
-      | .cell.cell-same-machine .cell-hl-inner { stroke: #ffeb3b; }
       | .heatmap-wrapper { position: relative; display: inline-block; }
       | .heatmap-footer { position: absolute; bottom: 15px; right: 20px; }
   body
@@ -2828,10 +2820,6 @@ br
     d3.selectAll("a").filter(() -> d3.select(this).attr("id") == "download_new_upg").attr("href", "data:attachment/csv," + csvNewUpg)
      
 - elsif @stat_section == "list_upg"
-  style
-    | .cell.cell-same-machine .cell-hl-outer { stroke: #000; }
-    | .cell.cell-same-machine .cell-hl-inner { stroke: #ffeb3b; }
-
   .container-fluid
     .menu-container
       table.mb-3 style="border: none;"

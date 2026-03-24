@@ -1,5 +1,20 @@
 # encoding: UTF-8
 class Top50MachinesController < Top50BaseController
+  # Matches d3.schemePaired (d3-scale-chromatic) for stats/area legend colors
+  D3_SCHEME_PAIRED = %w[
+    #a6cee3 #1f78b4 #b2df8a #33a02c #fb9a99 #e31a1c
+    #fdbf6f #ff7f00 #cab2d6 #6a3d9a #ffff99 #b15928
+  ].freeze
+  HEATMAP_TARGET_APP_AREAS = [
+    "Наука и образование",
+    "Исследования",
+    "Промышленность",
+    "IT Services",
+    "Геофизика",
+    "Производитель",
+    "Финансы",
+    "Seismic Processing"
+  ].freeze
   skip_before_filter :require_login, only: [:list, :get_archive, :get_archive_by_vendor, :get_archive_by_org, :get_archive_by_city, :get_archive_by_country, :get_archive_by_vendor_excl, :get_archive_by_comp, :get_archive_by_comp_attrd, :get_archive_by_attr_dict, :archive, :archive_lists, :archive_by_vendor, :archive_by_org, :archive_by_city, :archive_by_country, :archive_by_vendor_excl, :archive_by_comp, :archive_by_comp_attrd, :archive_by_attr_dict, :show, :stats, :get_ext_stats, :ext_stats, :get_stats_per_list, :stats_per_list, :download_certificate, :app_form_new, :app_form_new_post, :app_form_upgrade, :app_form_upgrade_post, :app_form_step1, :app_form_step1_presave, :app_form_step2_presave, :app_form_step3_presave, :app_form_step4_presave, :app_form_confirm_post, :app_form_finish, :download_archive]
   skip_before_filter :require_admin_rights, only: [:list, :get_archive, :get_archive_by_vendor, :get_archive_by_org, :get_archive_by_city, :get_archive_by_country, :get_archive_by_vendor_excl, :get_archive_by_comp, :get_archive_by_comp_attrd, :get_archive_by_attr_dict, :archive, :archive_lists, :archive_by_vendor, :archive_by_org, :archive_by_city, :archive_by_country, :archive_by_vendor_excl, :archive_by_comp, :archive_by_comp_attrd, :archive_by_attr_dict, :show, :stats, :get_ext_stats, :ext_stats, :get_stats_per_list, :stats_per_list, :download_certificate, :app_form_new, :app_form_new_post, :app_form_upgrade, :app_form_upgrade_post, :app_form_step1, :app_form_step1_presave, :app_form_step2_presave, :app_form_step3_presave, :app_form_step4_presave, :app_form_confirm_post, :app_form_finish, :download_archive]
   def index
@@ -2447,6 +2462,10 @@ class Top50MachinesController < Top50BaseController
           @combined_data << { edition: edition, rank: rank_index + 1, lag: combined_diff, freshest_count: freshest_combined_count, machine_id: machine_id, machine_name: machine_name, machine_key: machine_key, component_name: combined_component_name, vendor_name: combined_vendor_name, show_before_announce_contour: show_combined_contour_lag }
         end
       end
+
+      merge_application_area_into_heatmap_rows!(@cpu_data)
+      merge_application_area_into_heatmap_rows!(@gpu_data)
+      merge_application_area_into_heatmap_rows!(@combined_data)
     
       # Only pass linear data; scale transforms (log_shifted, bidirectional, sqrt) computed client-side     
     
@@ -2809,6 +2828,10 @@ class Top50MachinesController < Top50BaseController
         end
       end
 
+      merge_application_area_into_heatmap_rows!(@ram_per_core_data)
+      merge_application_area_into_heatmap_rows!(@ram_per_cpu_data)
+      merge_application_area_into_heatmap_rows!(@ram_per_node_data)
+
     elsif @stat_section == 'component_stats'
       @cpu_total_data = []
       @cpu_per_node_data = []
@@ -3004,6 +3027,21 @@ class Top50MachinesController < Top50BaseController
         end
       end
 
+      merge_application_area_into_heatmap_rows!(@cpu_total_data)
+      merge_application_area_into_heatmap_rows!(@cpu_per_node_data)
+      merge_application_area_into_heatmap_rows!(@gpu_total_data)
+      merge_application_area_into_heatmap_rows!(@gpu_per_node_data)
+      merge_application_area_into_heatmap_rows!(@freshest_total_data)
+      merge_application_area_into_heatmap_rows!(@freshest_per_node_data)
+      merge_application_area_into_heatmap_rows!(@freshest_total_data_cpu_only)
+      merge_application_area_into_heatmap_rows!(@freshest_per_node_data_cpu_only)
+      merge_application_area_into_heatmap_rows!(@cores_total_data)
+      merge_application_area_into_heatmap_rows!(@cores_per_node_data)
+      merge_application_area_into_heatmap_rows!(@gpu_cores_total_data)
+      merge_application_area_into_heatmap_rows!(@gpu_cores_per_node_data)
+      merge_application_area_into_heatmap_rows!(@gpu_microcores_only_total_data)
+      merge_application_area_into_heatmap_rows!(@gpu_microcores_only_per_node_data)
+
     elsif @stat_section == 'freshest_comp_stats'
       @freshest_cpu_quantity_data = []
       @freshest_gpu_quantity_data = []
@@ -3189,6 +3227,11 @@ class Top50MachinesController < Top50BaseController
           @announce_to_mention_gpu_data << { edition: edition, rank: rank, lag: min_gpu_announce_to_mention_days, freshest_count: 1, machine_id: machine_id, machine_name: machine_name_fq, machine_key: machine_key_fq, is_new: (freshest_gpu_count > 0), show_before_announce_contour: show_gpu_contour, component_name: gpu_component_name, vendor_name: gpu_vendor_name }
         end
       end
+
+      merge_application_area_into_heatmap_rows!(@freshest_cpu_quantity_data)
+      merge_application_area_into_heatmap_rows!(@freshest_gpu_quantity_data)
+      merge_application_area_into_heatmap_rows!(@announce_to_mention_cpu_data)
+      merge_application_area_into_heatmap_rows!(@announce_to_mention_gpu_data)
 
       # Summary per edition: systems with new CPU, new GPU, and union (CPU or GPU, no double count).
       # 1) systems with new CPU  2) systems with new GPU  3) intersection = both
@@ -5504,6 +5547,70 @@ class Top50MachinesController < Top50BaseController
   ###delishakov### duplicated from ObjectsController
 
   private
+
+  # Heatmap area bucketing: only selected categories keep distinct colors; others => "Не указано/Прочие".
+  # Color palette stays aligned with stats/area (d3.schemePaired order).
+  # Returns { machine_id => { area_name:, area_color: } } for tooltip + hover stroke on heatmaps.
+  def application_area_color_by_machine_id(machine_ids)
+    ids = Array(machine_ids).compact.uniq
+    return {} if ids.empty? || @mach_approved.blank?
+
+    fallback_name = "Не указано/Прочие"
+    scheme = D3_SCHEME_PAIRED
+
+    app_area_attrid = Top50Attribute.where(name_eng: "Application area").first&.id
+    area_dict = Top50Dictionary.find_by(name_eng: "Application areas")
+    return ids.index_with { { area_name: fallback_name, area_color: scheme[0] } } if app_area_attrid.nil? || area_dict.nil?
+
+    area_name_aliases = {
+      "it servecies" => "IT Services"
+    }
+    normalize_area = lambda do |name|
+      n = name.to_s.strip
+      return n if n.blank?
+      key = n.downcase
+      area_name_aliases[key] || n
+    end
+
+    area_name_to_index = {}
+    HEATMAP_TARGET_APP_AREAS.each_with_index { |name, i| area_name_to_index[name] = i }
+    fallback_index = area_name_to_index.size # last series = "Не указано/Прочие"
+
+    pairs = Top50AttributeValDict.where(attr_id: app_area_attrid, obj_id: ids).order(:id).pluck(:obj_id, :dict_elem_id)
+    dict_elem_by_mid = pairs.each_with_object({}) { |(mid, de), h| h[mid] ||= de }
+
+    elem_ids = dict_elem_by_mid.values.compact.uniq
+    elem_to_name = elem_ids.empty? ? {} : Top50DictionaryElem.where(id: elem_ids).pluck(:id, :name).to_h
+
+    ids.each_with_object({}) do |mid, h|
+      elem_id = dict_elem_by_mid[mid]
+      source_name = elem_id ? (elem_to_name[elem_id] || fallback_name) : fallback_name
+      normalized_name = normalize_area.call(source_name)
+      idx = if elem_id && area_name_to_index.key?(normalized_name)
+              area_name_to_index[normalized_name]
+            else
+              fallback_index
+            end
+      area_name_for_tooltip = (idx == fallback_index) ? fallback_name : normalized_name
+      h[mid] = { area_name: area_name_for_tooltip, area_color: scheme[idx % scheme.length] }
+    end
+  end
+
+  def merge_application_area_into_heatmap_rows!(rows)
+    return if rows.blank?
+
+    rows = rows.reject(&:nil?)
+    return if rows.empty?
+
+    meta = application_area_color_by_machine_id(rows.map { |r| r[:machine_id] || r["machine_id"] }.compact.uniq)
+    rows.each do |row|
+      mid = row[:machine_id] || row["machine_id"]
+      next unless mid && meta[mid]
+
+      row[:area_name] = meta[mid][:area_name]
+      row[:area_color] = meta[mid][:area_color]
+    end
+  end
 
   # Upgradability heatmaps only: stable Precedes map (valid relations; first edge per successor).
   def precedes_child_to_parent_map_for_lineage
