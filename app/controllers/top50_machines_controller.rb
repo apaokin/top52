@@ -3535,7 +3535,7 @@ class Top50MachinesController < Top50BaseController
         h[k] = Hash.new do |hh, kk|
           hh[kk] = {
             lag_sum: 0.0, lag_count: 0, fresh_total: 0,
-            systems_with_new: 0, new_systems: 0, upgraded_systems: 0, total_new_upgraded: 0
+            systems_total: 0, systems_with_new: 0, new_systems: 0, upgraded_systems: 0, total_new_upgraded: 0
           }
         end
       end
@@ -3634,6 +3634,7 @@ class Top50MachinesController < Top50BaseController
           area_colors[area_name] ||= area_meta.dig(machine_id, :area_color)
           all_area_names.add(area_name)
           bucket = per_edition_area[edition][area_name]
+          bucket[:systems_total] += 1
           if combined_lag.present?
             bucket[:lag_sum] += combined_lag
             bucket[:lag_count] += 1
@@ -3641,14 +3642,14 @@ class Top50MachinesController < Top50BaseController
           bucket[:fresh_total] += fresh_total
           bucket[:systems_with_new] += 1 if fresh_total > 0
 
-          if prev_machine_ids_set.present?
-            unless prev_machine_ids_set.include?(machine_id)
-              prev_mid = precedes_map[machine_id]
-              if prev_mid.present? && prev_machine_ids_set.include?(prev_mid)
-                bucket[:upgraded_systems] += 1
-              else
-                bucket[:new_systems] += 1
-              end
+          if prev_machine_ids_set.present? && !prev_machine_ids_set.include?(machine_id)
+            # Keep classification consistent with new_upg/list_upg:
+            # if there is any predecessor relation, treat as upgraded.
+            prev_mid = precedes_map[machine_id]
+            if prev_mid.present?
+              bucket[:upgraded_systems] += 1
+            else
+              bucket[:new_systems] += 1
             end
           end
           bucket[:total_new_upgraded] = bucket[:new_systems] + bucket[:upgraded_systems]
@@ -3670,19 +3671,31 @@ class Top50MachinesController < Top50BaseController
           { area: area_name, value: avg_lag.round(2), color: (area_colors[area_name] || fallback_area_color) }
         end
         qty_points = ordered_areas.map do |area_name|
-          rec = per_edition_area.dig(edition, area_name) || { lag_sum: 0.0, lag_count: 0, fresh_total: 0, systems_with_new: 0, new_systems: 0, upgraded_systems: 0, total_new_upgraded: 0 }
-          { area: area_name, value: rec[:fresh_total].to_i, color: (area_colors[area_name] || fallback_area_color) }
+          rec = per_edition_area.dig(edition, area_name) || { lag_sum: 0.0, lag_count: 0, fresh_total: 0, systems_total: 0, systems_with_new: 0, new_systems: 0, upgraded_systems: 0, total_new_upgraded: 0 }
+          value = rec[:fresh_total].to_i
+          { area: area_name, value: value, color: (area_colors[area_name] || fallback_area_color) }
         end
         systems_with_new_points = ordered_areas.map do |area_name|
-          rec = per_edition_area.dig(edition, area_name) || { lag_sum: 0.0, lag_count: 0, fresh_total: 0, systems_with_new: 0, new_systems: 0, upgraded_systems: 0, total_new_upgraded: 0 }
-          { area: area_name, value: rec[:systems_with_new].to_i, color: (area_colors[area_name] || fallback_area_color) }
+          rec = per_edition_area.dig(edition, area_name) || { lag_sum: 0.0, lag_count: 0, fresh_total: 0, systems_total: 0, systems_with_new: 0, new_systems: 0, upgraded_systems: 0, total_new_upgraded: 0 }
+          total_systems = rec[:systems_total].to_i
+          value = rec[:systems_with_new].to_i
+          share_pct = total_systems > 0 ? (value.to_f / total_systems * 100).round(2) : nil
+          { area: area_name, value: value, total_systems: total_systems, share_pct: share_pct, color: (area_colors[area_name] || fallback_area_color) }
         end
         new_upgraded_points = ordered_areas.map do |area_name|
-          rec = per_edition_area.dig(edition, area_name) || { lag_sum: 0.0, lag_count: 0, fresh_total: 0, systems_with_new: 0, new_systems: 0, upgraded_systems: 0, total_new_upgraded: 0 }
+          rec = per_edition_area.dig(edition, area_name) || { lag_sum: 0.0, lag_count: 0, fresh_total: 0, systems_total: 0, systems_with_new: 0, new_systems: 0, upgraded_systems: 0, total_new_upgraded: 0 }
+          total_systems = rec[:systems_total].to_i
+          new_value = rec[:new_systems].to_i
+          upg_value = rec[:upgraded_systems].to_i
+          new_share_pct = total_systems > 0 ? (new_value.to_f / total_systems * 100).round(2) : nil
+          upg_share_pct = total_systems > 0 ? (upg_value.to_f / total_systems * 100).round(2) : nil
           {
             area: area_name,
-            new_systems: rec[:new_systems].to_i,
-            upgraded_systems: rec[:upgraded_systems].to_i,
+            total_systems: total_systems,
+            new_systems: new_value,
+            upgraded_systems: upg_value,
+            new_share_pct: new_share_pct,
+            upgraded_share_pct: upg_share_pct,
             total_new_upgraded: rec[:total_new_upgraded].to_i
           }
         end

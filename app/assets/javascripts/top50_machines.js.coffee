@@ -3292,16 +3292,23 @@ runStatsWhenReady ->
     tableBtnSystemsNewComp = document.getElementById("cba-table-btn-systems-new-comp")
     tableBtnNewSystems = document.getElementById("cba-table-btn-new-systems")
     tableBtnUpgradedSystems = document.getElementById("cba-table-btn-upgraded-systems")
+    tableBtnShare = document.getElementById("cba-table-btn-share")
     editionMeta = window.componentsByAreaEditionMeta or {}
     return unless prevBtn and nextBtn and labelEl
 
     idx = lagByEdition.length - 1
     maxIdx = lagByEdition.length - 1
     tableMetric = "lag_avg"
+    tableShowShare = false
+    metricSupportsShare = (m) -> ["systems_with_new", "new_systems", "upgraded_systems"].indexOf(m) >= 0
     lagValueWithUnit = (days, unit) ->
       raw = +(days or 0)
       return raw unless unit == "quarters"
       Math.round((raw / 91.3125) * 100) / 100
+    formatPct = (v) ->
+      return "" unless v?
+      s = ((Math.round((+v) * 100) / 100).toFixed(2))
+      s.replace(/\.00$/, "").replace(/(\.\d)0$/, "$1")
     escapeCsvField = (v) ->
       s = String(v)
       if /[,"\n\r]/.test(s) then "\"" + s.replace(/\"/g, "\"\"") + "\"" else s
@@ -3336,6 +3343,34 @@ runStatsWhenReady ->
       else if m == "systems_with_new" then +(p?.value or 0)
       else if m == "new_systems" then +(p?.new_systems or 0)
       else +(p?.upgraded_systems or 0)
+    metricShareDetailsFromPoint = (m, p) ->
+      return null unless p?
+      if m == "systems_with_new"
+        total = +(p?.total_systems or 0)
+        value = +(p?.value or 0)
+        share = if p?.share_pct? then +(p.share_pct) else if total > 0 then (value / total * 100) else null
+        { value: value, total: total, share_pct: share }
+      else if m == "new_systems"
+        total = +(p?.total_systems or 0)
+        value = +(p?.new_systems or 0)
+        share = if p?.new_share_pct? then +(p.new_share_pct) else if total > 0 then (value / total * 100) else null
+        { value: value, total: total, share_pct: share }
+      else if m == "upgraded_systems"
+        total = +(p?.total_systems or 0)
+        value = +(p?.upgraded_systems or 0)
+        share = if p?.upgraded_share_pct? then +(p.upgraded_share_pct) else if total > 0 then (value / total * 100) else null
+        { value: value, total: total, share_pct: share }
+      else
+        null
+    tableCellValue = (m, p) ->
+      if tableShowShare and metricSupportsShare(m)
+        d = metricShareDetailsFromPoint(m, p)
+        if d? and d.total > 0 and d.share_pct?
+          "#{formatPct(d.share_pct)}%"
+        else
+          "0%"
+      else
+        metricValueFromPoint(m, p)
     renderComponentsByAreaTable = () ->
       return unless tableBody and tableHead
       src = metricSource(tableMetric) or []
@@ -3356,7 +3391,7 @@ runStatsWhenReady ->
         editionLabel = meta.label or "#{editionNo}-я (#{dateLabel})"
         editionUrl = meta.url
         valueByArea = {}
-        (ed?.data or []).forEach((p) -> valueByArea[p.area] = metricValueFromPoint(tableMetric, p))
+        (ed?.data or []).forEach((p) -> valueByArea[p.area] = tableCellValue(tableMetric, p))
         tr = document.createElement("tr")
         td0 = document.createElement("td")
         td0.className = "fit"
@@ -3382,13 +3417,19 @@ runStatsWhenReady ->
         csvLines.push(rowCsv.map(escapeCsvField).join(","))
       )
       if csvLink
-        csvLink.setAttribute("download", "components_by_area_#{tableMetric}.csv")
+        suffix = if tableShowShare and metricSupportsShare(tableMetric) then "_pct" else ""
+        csvLink.setAttribute("download", "components_by_area_#{tableMetric}#{suffix}.csv")
         csvLink.setAttribute("href", "data:text/csv;charset=utf-8," + encodeURIComponent(csvLines.join("\n")))
     setActiveTableBtn = () ->
       btns = [tableBtnLag, tableBtnNewComponents, tableBtnSystemsNewComp, tableBtnNewSystems, tableBtnUpgradedSystems]
       btns.forEach((b) -> if b then b.style.opacity = "0.75")
       active = if tableMetric == "lag_avg" then tableBtnLag else if tableMetric == "new_components_qty" then tableBtnNewComponents else if tableMetric == "systems_with_new" then tableBtnSystemsNewComp else if tableMetric == "new_systems" then tableBtnNewSystems else tableBtnUpgradedSystems
       if active then active.style.opacity = "1"
+      if tableBtnShare
+        shareEnabled = tableShowShare and metricSupportsShare(tableMetric)
+        tableBtnShare.style.background = if metricSupportsShare(tableMetric) then "#6699CC" else "gray"
+        tableBtnShare.style.opacity = if metricSupportsShare(tableMetric) then (if shareEnabled then "1" else "0.75") else "0.45"
+        tableBtnShare.style.pointerEvents = if metricSupportsShare(tableMetric) then "" else "none"
     redrawComponentsByArea = () ->
       idx = Math.max(0, Math.min(idx, maxIdx))
       lagItem = lagByEdition[idx] or {}
@@ -3412,17 +3453,20 @@ runStatsWhenReady ->
         lagYLabel = if lagUnit == "quarters" then "Среднее отставание (кварталы)" else "Среднее отставание (дни)"
         draw_components_by_area(lagDataConverted, "components_by_area_chart", "Среднее отставание самых свежих компонент по областям", lagYLabel)
       else if metric == "new_components_qty"
-        draw_components_by_area(qtyItem.data or [], "components_by_area_chart", "Количество новых компонент по областям", "Количество компонент")
+        qtyData = (qtyItem.data or []).map((p) ->
+          { area: p.area, color: p.color, value: +(p.value or 0) }
+        )
+        draw_components_by_area(qtyData, "components_by_area_chart", "Количество новых компонент по областям", "Количество компонент")
       else if metric == "systems_with_new"
         draw_components_by_area(sysNewItem.data or [], "components_by_area_chart", "Количество систем с новыми компонентами по областям", "Количество систем")
       else if metric == "new_systems"
         dataNew = (newUpgItem.data or []).map((p) ->
-          { area: p.area, color: (areaColor[p.area] or "#2ca02c"), value: +(p.new_systems or 0) }
+          { area: p.area, color: (areaColor[p.area] or "#2ca02c"), value: +(p.new_systems or 0), total_systems: +(p.total_systems or 0), share_pct: p.new_share_pct }
         )
         draw_components_by_area(dataNew, "components_by_area_chart", "Количество новых систем по областям", "Количество систем")
       else if metric == "upgraded_systems"
         dataUpg = (newUpgItem.data or []).map((p) ->
-          { area: p.area, color: (areaColor[p.area] or "#ff7f0e"), value: +(p.upgraded_systems or 0) }
+          { area: p.area, color: (areaColor[p.area] or "#ff7f0e"), value: +(p.upgraded_systems or 0), total_systems: +(p.total_systems or 0), share_pct: p.upgraded_share_pct }
         )
         draw_components_by_area(dataUpg, "components_by_area_chart", "Количество обновлённых систем по областям", "Количество систем")
       else
@@ -3449,15 +3493,23 @@ runStatsWhenReady ->
     if metricSel
       metricSel.addEventListener("change", redrawComponentsByArea)
     if tableBtnLag
-      tableBtnLag.addEventListener("click", (e) -> e.preventDefault(); tableMetric = "lag_avg"; renderComponentsByAreaTable(); setActiveTableBtn())
+      tableBtnLag.addEventListener("click", (e) -> e.preventDefault(); tableMetric = "lag_avg"; tableShowShare = false unless metricSupportsShare(tableMetric); renderComponentsByAreaTable(); setActiveTableBtn())
     if tableBtnNewComponents
-      tableBtnNewComponents.addEventListener("click", (e) -> e.preventDefault(); tableMetric = "new_components_qty"; renderComponentsByAreaTable(); setActiveTableBtn())
+      tableBtnNewComponents.addEventListener("click", (e) -> e.preventDefault(); tableMetric = "new_components_qty"; tableShowShare = false unless metricSupportsShare(tableMetric); renderComponentsByAreaTable(); setActiveTableBtn())
     if tableBtnSystemsNewComp
       tableBtnSystemsNewComp.addEventListener("click", (e) -> e.preventDefault(); tableMetric = "systems_with_new"; renderComponentsByAreaTable(); setActiveTableBtn())
     if tableBtnNewSystems
       tableBtnNewSystems.addEventListener("click", (e) -> e.preventDefault(); tableMetric = "new_systems"; renderComponentsByAreaTable(); setActiveTableBtn())
     if tableBtnUpgradedSystems
       tableBtnUpgradedSystems.addEventListener("click", (e) -> e.preventDefault(); tableMetric = "upgraded_systems"; renderComponentsByAreaTable(); setActiveTableBtn())
+    if tableBtnShare
+      tableBtnShare.addEventListener("click", (e) ->
+        e.preventDefault()
+        return unless metricSupportsShare(tableMetric)
+        tableShowShare = !tableShowShare
+        renderComponentsByAreaTable()
+        setActiveTableBtn()
+      )
     redrawComponentsByArea()
 
   # list_upg: матрица, фильтрация по редакциям и местам
@@ -3874,7 +3926,12 @@ runStatsWhenReady ->
       .style("text-align", "center")
       .style("margin-bottom", "10px")
 
-    safePoints = points.map((p) -> { area: p.area, value: +(p.value or 0), color: p.color }).filter((p) -> p.area?)
+    safePoints = points.map((p) ->
+      totalSystems = +(p.total_systems or 0)
+      value = +(p.value or 0)
+      sharePct = if p.share_pct? then +(p.share_pct) else if totalSystems > 0 then (value / totalSystems * 100) else null
+      { area: p.area, value: value, color: p.color, total_systems: totalSystems, share_pct: sharePct }
+    ).filter((p) -> p.area?)
     return if safePoints.length == 0
 
     xScale = d3.scaleBand()
@@ -3913,7 +3970,7 @@ runStatsWhenReady ->
       .style("font-size", "14px")
       .text(y_label)
 
-    svg.selectAll(".bar")
+    bars = svg.selectAll(".bar")
       .data(safePoints)
       .enter()
       .append("rect")
@@ -3925,6 +3982,16 @@ runStatsWhenReady ->
       .attr("fill", (d) -> d.color or "#6699CC")
       .attr("stroke", "black")
       .attr("stroke-width", "1px")
+    bars.append("title")
+      .text((d) ->
+        v = d.value
+        valueLabel = if Math.abs(v - Math.round(v)) < 0.001 then Math.round(v) else (Math.round(v * 100) / 100)
+        if d.share_pct? and d.total_systems > 0
+          pctRounded = Math.round(d.share_pct * 100) / 100
+          "#{d.area}: #{valueLabel} / #{d.total_systems} (#{pctRounded}%)"
+        else
+          "#{d.area}: #{valueLabel}"
+      )
 
     svg.selectAll(".bar-label")
       .data(safePoints)
@@ -3937,7 +4004,12 @@ runStatsWhenReady ->
       .style("font-size", "11px")
       .text((d) ->
         v = d.value
-        if Math.abs(v - Math.round(v)) < 0.001 then Math.round(v) else (Math.round(v * 100) / 100)
+        valueLabel = if Math.abs(v - Math.round(v)) < 0.001 then Math.round(v) else (Math.round(v * 100) / 100)
+        if d.share_pct? and d.total_systems > 0
+          pctRounded = Math.round(d.share_pct * 100) / 100
+          "#{valueLabel} (#{pctRounded}%)"
+        else
+          valueLabel
       )
   func()
 
