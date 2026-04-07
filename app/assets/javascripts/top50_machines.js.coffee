@@ -3271,6 +3271,195 @@ runStatsWhenReady ->
     fqStartSel.addEventListener("change", updateFqBarCharts)
     fqEndSel.addEventListener("change", updateFqBarCharts)
 
+  runStatsWhenReady ->
+    lagByEdition = window.componentsByAreaLagByEdition
+    qtyByEdition = window.componentsByAreaNewQtyByEdition
+    systemsWithNewByEdition = window.componentsByAreaSystemsWithNewByEdition
+    newUpgradedByEdition = window.componentsByAreaNewUpgradedByEdition
+    return unless Array.isArray(lagByEdition) and Array.isArray(qtyByEdition) and lagByEdition.length > 0
+    prevBtn = document.getElementById("components-by-area-prev")
+    nextBtn = document.getElementById("components-by-area-next")
+    labelEl = document.getElementById("components-by-area-edition-label")
+    metricSel = document.getElementById("components-by-area-metric")
+    lagUnitSel = document.getElementById("components-by-area-lag-unit")
+    lagUnitLabel = document.getElementById("components-by-area-lag-unit-label")
+    lagUnitWrap = document.getElementById("components-by-area-lag-unit-wrap")
+    tableHead = document.getElementById("components_by_area_table_head")
+    tableBody = document.getElementById("components_by_area_table_body")
+    csvLink = document.getElementById("download_components_by_area_csv")
+    tableBtnLag = document.getElementById("cba-table-btn-lag")
+    tableBtnNewComponents = document.getElementById("cba-table-btn-new-components")
+    tableBtnSystemsNewComp = document.getElementById("cba-table-btn-systems-new-comp")
+    tableBtnNewSystems = document.getElementById("cba-table-btn-new-systems")
+    tableBtnUpgradedSystems = document.getElementById("cba-table-btn-upgraded-systems")
+    editionMeta = window.componentsByAreaEditionMeta or {}
+    return unless prevBtn and nextBtn and labelEl
+
+    idx = lagByEdition.length - 1
+    maxIdx = lagByEdition.length - 1
+    tableMetric = "lag_avg"
+    lagValueWithUnit = (days, unit) ->
+      raw = +(days or 0)
+      return raw unless unit == "quarters"
+      Math.round((raw / 91.3125) * 100) / 100
+    escapeCsvField = (v) ->
+      s = String(v)
+      if /[,"\n\r]/.test(s) then "\"" + s.replace(/\"/g, "\"\"") + "\"" else s
+    preferredAreas = ["Наука и образование", "Исследования", "Промышленность", "IT Services", "Геофизика", "Производитель", "Финансы", "Seismic Processing", "Не указано/Прочие"]
+    collectAreas = () ->
+      seen = {}
+      all = []
+      [lagByEdition, qtyByEdition, systemsWithNewByEdition, newUpgradedByEdition].forEach((arr) ->
+        (arr or []).forEach((ed) ->
+          (ed.data or []).forEach((p) ->
+            a = p.area
+            if a? and !seen[a]
+              seen[a] = true
+              all.push(a)
+          )
+        )
+      )
+      ordered = []
+      preferredAreas.forEach((a) -> ordered.push(a) if seen[a])
+      all.forEach((a) -> ordered.push(a) unless ordered.indexOf(a) >= 0)
+      ordered
+    areaColumns = collectAreas()
+    metricSource = (m) ->
+      if m == "lag_avg" then lagByEdition
+      else if m == "new_components_qty" then qtyByEdition
+      else if m == "systems_with_new" then systemsWithNewByEdition
+      else newUpgradedByEdition
+    metricValueFromPoint = (m, p) ->
+      if m == "lag_avg"
+        lagValueWithUnit(p?.value, (lagUnitSel?.value or "days"))
+      else if m == "new_components_qty" then +(p?.value or 0)
+      else if m == "systems_with_new" then +(p?.value or 0)
+      else if m == "new_systems" then +(p?.new_systems or 0)
+      else +(p?.upgraded_systems or 0)
+    renderComponentsByAreaTable = () ->
+      return unless tableBody and tableHead
+      src = metricSource(tableMetric) or []
+      src = src.slice().sort((a, b) -> (+(b?.edition or 0)) - (+(a?.edition or 0)))
+      headHtml = "<tr><th>Редакция</th>"
+      areaColumns.forEach((a) ->
+        headHtml += "<th>#{a}</th>"
+      )
+      headHtml += "</tr>"
+      tableHead.innerHTML = headHtml
+      tableBody.innerHTML = ""
+      csvHeader = ["Редакция"].concat(areaColumns)
+      csvLines = [csvHeader.map(escapeCsvField).join(",")]
+      src.forEach((ed, i) ->
+        editionNo = ed?.edition or (i + 1)
+        dateLabel = ed?.date_label or ""
+        meta = editionMeta[editionNo] or editionMeta[String(editionNo)] or {}
+        editionLabel = meta.label or "#{editionNo}-я (#{dateLabel})"
+        editionUrl = meta.url
+        valueByArea = {}
+        (ed?.data or []).forEach((p) -> valueByArea[p.area] = metricValueFromPoint(tableMetric, p))
+        tr = document.createElement("tr")
+        td0 = document.createElement("td")
+        td0.className = "fit"
+        if editionUrl
+          a = document.createElement("a")
+          a.setAttribute("href", editionUrl)
+          a.textContent = editionLabel
+          td0.appendChild(a)
+        else
+          td0.textContent = editionLabel
+        tr.appendChild(td0)
+        rowCsv = [editionLabel]
+        areaColumns.forEach((a) ->
+          v = valueByArea[a]
+          vv = if v? then v else 0
+          td = document.createElement("td")
+          td.style.textAlign = "right"
+          td.textContent = vv
+          tr.appendChild(td)
+          rowCsv.push(vv)
+        )
+        tableBody.appendChild(tr)
+        csvLines.push(rowCsv.map(escapeCsvField).join(","))
+      )
+      if csvLink
+        csvLink.setAttribute("download", "components_by_area_#{tableMetric}.csv")
+        csvLink.setAttribute("href", "data:text/csv;charset=utf-8," + encodeURIComponent(csvLines.join("\n")))
+    setActiveTableBtn = () ->
+      btns = [tableBtnLag, tableBtnNewComponents, tableBtnSystemsNewComp, tableBtnNewSystems, tableBtnUpgradedSystems]
+      btns.forEach((b) -> if b then b.style.opacity = "0.75")
+      active = if tableMetric == "lag_avg" then tableBtnLag else if tableMetric == "new_components_qty" then tableBtnNewComponents else if tableMetric == "systems_with_new" then tableBtnSystemsNewComp else if tableMetric == "new_systems" then tableBtnNewSystems else tableBtnUpgradedSystems
+      if active then active.style.opacity = "1"
+    redrawComponentsByArea = () ->
+      idx = Math.max(0, Math.min(idx, maxIdx))
+      lagItem = lagByEdition[idx] or {}
+      qtyItem = qtyByEdition[idx] or {}
+      sysNewItem = systemsWithNewByEdition?[idx] or {}
+      newUpgItem = newUpgradedByEdition?[idx] or {}
+      areaColor = {}
+      (lagItem.data or []).forEach((p) -> areaColor[p.area] = p.color if p?.area?)
+      editionNo = lagItem.edition or (idx + 1)
+      dateLabel = lagItem.date_label or ""
+      labelEl.textContent = "#{editionNo}-я редакция (#{dateLabel})"
+      metric = metricSel?.value or "lag_avg"
+      showLagUnit = (metric == "lag_avg")
+      if lagUnitLabel then lagUnitLabel.style.display = if showLagUnit then "" else "none"
+      if lagUnitWrap then lagUnitWrap.style.display = if showLagUnit then "" else "none"
+      lagUnit = (lagUnitSel?.value or "days")
+      if metric == "lag_avg"
+        lagDataConverted = (lagItem.data or []).map((p) ->
+          { area: p.area, color: p.color, value: lagValueWithUnit(p.value, lagUnit) }
+        )
+        lagYLabel = if lagUnit == "quarters" then "Среднее отставание (кварталы)" else "Среднее отставание (дни)"
+        draw_components_by_area(lagDataConverted, "components_by_area_chart", "Среднее отставание самых свежих компонент по областям", lagYLabel)
+      else if metric == "new_components_qty"
+        draw_components_by_area(qtyItem.data or [], "components_by_area_chart", "Количество новых компонент по областям", "Количество компонент")
+      else if metric == "systems_with_new"
+        draw_components_by_area(sysNewItem.data or [], "components_by_area_chart", "Количество систем с новыми компонентами по областям", "Количество систем")
+      else if metric == "new_systems"
+        dataNew = (newUpgItem.data or []).map((p) ->
+          { area: p.area, color: (areaColor[p.area] or "#2ca02c"), value: +(p.new_systems or 0) }
+        )
+        draw_components_by_area(dataNew, "components_by_area_chart", "Количество новых систем по областям", "Количество систем")
+      else if metric == "upgraded_systems"
+        dataUpg = (newUpgItem.data or []).map((p) ->
+          { area: p.area, color: (areaColor[p.area] or "#ff7f0e"), value: +(p.upgraded_systems or 0) }
+        )
+        draw_components_by_area(dataUpg, "components_by_area_chart", "Количество обновлённых систем по областям", "Количество систем")
+      else
+        draw_components_by_area(sysNewItem.data or [], "components_by_area_chart", "Количество систем с новыми компонентами по областям", "Количество систем")
+      renderComponentsByAreaTable()
+      setActiveTableBtn()
+      prevColor = if idx <= 0 then "#d0d0d0" else "#6699CC"
+      nextColor = if idx >= maxIdx then "#d0d0d0" else "#6699CC"
+      d3.select(prevBtn).select("polygon").attr("fill", prevColor)
+      d3.select(nextBtn).select("polygon").attr("fill", nextColor)
+
+    prevBtn.addEventListener("click", () ->
+      return if idx <= 0
+      idx -= 1
+      redrawComponentsByArea()
+    )
+    nextBtn.addEventListener("click", () ->
+      return if idx >= maxIdx
+      idx += 1
+      redrawComponentsByArea()
+    )
+    if lagUnitSel
+      lagUnitSel.addEventListener("change", redrawComponentsByArea)
+    if metricSel
+      metricSel.addEventListener("change", redrawComponentsByArea)
+    if tableBtnLag
+      tableBtnLag.addEventListener("click", (e) -> e.preventDefault(); tableMetric = "lag_avg"; renderComponentsByAreaTable(); setActiveTableBtn())
+    if tableBtnNewComponents
+      tableBtnNewComponents.addEventListener("click", (e) -> e.preventDefault(); tableMetric = "new_components_qty"; renderComponentsByAreaTable(); setActiveTableBtn())
+    if tableBtnSystemsNewComp
+      tableBtnSystemsNewComp.addEventListener("click", (e) -> e.preventDefault(); tableMetric = "systems_with_new"; renderComponentsByAreaTable(); setActiveTableBtn())
+    if tableBtnNewSystems
+      tableBtnNewSystems.addEventListener("click", (e) -> e.preventDefault(); tableMetric = "new_systems"; renderComponentsByAreaTable(); setActiveTableBtn())
+    if tableBtnUpgradedSystems
+      tableBtnUpgradedSystems.addEventListener("click", (e) -> e.preventDefault(); tableMetric = "upgraded_systems"; renderComponentsByAreaTable(); setActiveTableBtn())
+    redrawComponentsByArea()
+
   # list_upg: матрица, фильтрация по редакциям и местам
   if typeof chartData != "undefined" and document.getElementById("matrix_chart")
     listStartEd = document.getElementById("list-upg-edition-start")
@@ -3657,6 +3846,177 @@ runStatsWhenReady ->
     if oldOnload then oldOnload()
     func()
   # Вызываем сразу, чтобы график отрисовался при вызове (в т.ч. при смене диапазона редакций)
+  func()
+
+@draw_components_by_area = (points, src_id, title, y_label) ->
+  return unless Array.isArray(points)
+  func = () ->
+    el = document.getElementById(src_id)
+    return unless el
+    width = Math.max(el.offsetWidth or 900, 900)
+    height = Math.max(340, Math.min(560, width * 0.55))
+    margin =
+      top: 15
+      right: 20
+      bottom: 130
+      left: 90
+
+    container = d3.select("##{src_id}")
+    container.selectAll("*").remove()
+    headerEl = document.getElementById(src_id + "_header")
+    headerContainer = if headerEl then d3.select(headerEl) else container
+    if headerEl then headerContainer.selectAll("*").remove()
+    headerContainer.append("div")
+      .text(title)
+      .style("font-family", "Arial")
+      .style("font-size", "24px")
+      .style("font-weight", "500")
+      .style("text-align", "center")
+      .style("margin-bottom", "10px")
+
+    safePoints = points.map((p) -> { area: p.area, value: +(p.value or 0), color: p.color }).filter((p) -> p.area?)
+    return if safePoints.length == 0
+
+    xScale = d3.scaleBand()
+      .domain(safePoints.map((p) -> p.area))
+      .range([margin.left, width - margin.right])
+      .padding(0.2)
+
+    maxVal = d3.max(safePoints, (p) -> p.value) or 0
+    yScale = d3.scaleLinear()
+      .domain([0, Math.max(1, maxVal)])
+      .range([height - margin.bottom, margin.top])
+
+    svg = container.append("svg")
+      .attr("style", "width:#{width}px; height:#{height}px")
+      .attr("id", "svg_" + src_id)
+
+    svg.append("g")
+      .attr("transform", "translate(0,#{height - margin.bottom})")
+      .call(d3.axisBottom(xScale))
+      .selectAll("text")
+      .style("text-anchor", "end")
+      .attr("transform", "rotate(-35)")
+      .style("font-size", "12px")
+
+    svg.append("g")
+      .attr("transform", "translate(#{margin.left},0)")
+      .call(d3.axisLeft(yScale))
+
+    svg.append("text")
+      .attr("transform", "rotate(-90)")
+      .attr("y", margin.left - 70)
+      .attr("x", 0 - (height / 2))
+      .attr("dy", "1em")
+      .style("text-anchor", "middle")
+      .style("font-family", "Arial")
+      .style("font-size", "14px")
+      .text(y_label)
+
+    svg.selectAll(".bar")
+      .data(safePoints)
+      .enter()
+      .append("rect")
+      .attr("class", "bar")
+      .attr("x", (d) -> xScale(d.area))
+      .attr("width", xScale.bandwidth())
+      .attr("y", (d) -> yScale(Math.max(0, d.value)))
+      .attr("height", (d) -> height - margin.bottom - yScale(Math.max(0, d.value)))
+      .attr("fill", (d) -> d.color or "#6699CC")
+      .attr("stroke", "black")
+      .attr("stroke-width", "1px")
+
+    svg.selectAll(".bar-label")
+      .data(safePoints)
+      .enter()
+      .append("text")
+      .attr("class", "bar-label")
+      .attr("x", (d) -> xScale(d.area) + xScale.bandwidth() / 2)
+      .attr("y", (d) -> yScale(Math.max(0, d.value)) - 5)
+      .attr("text-anchor", "middle")
+      .style("font-size", "11px")
+      .text((d) ->
+        v = d.value
+        if Math.abs(v - Math.round(v)) < 0.001 then Math.round(v) else (Math.round(v * 100) / 100)
+      )
+  func()
+
+@draw_components_by_area_grouped = (series, src_id, title, y_label) ->
+  return unless Array.isArray(series) and series.length > 0
+  baseAreas = ((series[0] or {}).data or []).map((p) -> p.area).filter((a) -> a?)
+  return if baseAreas.length == 0
+  func = () ->
+    el = document.getElementById(src_id)
+    return unless el
+    width = Math.max(el.offsetWidth or 900, 900)
+    height = Math.max(360, Math.min(580, width * 0.58))
+    margin = { top: 15, right: 20, bottom: 130, left: 90 }
+
+    container = d3.select("##{src_id}")
+    container.selectAll("*").remove()
+    headerEl = document.getElementById(src_id + "_header")
+    headerContainer = if headerEl then d3.select(headerEl) else container
+    if headerEl then headerContainer.selectAll("*").remove()
+    headerContainer.append("div")
+      .text(title)
+      .style("font-family", "Arial")
+      .style("font-size", "24px")
+      .style("font-weight", "500")
+      .style("text-align", "center")
+      .style("margin-bottom", "10px")
+
+    x0 = d3.scaleBand().domain(baseAreas).range([margin.left, width - margin.right]).padding(0.2)
+    x1 = d3.scaleBand().domain(series.map((s) -> s.name)).range([0, x0.bandwidth()]).padding(0.1)
+    maxVal = d3.max(series, (s) -> d3.max((s.data or []), (p) -> +(p.value or 0))) or 0
+    y = d3.scaleLinear().domain([0, Math.max(1, maxVal)]).range([height - margin.bottom, margin.top])
+
+    svg = container.append("svg").attr("style", "width:#{width}px; height:#{height}px").attr("id", "svg_" + src_id)
+    svg.append("g")
+      .attr("transform", "translate(0,#{height - margin.bottom})")
+      .call(d3.axisBottom(x0))
+      .selectAll("text")
+      .style("text-anchor", "end")
+      .attr("transform", "rotate(-35)")
+      .style("font-size", "12px")
+    svg.append("g").attr("transform", "translate(#{margin.left},0)").call(d3.axisLeft(y))
+    svg.append("text")
+      .attr("transform", "rotate(-90)")
+      .attr("y", margin.left - 70)
+      .attr("x", 0 - (height / 2))
+      .attr("dy", "1em")
+      .style("text-anchor", "middle")
+      .style("font-family", "Arial")
+      .style("font-size", "14px")
+      .text(y_label)
+
+    normalized = baseAreas.map((area) ->
+      row = { area: area }
+      series.forEach((s) ->
+        hit = (s.data or []).find((p) -> p.area == area)
+        row[s.name] = +(hit?.value or 0)
+      )
+      row
+    )
+
+    groups = svg.selectAll(".group").data(normalized).enter().append("g").attr("class", "group").attr("transform", (d) -> "translate(#{x0(d.area)},0)")
+    groups.selectAll("rect")
+      .data((d) -> series.map((s) -> { key: s.name, value: d[s.name], color: s.color }))
+      .enter()
+      .append("rect")
+      .attr("x", (d) -> x1(d.key))
+      .attr("y", (d) -> y(d.value))
+      .attr("width", x1.bandwidth())
+      .attr("height", (d) -> height - margin.bottom - y(d.value))
+      .attr("fill", (d) -> d.color)
+      .attr("stroke", "black")
+      .attr("stroke-width", "1px")
+
+    legend = headerContainer.append("div").style("margin-bottom", "8px")
+    series.forEach((s) ->
+      item = legend.append("span").style("display", "inline-block").style("margin-right", "14px").style("font-size", "13px")
+      item.append("span").style("display", "inline-block").style("width", "10px").style("height", "10px").style("background", s.color).style("margin-right", "6px")
+      item.append("span").text(s.name)
+    )
   func()
 
 

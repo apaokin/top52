@@ -40,7 +40,7 @@ table
               li = link_to header, top50_stats_path(section)
 
 br
-- if ["freshest_components_lag", "new_upg", "ram_stats", "component_stats", "freshest_comp_stats", "list_upg"].include?(@stat_section)
+- if ["freshest_components_lag", "new_upg", "ram_stats", "component_stats", "freshest_comp_stats", "components_by_area", "list_upg"].include?(@stat_section)
   javascript:
     window.TOP50_MAX_RANK = #{(@max_rank || 50).to_i};
 - if @stat_section == "hybrid_intra"
@@ -2706,6 +2706,78 @@ br
       coffee:
         csvStr = (csvFreshestCompStats || []).join("\n")
         d3.selectAll("a").filter(() -> d3.select(this).attr("id") == "download_freshest_comp_stats").attr("href", "data:text/csv;charset=utf-8," + encodeURIComponent(csvStr))
+
+- elsif @stat_section == "components_by_area"
+  .container-fluid
+    .menu-container
+      table.mb-3 style="border: none;"
+        tr style="border: none; vertical-align: middle;"
+          td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Редакция:
+          td style="border: none; padding-right: 8px; vertical-align: middle;"
+            svg id="components-by-area-prev" width="24" height="24" style="cursor: pointer;"
+              polygon points="16,4 6,12 16,20" fill="#6699CC"
+          td style="border: none; min-width: 135px;"
+            span#components-by-area-edition-label style="font-weight: 600;"
+          td style="border: none; padding-left: 8px; vertical-align: middle;"
+            svg id="components-by-area-next" width="24" height="24" style="cursor: pointer;"
+              polygon points="8,4 18,12 8,20" fill="#6699CC"
+          td style="border: none; padding-left: 18px; white-space: nowrap; font-weight: bold;" Метрика:
+          td style="border: none; padding-left: 8px;"
+            select#components-by-area-metric.form-control style="width: 360px;"
+              option value="lag_avg" selected="selected" Среднее отставание самых свежих компонент
+              option value="new_components_qty" Количество новых компонент
+              option value="systems_with_new" Количество систем с новыми компонентами
+              option value="new_systems" Количество новых систем
+              option value="upgraded_systems" Количество обновлённых систем
+          td#components-by-area-lag-unit-label style="border: none; padding-left: 18px; white-space: nowrap; font-weight: bold;" Единица измерения:
+          td#components-by-area-lag-unit-wrap style="border: none; padding-left: 8px;"
+            select#components-by-area-lag-unit.form-control style="width: 120px;"
+              option value="days" selected="selected" Дни
+              option value="quarters" Кварталы
+
+  div.freshest-chart-wrapper style="max-width: 1100px; margin-top: 1em;"
+    div.new-upg-chart-header id="components_by_area_chart_header" style="text-align: center; width: 100%; box-sizing: border-box; min-height: 70px;"
+    div.freshest-charts-scroll style="max-width: 1100px; width: 100%; overflow-x: auto; overflow-y: visible; display: flex; box-sizing: border-box;"
+      div id="components_by_area_chart" style="min-width: 900px;"
+
+  div style="clear: both;"
+  div style="margin: 10px 0 8px 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: nowrap;"
+    div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;"
+      a.button style="background: #6699CC; display: inline-block; line-height: 1.2;" href="#" id="cba-table-btn-lag"
+        = "Отставание"
+      a.button style="background: #6699CC; display: inline-block; line-height: 1.2;" href="#" id="cba-table-btn-new-components"
+        = "Новые компоненты"
+      a.button style="background: #6699CC; display: inline-block; line-height: 1.2;" href="#" id="cba-table-btn-systems-new-comp"
+        = "Системы с новыми компонентами"
+      a.button style="background: #6699CC; display: inline-block; line-height: 1.2;" href="#" id="cba-table-btn-new-systems"
+        = "Новые системы"
+      a.button style="background: #6699CC; display: inline-block; line-height: 1.2;" href="#" id="cba-table-btn-upgraded-systems"
+        = "Обновлённые системы"
+    a class="button" style="background: #6699CC; display: inline-block; line-height: 1.2; white-space: nowrap;" target="_blank" download="components_by_area.csv" id="download_components_by_area_csv"
+      = "Скачать CSV"
+  table class="table table-hover" id="components_by_area_table" style="margin: 0 auto;"
+    thead id="components_by_area_table_head"
+    tbody id="components_by_area_table_body"
+
+  - cba_edition_meta = {}
+  - cba_total = (@top50_slists || []).size
+  - (@top50_slists || []).each_with_index do |top50_list, reverse_idx|
+    - list_num = @num_vals.find_by(obj_id: top50_list.id)
+    - date_val = @date_vals.find_by(obj_id: top50_list.id)
+    - next unless date_val.present?
+    - list_year = date_val.value.split(".")[2]
+    - list_month = date_val.value.split(".")[1]
+    - edition_no = cba_total - reverse_idx
+    - edition_label = list_num.present? ? "#{list_num.value}#{8209.chr}я (#{date_val.value})" : date_val.value
+    - cba_edition_meta[edition_no] = {label: edition_label, url: get_archive_path(list_year, list_month)}
+
+  script
+    | window.componentsByAreaLagByEdition = #{raw (@components_by_area_lag_by_edition || []).to_json};
+    | window.componentsByAreaNewQtyByEdition = #{raw (@components_by_area_new_qty_by_edition || []).to_json};
+    | window.componentsByAreaSystemsWithNewByEdition = #{raw (@components_by_area_systems_with_new_by_edition || []).to_json};
+    | window.componentsByAreaNewUpgradedByEdition = #{raw (@components_by_area_new_upgraded_by_edition || []).to_json};
+    | window.componentsByAreaEditionLabels = #{raw (@components_by_area_edition_labels || []).to_json};
+    | window.componentsByAreaEditionMeta = #{raw (cba_edition_meta || {}).to_json};
 
 - elsif @stat_section == "new_upg"
   - @csv_string_new_upg = ["Редакция,Новые машины,Обновлённые машины,Новые и обновлённые машины,% Новых машин,% Обновлённых машин,% Новых и обновлённых машин,% Rpeak новых машин,% Rmax новых машин,% Rpeak обновлённых машин,% Rmax обновлённых машин,% Rpeak новых и обновлённых машин,% Rmax новых и обновлённых машин"]
