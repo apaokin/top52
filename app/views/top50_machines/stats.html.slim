@@ -13,11 +13,11 @@ table
 
 - if @stat_section == "upgradability" || (@upgradability_section_keys && @upgradability_section_keys.include?(@stat_section))
   - current_upgradability_name = (@stat_section == "upgradability") ? @section_headers["freshest_components_lag"] : @section_headers[@stat_section]
-  - current_upgradability_name = current_upgradability_name.to_s.sub(/\Aобновляемость:\s*/i, "")
+  - current_upgradability_name = current_upgradability_name.to_s.sub(/\Aобновляемость систем и компонент:\s*/i, "")
   table
     tr
       td
-        h4 = "Обновляемость: " + current_upgradability_name
+        h4 = "Обновляемость систем и компонент: " + current_upgradability_name
       td
         div class="btn-group"
           button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown"
@@ -2212,7 +2212,7 @@ br
   
 - elsif @stat_section == "freshest_components_lag" || @stat_section == "upgradability"
   head
-    title Тепловые карты отставания самых свежих компонент
+    title Тепловые карты задержки внедрения самых свежих компонент
     style
       | .cell-fill { stroke-width: 0.5; }
       | .tooltip { position: absolute; visibility: hidden; background: #fff; border: 1px solid #ccc; padding: 5px; border-radius: 5px; }
@@ -2241,7 +2241,7 @@ br
               select#lag-edition-end.form-control style="width: 120px;"
                 - (@edition_dates_lag || []).each_with_index do |label, i|
                   option value=(i + 1) selected=(i == (@edition_dates_lag.size - 1)) = label
-            td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Места:
+            td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Позиции:
             td style="border: none; padding-right: 4px;"
               select#lag-rank-start.form-control style="width: 70px;"
                 - (1..(@max_rank || 50)).each do |i|
@@ -2253,14 +2253,14 @@ br
 
     / Контейнеры для тепловых карт
     div.heatmap-section
-      h2 Тепловая карта отставания самого нового CPU
+      h2 Тепловая карта задержки внедрения самого нового CPU
       div.heatmap-wrapper
         #cpu_heatmap
         div.heatmap-footer
           a.button style="background: #6699CC;" id="download_cpu_lag" download="CPU_lag.csv" Скачать CSV
 
     div.heatmap-section
-      h2 Тепловая карта отставания самого нового GPU
+      h2 Тепловая карта задержки внедрения самого нового GPU
       div.heatmap-wrapper
         #gpu_heatmap
         div.heatmap-footer
@@ -2312,7 +2312,7 @@ br
               select#ram-edition-end.form-control style="width: 120px;"
                 - (@edition_dates_ram || []).each_with_index do |label, i|
                   option value=(i + 1) selected=(i == (@edition_dates_ram.size - 1)) = label
-            td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Места:
+            td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Позиции:
             td style="border: none; padding-right: 4px;"
               select#ram-rank-start.form-control style="width: 70px;"
                 - (1..(@max_rank || 50)).each do |i|
@@ -2391,7 +2391,7 @@ br
               select#component-edition-end.form-control style="width: 120px;"
                 - (@edition_dates_component || []).each_with_index do |label, i|
                   option value=(i + 1) selected=(i == (@edition_dates_component.size - 1)) = label
-            td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Места:
+            td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Позиции:
             td style="border: none; padding-right: 4px;"
               select#component-rank-start.form-control style="width: 65px;"
                 - (1..(@max_rank || 50)).each do |i|
@@ -2494,7 +2494,7 @@ br
               select#freshest-heatmap-edition-end.form-control style="width: 120px;"
                 - (@edition_dates_freshest_quantity || []).each_with_index do |label, i|
                   option value=(i + 1) selected=(i == (@edition_dates_freshest_quantity.size - 1)) = label
-            td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Места:
+            td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Позиции:
             td style="border: none; padding-right: 4px;"
               select#freshest-heatmap-rank-start.form-control style="width: 65px;"
                 - (1..(@max_rank || 50)).each do |r|
@@ -2712,7 +2712,7 @@ br
     .menu-container
       table.mb-3 style="border: none;"
         tr style="border: none; vertical-align: middle;"
-          td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Редакция:
+          td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;"
           td style="border: none; padding-right: 8px; vertical-align: middle;"
             svg id="components-by-area-prev" width="24" height="24" style="cursor: pointer;"
               polygon points="16,4 6,12 16,20" fill="#6699CC"
@@ -2721,10 +2721,10 @@ br
           td style="border: none; padding-left: 8px; vertical-align: middle;"
             svg id="components-by-area-next" width="24" height="24" style="cursor: pointer;"
               polygon points="8,4 18,12 8,20" fill="#6699CC"
-          td style="border: none; padding-left: 18px; white-space: nowrap; font-weight: bold;" Метрика:
+          td style="border: none; padding-left: 18px; white-space: nowrap; font-weight: bold;"
           td style="border: none; padding-left: 8px;"
             select#components-by-area-metric.form-control style="width: 360px;"
-              option value="lag_avg" selected="selected" Среднее отставание самых свежих компонент
+              option value="lag_avg" selected="selected" Средняя задержка внедрения самых свежих компонент
               option value="new_components_qty" Количество новых компонент
               option value="systems_with_new" Количество систем с новыми компонентами
               option value="new_systems" Количество новых систем
@@ -2744,7 +2744,7 @@ br
   div style="margin: 10px 0 8px 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: nowrap;"
     div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;"
       a.button style="background: #6699CC; display: inline-block; line-height: 1.2;" href="#" id="cba-table-btn-lag"
-        = "Отставание"
+        = "Задержка внедрения"
       a.button style="background: #6699CC; display: inline-block; line-height: 1.2;" href="#" id="cba-table-btn-new-components"
         = "Новые компоненты"
       a.button style="background: #6699CC; display: inline-block; line-height: 1.2;" href="#" id="cba-table-btn-systems-new-comp"
@@ -2903,7 +2903,7 @@ br
             select#list-upg-edition-start.form-control style="width: 120px;"
           td style="border: none; padding-right: 16px;"
             select#list-upg-edition-end.form-control style="width: 120px;"
-          td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Места:
+          td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Позиции:
           td style="border: none; padding-right: 4px;"
             select#list-upg-rank-start.form-control style="width: 70px;"
           td style="border: none;"

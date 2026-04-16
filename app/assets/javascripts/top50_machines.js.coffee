@@ -1942,7 +1942,7 @@ drawHeatmap = (data, containerId, title) ->
     )
   cells.append("title")
     .text((d) ->
-      info = "#{title}\nРедакция: #{d.edition}, Место: #{d.rank}, Отставание: #{d.lag} дн."
+      info = "#{title}\nРедакция: #{d.edition}, Место: #{d.rank}, Задержка: #{d.lag} дн."
       info += heatmapTooltipSystemLine(d)
       info
     )
@@ -2881,7 +2881,7 @@ runStatsWhenReady ->
     containerIds = ["cpu_heatmap", "gpu_heatmap", "combined_heatmap"]
     downloadIds = ["download_cpu_lag", "download_gpu_lag", "download_combined_lag"]
     downloadFilenames = ["CPU_lag.csv", "GPU_lag.csv", "Combined_lag.csv"]
-    titles = ["CPU Отставание", "GPU Отставание", "Общее Отставание min(CPU, GPU)"]
+    titles = ["CPU Задержка", "GPU Задержка", "Общая задержка min(CPU, GPU)"]
     gradientIds = ["lag-legend-cpu", "lag-legend-gpu", "lag-legend-combined"]
     getFreshestLagScale = () ->
       (document.getElementById("scale-selector") or {}).value or "linear"
@@ -3450,8 +3450,8 @@ runStatsWhenReady ->
         lagDataConverted = (lagItem.data or []).map((p) ->
           { area: p.area, color: p.color, value: lagValueWithUnit(p.value, lagUnit) }
         )
-        lagYLabel = if lagUnit == "quarters" then "Среднее отставание (кварталы)" else "Среднее отставание (дни)"
-        draw_components_by_area(lagDataConverted, "components_by_area_chart", "Среднее отставание самых свежих компонент по областям", lagYLabel)
+        lagYLabel = if lagUnit == "quarters" then "Средняя задержка внедрения (кварталы)" else "Средняя задержка внедрения (дни)"
+        draw_components_by_area(lagDataConverted, "components_by_area_chart", "Средняя задержка внедрения самых свежих компонент по областям", lagYLabel)
       else if metric == "new_components_qty"
         qtyData = (qtyItem.data or []).map((p) ->
           { area: p.area, color: p.color, value: +(p.value or 0) }
@@ -3539,7 +3539,7 @@ runStatsWhenReady ->
           rk = row.rank
           allowed.includes(ed) and rk? and rk >= rkFrom and rk <= rkTo
         )
-        drawMatrix(filteredMatrix, "matrix_chart", "Изменение систем в рейтинге")
+        drawMatrix(filteredMatrix, "matrix_chart", "Матрица обновляемости списка систем в рейтинге")
       # Инициализация списков редакций и мест
       editions = Array.from(new Set(origMatrixData.map((r) -> r.edition))).sort()
       ranks = Array.from(new Set(origMatrixData.map((r) -> r.rank))).sort((a, b) -> a - b)
@@ -4346,7 +4346,7 @@ formatEditionDate = (s) ->
 
       # Подсветка одной системы по всем редакциям при наведении
       if d.machine_id != null and d.machine_id != undefined
-        keyMid = (row) -> row.machine_id
+        keyMid = (row) -> if row.machine_key? then row.machine_key else row.machine_id
         cellGroup.on("mouseenter", (d) ->
           applyMachineHoverHighlight(containerId, d, keyMid)
         ).on("mouseleave", ->

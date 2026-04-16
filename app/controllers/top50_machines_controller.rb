@@ -1469,20 +1469,20 @@ class Top50MachinesController < Top50BaseController
     @section_headers["cpu_fam"] = "семейства CPU"
     @section_headers["cpu_gen"] = "микроархитектура CPU"
     @section_headers["cpu_cnt"] = "количество CPU"
-    @section_headers["freshest_components_lag"] = "отставание самых свежих компонент"
-    @section_headers["new_upg"] = "количество новых и обновлённых систем и их доля в производительности"
+    @section_headers["freshest_components_lag"] = "задержка внедрения самых свежих компонент"
+    @section_headers["new_upg"] = "новые и обновлённые системы"
     @section_headers["ram_stats"] = "среднее количество памяти"
     @section_headers["component_stats"] = "количество компонент"
     @section_headers["freshest_comp_stats"] = "статистика новых компонент"
-    @section_headers["components_by_area"] = "компоненты по областям"
-    @section_headers["list_upg"] = "изменение систем в рейтинге"
+    @section_headers["components_by_area"] = "область применения"
+    @section_headers["list_upg"] = "изменение списка рейтинга"
     @section_headers["core_cnt"] = "количество вычислительных ядер"
     @section_headers["comm_net"] = "семейства коммуникационных сетей"
     @section_headers["comm_net_sep"] = "коммуникационные сети"
     @section_headers["performance_3d_with_machine_status"] = "обновляемость систем (3D)"
     @section_headers["heatmap_streaks"] = "количество лет в рейтинге от номера редакции"
     @section_headers["heatmap_rank_vs_years"] = "количество лет в рейтинге от начальной позиции"
-    @section_headers["upgradability"] = "обновляемость"
+    @section_headers["upgradability"] = "обновляемость систем и компонент"
 
     # Subsections under stats/upgradability/ (welcome = freshest_components_lag, rest choosable)
     @upgradability_section_keys = %w[
@@ -3706,8 +3706,7 @@ class Top50MachinesController < Top50BaseController
       end
 
     elsif  @stat_section == 'list_upg'
-      precedes_type_id = Top50RelationType.find_by(name_eng: "Precedes")&.id
-      @prec_machines = precedes_type_id ? Top50Relation.where(type_id: precedes_type_id, is_valid: [1, 2]) : []
+      precedes_map = precedes_child_to_parent_map_for_lineage
       @ed_num_attrid = Top50Attribute.where(name_eng: "Edition number").first&.id
       @ed_date_attrid = Top50Attribute.where(name_eng: "Edition date").first&.id
 
@@ -3728,17 +3727,19 @@ class Top50MachinesController < Top50BaseController
       top_50_dates.each_with_index do |top50_date, idx|
         list_id = get_list_id_by_date(top50_date[0], top50_date[1])
         top50_machines = fetch_archive_list(list_id)
-        prev_rated_pos = []
+        prev_rated_pos_by_machine_id = {}
         if idx + 1 < top50_slists.size
           prev_list_id = top50_slists[idx + 1].id
-          prev_rated_pos = Top50BenchmarkResult.where(benchmark_id: prev_list_id).to_a
+          prev_rated_pos_by_machine_id = Top50BenchmarkResult.where(benchmark_id: prev_list_id).each_with_object({}) do |pos, h|
+            h[pos.machine_id] ||= pos
+          end
         end
         rating_data = {
           list_id: list_id,
           date: top50_date,
           machines: top50_machines,
-          prec_machines: @prec_machines.dup,
-          prev_rated_pos: prev_rated_pos
+          precedes_map: precedes_map,
+          prev_rated_pos_by_machine_id: prev_rated_pos_by_machine_id
         }
         all_ratings_list_upg << rating_data
       end
@@ -3754,13 +3755,13 @@ class Top50MachinesController < Top50BaseController
           rank_pos = top50_machine["result"].to_i
           unless is_first_list
             is_upg = false
-            prec_machine = nil
-            prev_rank_pos = rating_data[:prev_rated_pos].find { |pos| pos.machine_id == machine_id }
+            prev_mid = nil
+            prev_rank_pos = rating_data[:prev_rated_pos_by_machine_id][machine_id]
 
             if prev_rank_pos.nil?
-              prec_machine = rating_data[:prec_machines].find { |prec| prec.sec_obj_id == machine_id }
-              if prec_machine.present?
-                prev_rank_pos = rating_data[:prev_rated_pos].find { |pos| pos.machine_id == prec_machine.prim_obj_id }
+              prev_mid = rating_data[:precedes_map][machine_id]
+              if prev_mid.present?
+                prev_rank_pos = rating_data[:prev_rated_pos_by_machine_id][prev_mid]
                 is_upg = true if prev_rank_pos.present?
               end
             end
@@ -3772,12 +3773,13 @@ class Top50MachinesController < Top50BaseController
               end
               new_upd_status = "updated" if is_upg
             else
-              new_upd_status = prec_machine.present? ? "updated" : "new"
+              new_upd_status = prev_mid.present? ? "updated" : "new"
             end
           end
 
           list_num = @num_vals.find_by(obj_id: rating_data[:list_id])&.value
           machine_name = (top50_machine["name"] || top50_machine.try(:name)).to_s.presence || (top50_machine.try(:top50_organization).try(:name)).to_s.presence || "н/д"
+          machine_key = lineage_branch_key_machine_id(machine_id, rating_data[:precedes_map])
           @new_upd_data << {
             edition: top50_date.join('-'),
             list_id: rating_data[:list_id],
@@ -3787,10 +3789,12 @@ class Top50MachinesController < Top50BaseController
             pos_status: pos_status,
             rank_change: rank_change,
             machine_id: machine_id,
-            machine_name: machine_name
+            machine_name: machine_name,
+            machine_key: machine_key
           }
         end
       end
+      merge_application_area_into_heatmap_rows!(@new_upd_data)
       @new_upd_data.sort_by! do |entry|
         [-entry[:edition].split('-').join.to_i, entry[:rank]]
       end
@@ -3830,7 +3834,10 @@ class Top50MachinesController < Top50BaseController
           pos_status: entry[:pos_status],
           rank_change: entry[:rank_change],
           machine_id: entry[:machine_id],
-          machine_name: entry[:machine_name]
+          machine_name: entry[:machine_name],
+          machine_key: entry[:machine_key],
+          area_name: entry[:area_name],
+          area_color: entry[:area_color]
         }
       end.to_json      
                   
