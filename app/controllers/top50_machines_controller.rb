@@ -1353,7 +1353,8 @@ class Top50MachinesController < Top50BaseController
     stats(1)
     @top50_mtypes = get_avail_mtypes
     @back_to_stats_url = if @upgradability_section_keys && @stat_section.present? && @upgradability_section_keys.include?(@stat_section)
-                           top50_upgradability_stats_path(@stat_section)
+                           group = @active_upgradability_group || @upgradability_section_group_map[@stat_section] || "comp_upg"
+                           top50_stats_subsection_path(group, @stat_section)
                          elsif @stat_section.present?
                            top50_stats_path(@stat_section)
                          else
@@ -1482,35 +1483,63 @@ class Top50MachinesController < Top50BaseController
     @section_headers["performance_3d_with_machine_status"] = "обновляемость систем (3D)"
     @section_headers["heatmap_streaks"] = "количество лет в рейтинге от номера редакции"
     @section_headers["heatmap_rank_vs_years"] = "количество лет в рейтинге от начальной позиции"
-    @section_headers["upgradability"] = "обновляемость систем и компонент"
+    @section_headers["sys_upg"] = "обновляемость систем"
+    @section_headers["comp_upg"] = "обновляемость компонент"
 
-    # Subsections under stats/upgradability/ (welcome = freshest_components_lag, rest choosable)
-    @upgradability_section_keys = %w[
-      freshest_components_lag
+    @sys_upg_section_keys = %w[
       new_upg
-      ram_stats
-      component_stats
-      freshest_comp_stats
       components_by_area
       list_upg
       performance_3d_with_machine_status
       heatmap_streaks
       heatmap_rank_vs_years
     ].freeze
-    # Main stats dropdown: exclude upgradability subsections (they live under stats/upgradability)
+    @comp_upg_section_keys = %w[
+      freshest_components_lag
+      ram_stats
+      component_stats
+      freshest_comp_stats
+    ].freeze
+    @upgradability_section_keys = (@sys_upg_section_keys + @comp_upg_section_keys).freeze
+    @upgradability_group_keys = %w[sys_upg comp_upg].freeze
+    @upgradability_group_sections = {
+      "sys_upg" => @sys_upg_section_keys,
+      "comp_upg" => @comp_upg_section_keys
+    }.freeze
+    @upgradability_section_group_map = {}
+    @sys_upg_section_keys.each { |key| @upgradability_section_group_map[key] = "sys_upg" }
+    @comp_upg_section_keys.each { |key| @upgradability_section_group_map[key] = "comp_upg" }
+
+    # Main stats dropdown: exclude upgradability subsections.
     @main_section_headers = @section_headers.reject { |k, _| @upgradability_section_keys.include?(k) }
 
-    # Upgradability landing: show welcome section (freshest_components_lag); load its data
-    go_section = params[:go].is_a?(Array) ? params[:go].first : params[:go]
-    if @stat_section == "upgradability" && go_section.present? && @upgradability_section_keys.include?(go_section)
-      redirect_to top50_upgradability_stats_path(go_section), allow_other_host: false and return
-    end
-    @stat_section_for_loading = (@stat_section == "upgradability") ? "freshest_components_lag" : @stat_section
+    @active_upgradability_group =
+      if @upgradability_group_keys.include?(@stat_section)
+        @stat_section
+      elsif @upgradability_section_group_map.key?(@stat_section)
+        @upgradability_section_group_map[@stat_section]
+      end
+
+    # Landing pages: /stats/sys_upg -> list_upg, /stats/comp_upg -> freshest_components_lag.
+    path_subsection = params[:subsection].is_a?(Array) ? params[:subsection].first : params[:subsection]
+    query_go_section = params[:go].is_a?(Array) ? params[:go].first : params[:go]
+    go_section = path_subsection.presence || query_go_section
+    allowed_go_sections = @upgradability_group_sections[@active_upgradability_group]
+    @stat_section_for_loading =
+      if go_section.present? && allowed_go_sections&.include?(go_section)
+        go_section
+      elsif @stat_section == "sys_upg"
+        "list_upg"
+      elsif @stat_section == "comp_upg"
+        "freshest_components_lag"
+      else
+        @stat_section
+      end
 
     @header_text = "Статистика: " + @section_headers["performance"]
     if @stat_section.present?
-      if @stat_section == "upgradability" || (@upgradability_section_keys && @upgradability_section_keys.include?(@stat_section))
-        @header_text = "Статистика: " + @section_headers["upgradability"]
+      if @active_upgradability_group.present?
+        @header_text = "Статистика: " + @section_headers[@active_upgradability_group]
       elsif @section_headers.has_key?(@stat_section)
         @header_text = "Статистика: " + @section_headers[@stat_section]
       elsif @stat_section[0..6] == 'vendors'
@@ -1692,7 +1721,7 @@ class Top50MachinesController < Top50BaseController
       # puts "==============================================="
       # puts "==============================================="
 
-    elsif @stat_section == 'heatmap_streaks'
+    elsif (@stat_section_for_loading || @stat_section) == 'heatmap_streaks'
       require 'set'
       @top50_slists = get_top50_lists_sorted
 
@@ -1807,7 +1836,7 @@ class Top50MachinesController < Top50BaseController
       #   puts "Machine #{root_id}: editions #{editions.to_a.sort.inspect}"
       # end
     
-    elsif @stat_section == 'heatmap_rank_vs_years'
+    elsif (@stat_section_for_loading || @stat_section) == 'heatmap_rank_vs_years'
       require 'set'
       @top50_slists = get_top50_lists_sorted
     
@@ -2151,7 +2180,7 @@ class Top50MachinesController < Top50BaseController
       @machine_ids = @machine_ids.transpose
       @vendor_labels = vendor_indices.invert
 
-    elsif @stat_section == 'performance_3d_with_machine_status'
+    elsif (@stat_section_for_loading || @stat_section) == 'performance_3d_with_machine_status'
       precedes_type_id = Top50RelationType.find_by(name_eng: "Precedes")&.id
       @prec_machines = precedes_type_id ? Top50Relation.where(type_id: precedes_type_id, is_valid: [1, 2]) : []
     
@@ -2471,7 +2500,7 @@ class Top50MachinesController < Top50BaseController
     
       # Only pass linear data; scale transforms (log_shifted, bidirectional, sqrt) computed client-side     
     
-    elsif @stat_section == 'new_upg' 
+    elsif (@stat_section_for_loading || @stat_section) == 'new_upg' 
       @all_ratings_data = []
       top50_slists = get_top50_lists_sorted
       top_50_dates = []
@@ -2718,7 +2747,7 @@ class Top50MachinesController < Top50BaseController
         pct_rmax_new_upg: pct_rmax_new_upg
       }
     end      
-    elsif @stat_section == 'ram_stats'
+    elsif (@stat_section_for_loading || @stat_section) == 'ram_stats'
       @ram_per_core_data = []
       @ram_per_cpu_data = []
       @ram_per_node_data = []
@@ -2834,7 +2863,7 @@ class Top50MachinesController < Top50BaseController
       merge_application_area_into_heatmap_rows!(@ram_per_cpu_data)
       merge_application_area_into_heatmap_rows!(@ram_per_node_data)
 
-    elsif @stat_section == 'component_stats'
+    elsif (@stat_section_for_loading || @stat_section) == 'component_stats'
       @cpu_total_data = []
       @cpu_per_node_data = []
       @gpu_total_data = []
@@ -3044,7 +3073,7 @@ class Top50MachinesController < Top50BaseController
       merge_application_area_into_heatmap_rows!(@gpu_microcores_only_total_data)
       merge_application_area_into_heatmap_rows!(@gpu_microcores_only_per_node_data)
 
-    elsif @stat_section == 'freshest_comp_stats'
+    elsif (@stat_section_for_loading || @stat_section) == 'freshest_comp_stats'
       @freshest_cpu_quantity_data = []
       @freshest_gpu_quantity_data = []
       @announce_to_mention_cpu_data = []
@@ -3508,7 +3537,7 @@ class Top50MachinesController < Top50BaseController
       @announce_to_mention_cpu_data = @announce_to_mention_cpu_data.select { |h| chart_editions.include?(h[:edition]) }
       @announce_to_mention_gpu_data = @announce_to_mention_gpu_data.select { |h| chart_editions.include?(h[:edition]) }
 
-    elsif @stat_section == 'components_by_area'
+    elsif (@stat_section_for_loading || @stat_section) == 'components_by_area'
       @components_by_area_lag_by_edition = []
       @components_by_area_new_qty_by_edition = []
       @components_by_area_systems_with_new_by_edition = []
@@ -3705,7 +3734,7 @@ class Top50MachinesController < Top50BaseController
         @components_by_area_new_upgraded_by_edition << { edition: edition, date_label: date_label, data: new_upgraded_points }
       end
 
-    elsif  @stat_section == 'list_upg'
+    elsif  (@stat_section_for_loading || @stat_section) == 'list_upg'
       precedes_map = precedes_child_to_parent_map_for_lineage
       @ed_num_attrid = Top50Attribute.where(name_eng: "Edition number").first&.id
       @ed_date_attrid = Top50Attribute.where(name_eng: "Edition date").first&.id

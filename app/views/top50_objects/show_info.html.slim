@@ -20,7 +20,7 @@ div class="panel panel-default"
           td class="col-xs-5" Дата анонса
           td class="col-xs-5" = component_info ? component_info.date_announced.strftime("%d-%m-%Y") : "Дата не найдена"
         tr
-          td class="col-xs-5" Дата первого упоминания
+          td class="col-xs-5" Дата первого появления в рейтинге
           td class="col-xs-5"
             - if component_info.present? && component_info.date_mentioned.present?
               = component_info.date_mentioned.strftime("%d-%m-%Y")

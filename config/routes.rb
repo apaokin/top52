@@ -121,13 +121,10 @@ Octoshell::Application.routes.draw do
   get 'systems/:id', to: 'top50_machines#show', as:'top50_machines_show'
   get 'vendor_stats/:thres', to: 'top50_vendors#stats', as:'top50_vendors_stats'
   get 'stats', to: 'top50_machines#stats', as:'top50_stats_def'
-  get 'stats/upgradability', to: 'top50_machines#stats', defaults: { section: 'upgradability' }, as: 'top50_stats_upgradability'
-  get 'stats/upgradability/:section', to: 'top50_machines#stats', as: 'top50_upgradability_stats'
-  get 'stats/upgradability/:section/:eid', to: 'top50_machines#stats_per_list', as: 'top50_upgradability_stats_per_list'
-  get 'stats/upgradability/:section/:year/:month', to: 'top50_machines#get_stats_per_list', as: 'get_upgradability_stats_per_list'
   get 'stats/:section', to: 'top50_machines#stats', as:'top50_stats'
-  get 'stats/:section/:eid', to: 'top50_machines#stats_per_list', as: 'top50_stats_per_list'
-  get 'stats/:section/:year/:month', to: 'top50_machines#get_stats_per_list', as: 'get_stats_per_list'
+  get 'stats/:section/:subsection', to: 'top50_machines#stats', as: 'top50_stats_subsection'
+  get 'stats/:section/:eid', to: 'top50_machines#stats_per_list', as: 'top50_stats_per_list', constraints: { eid: /\d+/ }
+  get 'stats/:section/:year/:month', to: 'top50_machines#get_stats_per_list', as: 'get_stats_per_list', constraints: { year: /\d+/, month: /\d+/ }
   get 'ext_stats/:eid', to: 'top50_machines#ext_stats', as: 'top50_ext_stats'
   get 'ext_stats/:year/:month', to: 'top50_machines#get_ext_stats', as: 'get_ext_stats'
   get 'about', to: 'about#help'

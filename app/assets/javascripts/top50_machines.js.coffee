@@ -3186,8 +3186,8 @@ runStatsWhenReady ->
         dataAnnounceCpu = filterByEditionAndRank(announceToMentionCpuData or [], ranges)
         dataAnnounceGpu = filterByEditionAndRank(announceToMentionGpuData or [], ranges)
         announceUnit = (document.getElementById("announce-to-mention-unit") or {}).value or "days"
-        drawAnnounceToMentionHeatmap(dataAnnounceCpu, "announce_to_mention_cpu_heatmap", "CPU: разница между анонсом и первым упоминанием", "announce-to-mention-legend-cpu", announceUnit)
-        drawAnnounceToMentionHeatmap(dataAnnounceGpu, "announce_to_mention_gpu_heatmap", "GPU: разница между анонсом и первым упоминанием", "announce-to-mention-legend-gpu", announceUnit)
+        drawAnnounceToMentionHeatmap(dataAnnounceCpu, "announce_to_mention_cpu_heatmap", "CPU: разница между анонсом и первым появлением в рейтинге", "announce-to-mention-legend-cpu", announceUnit)
+        drawAnnounceToMentionHeatmap(dataAnnounceGpu, "announce_to_mention_gpu_heatmap", "GPU: разница между анонсом и первым появлением в рейтинге", "announce-to-mention-legend-gpu", announceUnit)
         inQuarters = (announceUnit == "quarters")
         if document.getElementById("download_announce_to_mention_cpu")
           csvCpu = if inQuarters then buildLagCsv(dataAnnounceCpu, true) else buildComponentCsv(dataAnnounceCpu)
@@ -3221,9 +3221,9 @@ runStatsWhenReady ->
     fqCharts = [
       { id: "chart_freshest_quantity_systems", dataKey: "chartDataFreshestQuantity", title: "Количество систем с новыми компонентами по редакциям", xLabel: "Дата (ММ.ГГ)", yLabel: "Количество систем" }
       { id: "chart_freshest_quantity_models", dataKey: "chartDataFreshestQuantityModels", title: "Количество новых моделей компонент по редакциям", xLabel: "Дата (ММ.ГГ)", yLabel: "Количество моделей" }
-      { id: "chart_freshest_quantity_components", dataKey: "chartDataFreshestQuantityComponents", title: "Количество новых компонент по редакциям", xLabel: "Дата (ММ.ГГ)", yLabel: "Количество компонентов" }
-      { id: "chart_freshest_quantity_pct_all", dataKey: "chartDataFreshestQuantityPctAll", title: "Доля новых компонент (от компонент всех систем), %", xLabel: "Дата (ММ.ГГ)", yLabel: "% от всех компонентов" }
-      { id: "chart_freshest_quantity_pct_new_systems", dataKey: "chartDataFreshestQuantityPctNewSystems", title: "Доля новых компонент (от компонент систем с новыми), %", xLabel: "Дата (ММ.ГГ)", yLabel: "% от всех компонентов" }
+      { id: "chart_freshest_quantity_components", dataKey: "chartDataFreshestQuantityComponents", title: "Количество новых компонент по редакциям", xLabel: "Дата (ММ.ГГ)", yLabel: "Количество компонент" }
+      { id: "chart_freshest_quantity_pct_all", dataKey: "chartDataFreshestQuantityPctAll", title: "Доля новых компонент (от компонент всех систем), %", xLabel: "Дата (ММ.ГГ)", yLabel: "% от всех компонент" }
+      { id: "chart_freshest_quantity_pct_new_systems", dataKey: "chartDataFreshestQuantityPctNewSystems", title: "Доля новых компонент (от компонент систем с новыми), %", xLabel: "Дата (ММ.ГГ)", yLabel: "% от всех компонент" }
       { id: "chart_freshest_quantity_rpeak_pct", dataKey: "chartDataFreshestQuantityRpeakPct", title: "Процент Rpeak (от общего) систем с новыми компонентами", xLabel: "Дата (ММ.ГГ)", yLabel: "% Rpeak" }
       { id: "chart_freshest_quantity_rmax_pct", dataKey: "chartDataFreshestQuantityRmaxPct", title: "Процент Rmax (от общего) систем с новыми компонентами", xLabel: "Дата (ММ.ГГ)", yLabel: "% Rmax" }
     ]

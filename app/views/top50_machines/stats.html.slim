@@ -1,3 +1,5 @@
+- stat_section_for_render = @stat_section_for_loading || @stat_section
+
 table
   tr
     td 
@@ -8,24 +10,23 @@ table
           span class="caret"
         ul class="dropdown-menu" role="menu"
           - (@main_section_headers || @section_headers).each do |section, header|
-            - url = (section == "upgradability") ? top50_stats_upgradability_path : top50_stats_path(section)
-            li = link_to header, url
+            li = link_to header, top50_stats_path(section)
 
-- if @stat_section == "upgradability" || (@upgradability_section_keys && @upgradability_section_keys.include?(@stat_section))
-  - current_upgradability_name = (@stat_section == "upgradability") ? @section_headers["freshest_components_lag"] : @section_headers[@stat_section]
-  - current_upgradability_name = current_upgradability_name.to_s.sub(/\Aобновляемость систем и компонент:\s*/i, "")
+- if @active_upgradability_group.present?
+  - upgradability_group_name = @section_headers[@active_upgradability_group].to_s
+  - current_upgradability_name = @section_headers[stat_section_for_render]
   table
     tr
       td
-        h4 = "Обновляемость систем и компонент: " + current_upgradability_name
+        h4 = "#{upgradability_group_name.capitalize}: " + current_upgradability_name
       td
         div class="btn-group"
           button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown"
             span class="caret"
           ul class="dropdown-menu" role="menu"
-            - (@upgradability_section_keys || []).each do |section|
+            - (@upgradability_group_sections[@active_upgradability_group] || []).each do |section|
               - if @section_headers[section].present?
-                li = link_to @section_headers[section], top50_upgradability_stats_path(section)
+                li = link_to @section_headers[section], top50_stats_subsection_path(@active_upgradability_group, section)
 - if @stat_section.present? and @stat_section[0..6] == "vendors"
   table
     tr
@@ -40,7 +41,7 @@ table
               li = link_to header, top50_stats_path(section)
 
 br
-- if ["freshest_components_lag", "new_upg", "ram_stats", "component_stats", "freshest_comp_stats", "components_by_area", "list_upg"].include?(@stat_section)
+- if ["freshest_components_lag", "new_upg", "ram_stats", "component_stats", "freshest_comp_stats", "components_by_area", "list_upg"].include?(stat_section_for_render)
   javascript:
     window.TOP50_MAX_RANK = #{(@max_rank || 50).to_i};
 - if @stat_section == "hybrid_intra"
@@ -801,7 +802,7 @@ br
     });
 
     
-- elsif @stat_section == 'heatmap_streaks'
+- elsif stat_section_for_render == 'heatmap_streaks'
   .container-fluid
 
     #heatmap-streaks-chart(style="height: 800px; width: 100%;")
@@ -882,7 +883,7 @@ br
         Plotly.newPlot('heatmap-streaks-chart', data, layout, { displayModeBar: false });
       });
 
-- elsif @stat_section == 'heatmap_rank_vs_years'
+- elsif stat_section_for_render == 'heatmap_rank_vs_years'
   .container-fluid
     #heatmap-rank-years-chart style="height: 800px; width: 100%;"
     div#rank-years-details style="margin-top: 40px;"
@@ -992,7 +993,7 @@ br
       });
 
 
-- elsif @stat_section == "performance_3d_with_machine_status"
+- elsif stat_section_for_render == "performance_3d_with_machine_status"
   .container-fluid
     .menu-container
       .row.mb-3
@@ -2210,7 +2211,7 @@ br
         draw_type(data, "chart_1", "Типы систем", "Дата (ММ.ГГ)", "Количество систем")
       /= area_chart achart_data, max: 50, stacked: true, height: "500px"
   
-- elsif @stat_section == "freshest_components_lag" || @stat_section == "upgradability"
+- elsif stat_section_for_render == "freshest_components_lag"
   head
     title Тепловые карты задержки внедрения самых свежих компонент
     style
@@ -2280,7 +2281,7 @@ br
       | const combinedDataLinear = #{raw @combined_data.to_json};
       | const editionDatesLag = #{raw (@edition_dates_lag || []).to_json};
 
-- elsif @stat_section == "ram_stats"
+- elsif stat_section_for_render == "ram_stats"
   head
     title RAM: среднее на ядро/CPU/узел
     style
@@ -2288,7 +2289,6 @@ br
       | .heatmap-wrapper { position: relative; display: inline-block; }
       | .heatmap-footer { position: absolute; bottom: 15px; right: 20px; }
   body
-    h1 Среднее количество памяти
     .container-fluid
       .menu-container
         table.mb-3 style="border: none;"
@@ -2354,7 +2354,7 @@ br
       | const ramPerNodeData = #{raw @ram_per_node_data.to_json};
       | const editionDatesRam = #{raw (@edition_dates_ram || []).to_json};
 
-- elsif @stat_section == "component_stats"
+- elsif stat_section_for_render == "component_stats"
   head
     title Количество компонент
     style
@@ -2362,7 +2362,6 @@ br
       | .heatmap-wrapper { position: relative; display: inline-block; }
       | .heatmap-footer { position: absolute; bottom: 15px; right: 20px; }
   body
-    h1 Количество компонент
     .container-fluid
       .menu-container
         table.mb-3 style="border: none;"
@@ -2463,7 +2462,7 @@ br
       | const gpuMicrocoresOnlyPerNodeData = #{raw (@gpu_microcores_only_per_node_data || []).to_json};
       | const editionDatesComponent = #{raw (@edition_dates_component || []).to_json};
 
-- elsif @stat_section == "freshest_comp_stats"
+- elsif stat_section_for_render == "freshest_comp_stats"
   head
     title Количество самых свежих компонент
     style
@@ -2528,14 +2527,14 @@ br
         select#announce-to-mention-unit
           option value="days" Дни
           option value="quarters" Кварталы
-      h2 CPU: разница между анонсом и первым упоминанием
+      h2 CPU: разница между анонсом и первым появлением в рейтинге
       div.heatmap-wrapper
         #announce_to_mention_cpu_heatmap
         div.heatmap-footer
           a.button style="background: #6699CC;" id="download_announce_to_mention_cpu" download="CPU_announce_to_mention_days.csv" Скачать CSV
 
     div.heatmap-section
-      h2 GPU: разница между анонсом и первым упоминанием
+      h2 GPU: разница между анонсом и первым появлением в рейтинге
       div.heatmap-wrapper
         #announce_to_mention_gpu_heatmap
         div.heatmap-footer
@@ -2591,7 +2590,7 @@ br
       window.chartDataFreshestQuantityComponents = #{raw (@freshest_quantity_components_chart_data || []).to_json};
       var chartDataFreshestQuantityComponents = window.chartDataFreshestQuantityComponents;
     coffee:
-      draw_new_vs_upgraded_new(chartDataFreshestQuantityComponents, "chart_freshest_quantity_components", "Количество новых компонент по редакциям", "Дата (ММ.ГГ)", "Количество компонентов")
+      draw_new_vs_upgraded_new(chartDataFreshestQuantityComponents, "chart_freshest_quantity_components", "Количество новых компонент по редакциям", "Дата (ММ.ГГ)", "Количество компонент")
 
     div.freshest-chart-wrapper style="max-width: 1000px; margin-top: 2em;"
       div.new-upg-chart-header id="chart_freshest_quantity_pct_all_header" style="text-align: center; width: 100%; box-sizing: border-box; min-height: 80px;"
@@ -2601,7 +2600,7 @@ br
       window.chartDataFreshestQuantityPctAll = #{raw (@freshest_quantity_pct_all_chart_data || []).to_json};
       var chartDataFreshestQuantityPctAll = window.chartDataFreshestQuantityPctAll;
     coffee:
-      draw_new_vs_upgraded_new(chartDataFreshestQuantityPctAll, "chart_freshest_quantity_pct_all", "Доля новых компонент (от компонент всех систем), %", "Дата (ММ.ГГ)", "% от всех компонентов")
+      draw_new_vs_upgraded_new(chartDataFreshestQuantityPctAll, "chart_freshest_quantity_pct_all", "Доля новых компонент (от компонент всех систем), %", "Дата (ММ.ГГ)", "% от всех компонент")
 
     div.freshest-chart-wrapper style="max-width: 1000px; margin-top: 2em;"
       div.new-upg-chart-header id="chart_freshest_quantity_pct_new_systems_header" style="text-align: center; width: 100%; box-sizing: border-box; min-height: 80px;"
@@ -2611,7 +2610,7 @@ br
       window.chartDataFreshestQuantityPctNewSystems = #{raw (@freshest_quantity_pct_new_systems_chart_data || []).to_json};
       var chartDataFreshestQuantityPctNewSystems = window.chartDataFreshestQuantityPctNewSystems;
     coffee:
-      draw_new_vs_upgraded_new(chartDataFreshestQuantityPctNewSystems, "chart_freshest_quantity_pct_new_systems", "Доля новых компонент (от компонент систем с новыми), %", "Дата (ММ.ГГ)", "% от всех компонентов")
+      draw_new_vs_upgraded_new(chartDataFreshestQuantityPctNewSystems, "chart_freshest_quantity_pct_new_systems", "Доля новых компонент (от компонент систем с новыми), %", "Дата (ММ.ГГ)", "% от всех компонент")
 
     - if (@freshest_quantity_rpeak_pct_chart_data || []).any?
       div.freshest-chart-wrapper style="max-width: 1000px; margin-top: 2em;"
@@ -2707,7 +2706,7 @@ br
         csvStr = (csvFreshestCompStats || []).join("\n")
         d3.selectAll("a").filter(() -> d3.select(this).attr("id") == "download_freshest_comp_stats").attr("href", "data:text/csv;charset=utf-8," + encodeURIComponent(csvStr))
 
-- elsif @stat_section == "components_by_area"
+- elsif stat_section_for_render == "components_by_area"
   .container-fluid
     .menu-container
       table.mb-3 style="border: none;"
@@ -2781,7 +2780,7 @@ br
     | window.componentsByAreaEditionLabels = #{raw (@components_by_area_edition_labels || []).to_json};
     | window.componentsByAreaEditionMeta = #{raw (cba_edition_meta || {}).to_json};
 
-- elsif @stat_section == "new_upg"
+- elsif stat_section_for_render == "new_upg"
   - @csv_string_new_upg = ["Редакция,Новые машины,Обновлённые машины,Новые и обновлённые машины,% Новых машин,% Обновлённых машин,% Новых и обновлённых машин,% Rpeak новых машин,% Rmax новых машин,% Rpeak обновлённых машин,% Rmax обновлённых машин,% Rpeak новых и обновлённых машин,% Rmax новых и обновлённых машин"]
 
   .container-fluid
@@ -2893,7 +2892,7 @@ br
   coffee:
     d3.selectAll("a").filter(() -> d3.select(this).attr("id") == "download_new_upg").attr("href", "data:attachment/csv," + csvNewUpg)
      
-- elsif @stat_section == "list_upg"
+- elsif stat_section_for_render == "list_upg"
   .container-fluid
     .menu-container
       table.mb-3 style="border: none;"
