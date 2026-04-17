@@ -1471,11 +1471,11 @@ class Top50MachinesController < Top50BaseController
     @section_headers["cpu_gen"] = "микроархитектура CPU"
     @section_headers["cpu_cnt"] = "количество CPU"
     @section_headers["fr_comp_lag"] = "задержка внедрения самых свежих компонент"
-    @section_headers["new_upg"] = "новые и обновлённые системы"
+    @section_headers["new_upg"] = "характеристики новых и обновлённых систем"
     @section_headers["ram_stats"] = "среднее количество памяти"
     @section_headers["comp_stats"] = "количественные характеристики"
     @section_headers["fr_comp_stats"] = "характеристики новых компонент"
-    @section_headers["components_by_area"] = "область применения"
+    @section_headers["area_upg"] = "характеристики по области применения"
     @section_headers["list_upg"] = "изменение списка рейтинга"
     @section_headers["core_cnt"] = "количество вычислительных ядер"
     @section_headers["comm_net"] = "семейства коммуникационных сетей"
@@ -1488,7 +1488,7 @@ class Top50MachinesController < Top50BaseController
 
     @sys_upg_section_keys = %w[
       new_upg
-      components_by_area
+      area_upg
       list_upg
       performance_3d_with_machine_status
       heatmap_streaks
@@ -3540,12 +3540,12 @@ class Top50MachinesController < Top50BaseController
       @announce_to_mention_cpu_data = @announce_to_mention_cpu_data.select { |h| chart_editions.include?(h[:edition]) }
       @announce_to_mention_gpu_data = @announce_to_mention_gpu_data.select { |h| chart_editions.include?(h[:edition]) }
 
-    elsif (@stat_section_for_loading || @stat_section) == 'components_by_area'
-      @components_by_area_lag_by_edition = []
-      @components_by_area_new_qty_by_edition = []
-      @components_by_area_systems_with_new_by_edition = []
-      @components_by_area_new_upgraded_by_edition = []
-      @components_by_area_edition_labels = []
+    elsif (@stat_section_for_loading || @stat_section) == 'area_upg'
+      @area_upg_lag_by_edition = []
+      @area_upg_new_qty_by_edition = []
+      @area_upg_systems_with_new_by_edition = []
+      @area_upg_new_upgraded_by_edition = []
+      @area_upg_edition_labels = []
 
       calc_machine_attrs
       @cpu_typeid = Top50ObjectType.where(name_eng: "CPU").first&.id
@@ -3589,9 +3589,9 @@ class Top50MachinesController < Top50BaseController
         edition = editions_total - reverse_edition_index
         if list_date.present?
           parts = list_date.split(".")
-          @components_by_area_edition_labels[edition - 1] = parts.size >= 3 ? "#{parts[1]}.#{parts[2][-2..-1]}" : list_date
+          @area_upg_edition_labels[edition - 1] = parts.size >= 3 ? "#{parts[1]}.#{parts[2][-2..-1]}" : list_date
         else
-          @components_by_area_edition_labels[edition - 1] = "#{list_month}.#{list_year.to_s[-2..-1]}"
+          @area_upg_edition_labels[edition - 1] = "#{list_month}.#{list_year.to_s[-2..-1]}"
         end
 
         next unless list_date.present?
@@ -3696,7 +3696,7 @@ class Top50MachinesController < Top50BaseController
       ordered_areas += remaining.sort
 
       (1..editions_total).each do |edition|
-        date_label = @components_by_area_edition_labels[edition - 1] || edition.to_s
+        date_label = @area_upg_edition_labels[edition - 1] || edition.to_s
         lag_points = ordered_areas.map do |area_name|
           rec = per_edition_area.dig(edition, area_name) || { lag_sum: 0.0, lag_count: 0, fresh_total: 0 }
           avg_lag = rec[:lag_count] > 0 ? (rec[:lag_sum].to_f / rec[:lag_count]) : 0.0
@@ -3731,10 +3731,10 @@ class Top50MachinesController < Top50BaseController
             total_new_upgraded: rec[:total_new_upgraded].to_i
           }
         end
-        @components_by_area_lag_by_edition << { edition: edition, date_label: date_label, data: lag_points }
-        @components_by_area_new_qty_by_edition << { edition: edition, date_label: date_label, data: qty_points }
-        @components_by_area_systems_with_new_by_edition << { edition: edition, date_label: date_label, data: systems_with_new_points }
-        @components_by_area_new_upgraded_by_edition << { edition: edition, date_label: date_label, data: new_upgraded_points }
+        @area_upg_lag_by_edition << { edition: edition, date_label: date_label, data: lag_points }
+        @area_upg_new_qty_by_edition << { edition: edition, date_label: date_label, data: qty_points }
+        @area_upg_systems_with_new_by_edition << { edition: edition, date_label: date_label, data: systems_with_new_points }
+        @area_upg_new_upgraded_by_edition << { edition: edition, date_label: date_label, data: new_upgraded_points }
       end
 
     elsif  (@stat_section_for_loading || @stat_section) == 'list_upg'
@@ -3861,6 +3861,7 @@ class Top50MachinesController < Top50BaseController
       @chart_data = @new_upd_data.map do |entry|
         {
           edition: entry[:edition],
+          list_num: entry[:list_num],
           rank: entry[:rank],
           new_upd_status: entry[:new_upd_status],
           pos_status: entry[:pos_status],

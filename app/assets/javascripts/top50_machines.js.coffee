@@ -26,15 +26,6 @@ heatmapTooltipSystemLine = (d) ->
   return "" if lines.length == 0
   "\n" + lines.join("\n")
 
-heatmapTooltipSystemLineWithId = (d) ->
-  lines = []
-  if d.machine_id != null and d.machine_id != undefined
-    lines.push "Система: #{heatmapTooltipMachineLabel(d)} (ID: #{d.machine_id})"
-  if d.area_name?
-    lines.push "Область: #{d.area_name}"
-  return "" if lines.length == 0
-  "\n" + lines.join("\n")
-
 # Stroke colors for cross-edition highlight; matches stats/area when area_color is set server-side
 heatmapAreaStrokeColors = (d) ->
   if d.area_color?
@@ -3385,9 +3376,9 @@ runStatsWhenReady ->
     lagUnitSel = document.getElementById("components-by-area-lag-unit")
     lagUnitLabel = document.getElementById("components-by-area-lag-unit-label")
     lagUnitWrap = document.getElementById("components-by-area-lag-unit-wrap")
-    tableHead = document.getElementById("components_by_area_table_head")
-    tableBody = document.getElementById("components_by_area_table_body")
-    csvLink = document.getElementById("download_components_by_area_csv")
+    tableHead = document.getElementById("area_upg_table_head")
+    tableBody = document.getElementById("area_upg_table_body")
+    csvLink = document.getElementById("download_area_upg_csv")
     tableBtnLag = document.getElementById("cba-table-btn-lag")
     tableBtnNewComponents = document.getElementById("cba-table-btn-new-components")
     tableBtnSystemsNewComp = document.getElementById("cba-table-btn-systems-new-comp")
@@ -3519,7 +3510,7 @@ runStatsWhenReady ->
       )
       if csvLink
         suffix = if tableShowShare and metricSupportsShare(tableMetric) then "_pct" else ""
-        csvLink.setAttribute("download", "components_by_area_#{tableMetric}#{suffix}.csv")
+        csvLink.setAttribute("download", "area_upg_#{tableMetric}#{suffix}.csv")
         csvLink.setAttribute("href", "data:text/csv;charset=utf-8," + encodeURIComponent(csvLines.join("\n")))
     setActiveTableBtn = () ->
       btns = [tableBtnLag, tableBtnNewComponents, tableBtnSystemsNewComp, tableBtnNewSystems, tableBtnUpgradedSystems]
@@ -3552,26 +3543,26 @@ runStatsWhenReady ->
           { area: p.area, color: p.color, value: lagValueWithUnit(p.value, lagUnit) }
         )
         lagYLabel = if lagUnit == "quarters" then "Средняя задержка внедрения (кварталы)" else "Средняя задержка внедрения (дни)"
-        draw_components_by_area(lagDataConverted, "components_by_area_chart", "Средняя задержка внедрения самых свежих компонент по областям", lagYLabel)
+        draw_area_upg(lagDataConverted, "area_upg_chart", "Гистограмма средней задержки внедрения самых свежих компонент по областям", lagYLabel)
       else if metric == "new_components_qty"
         qtyData = (qtyItem.data or []).map((p) ->
           { area: p.area, color: p.color, value: +(p.value or 0) }
         )
-        draw_components_by_area(qtyData, "components_by_area_chart", "Количество новых компонент по областям", "Количество компонент")
+        draw_area_upg(qtyData, "area_upg_chart", "Гистограмма количества новых компонент по областям", "Количество компонент")
       else if metric == "systems_with_new"
-        draw_components_by_area(sysNewItem.data or [], "components_by_area_chart", "Количество систем с новыми компонентами по областям", "Количество систем")
+        draw_area_upg(sysNewItem.data or [], "area_upg_chart", "Гистограмма количества систем с новыми компонентами по областям", "Количество систем")
       else if metric == "new_systems"
         dataNew = (newUpgItem.data or []).map((p) ->
           { area: p.area, color: (areaColor[p.area] or "#2ca02c"), value: +(p.new_systems or 0), total_systems: +(p.total_systems or 0), share_pct: p.new_share_pct }
         )
-        draw_components_by_area(dataNew, "components_by_area_chart", "Количество новых систем по областям", "Количество систем")
+        draw_area_upg(dataNew, "area_upg_chart", "Гистограмма количества новых систем по областям", "Количество систем")
       else if metric == "upgraded_systems"
         dataUpg = (newUpgItem.data or []).map((p) ->
           { area: p.area, color: (areaColor[p.area] or "#ff7f0e"), value: +(p.upgraded_systems or 0), total_systems: +(p.total_systems or 0), share_pct: p.upgraded_share_pct }
         )
-        draw_components_by_area(dataUpg, "components_by_area_chart", "Количество обновлённых систем по областям", "Количество систем")
+        draw_area_upg(dataUpg, "area_upg_chart", "Гистограмма количества обновлённых систем по областям", "Количество систем")
       else
-        draw_components_by_area(sysNewItem.data or [], "components_by_area_chart", "Количество систем с новыми компонентами по областям", "Количество систем")
+        draw_area_upg(sysNewItem.data or [], "area_upg_chart", "Гистограмма количества систем с новыми компонентами по областям", "Количество систем")
       renderComponentsByAreaTable()
       setActiveTableBtn()
       prevColor = if idx <= 0 then "#d0d0d0" else "#6699CC"
@@ -3640,7 +3631,7 @@ runStatsWhenReady ->
           rk = row.rank
           allowed.includes(ed) and rk? and rk >= rkFrom and rk <= rkTo
         )
-        drawMatrix(filteredMatrix, "matrix_chart", "Матрица обновляемости списка систем в рейтинге")
+        drawMatrix(filteredMatrix, "matrix_chart")
       # Инициализация списков редакций и мест
       editions = Array.from(new Set(origMatrixData.map((r) -> r.edition))).sort()
       ranks = Array.from(new Set(origMatrixData.map((r) -> r.rank))).sort((a, b) -> a - b)
@@ -3688,19 +3679,39 @@ runStatsWhenReady ->
   runStatsWhenReady ->
     newUpgStartSel = document.getElementById("new-upg-edition-start")
     newUpgEndSel   = document.getElementById("new-upg-edition-end")
+    newUpgGraphSel = document.getElementById("new-upg-bar-graph-selector")
     newUpgChartEl  = document.getElementById("chart_new_vs_upgraded")
     return unless newUpgStartSel and newUpgEndSel and newUpgChartEl and typeof window.chartData != "undefined"
+    newUpgCharts =
+      total:
+        id: "chart_new_vs_upgraded"
+        wrapperId: "new-upg-bar-graph-total"
+        dataKey: "chartData"
+        title: "Гистограмма количества новых и обновлённых систем по редакциям"
+        xLabel: "Дата (ММ.ГГ)"
+        yLabel: "Количество систем"
+      rpeak_pct:
+        id: "chart_new_vs_upgraded_rpeak_pct"
+        wrapperId: "new-upg-bar-graph-rpeak-pct"
+        dataKey: "chartDataRpeakPct"
+        title: "Гистограмма доли производительности Rpeak новых и обновлённых систем"
+        xLabel: "Дата (ММ.ГГ)"
+        yLabel: "% Rpeak"
+      rmax_pct:
+        id: "chart_new_vs_upgraded_rmax_pct"
+        wrapperId: "new-upg-bar-graph-rmax-pct"
+        dataKey: "chartDataRmaxPct"
+        title: "Гистограмма доли производительности Rmax новых и обновлённых систем"
+        xLabel: "Дата (ММ.ГГ)"
+        yLabel: "% Rmax"
     updateNewUpgEditionEndOptions = () ->
       return unless newUpgEndSel
       for i in [0...newUpgEndSel.options.length]
         newUpgEndSel.options[i].hidden = false
     updateNewUpgEditionStartOptions = () ->
-      return unless newUpgStartSel and newUpgEndSel
-      endIdx = parseInt(newUpgEndSel.selectedIndex)
+      return unless newUpgStartSel
       for i in [0...newUpgStartSel.options.length]
-        newUpgStartSel.options[i].hidden = i < endIdx
-      if newUpgStartSel.selectedIndex < endIdx
-        newUpgStartSel.selectedIndex = endIdx
+        newUpgStartSel.options[i].hidden = false
     sliceNewUpgChartData = (chartData, edFrom, edTo) ->
       return [] unless chartData and chartData.length > 0
       chartData.map((s) ->
@@ -3717,22 +3728,22 @@ runStatsWhenReady ->
       endVal = Math.max(1, Math.min(endVal, maxEd))
       edFrom = Math.min(startVal, endVal)
       edTo = Math.max(startVal, endVal)
+      selected = resolveGraphChoice("new-upg-bar-graph-selector", newUpgCharts, "total")
+      applyGraphVisibility(newUpgCharts, selected.key)
       filteredMain = sliceNewUpgChartData(window.chartData, edFrom, edTo)
-      filteredRpeak = sliceNewUpgChartData(window.chartDataRpeakPct, edFrom, edTo)
-      filteredRmax   = sliceNewUpgChartData(window.chartDataRmaxPct, edFrom, edTo)
       numPoints = (filteredMain[0]?.data?.length) or 0
       minChartWidth = Math.max(1000, numPoints * 40)
-      newUpgChartIds = ["chart_new_vs_upgraded", "chart_new_vs_upgraded_rpeak_pct", "chart_new_vs_upgraded_rmax_pct"]
-      newUpgChartIds.forEach((id) ->
-        el = document.getElementById(id)
+      newUpgChartKeys = Object.keys(newUpgCharts)
+      newUpgChartKeys.forEach((key) ->
+        cfg = newUpgCharts[key]
+        el = document.getElementById(cfg.id)
         if el then el.style.minWidth = minChartWidth + "px"
       )
-      if filteredMain.length > 0 and filteredMain[0].data and filteredMain[0].data.length > 0
-        draw_new_vs_upgraded_new(filteredMain, "chart_new_vs_upgraded", "Новые и обновлённые системы по редакциям", "Дата (ММ.ГГ)", "Количество систем")
-      if filteredRpeak.length > 0 and filteredRpeak[0].data and filteredRpeak[0].data.length > 0
-        draw_new_vs_upgraded_new(filteredRpeak, "chart_new_vs_upgraded_rpeak_pct", "Процент Rpeak (от общего) новых и обновлённых систем", "Дата (ММ.ГГ)", "% Rpeak")
-      if filteredRmax.length > 0 and filteredRmax[0].data and filteredRmax[0].data.length > 0
-        draw_new_vs_upgraded_new(filteredRmax, "chart_new_vs_upgraded_rmax_pct", "Процент Rmax (от общего) новых и обновлённых систем", "Дата (ММ.ГГ)", "% Rmax")
+      cfg = selected.config
+      if cfg?
+        filteredSelected = sliceNewUpgChartData(window[cfg.dataKey], edFrom, edTo)
+        if filteredSelected.length > 0 and filteredSelected[0].data and filteredSelected[0].data.length > 0
+          draw_new_vs_upgraded_new(filteredSelected, cfg.id, cfg.title, cfg.xLabel, cfg.yLabel)
       rows = document.querySelectorAll("table.table tbody tr[data-edition-index]")
       for i in [0...rows.length]
         idx = parseInt(rows[i].getAttribute("data-edition-index"), 10)
@@ -3763,6 +3774,8 @@ runStatsWhenReady ->
     updateNewUpg()
     newUpgStartSel.addEventListener("change", updateNewUpg)
     newUpgEndSel.addEventListener("change", updateNewUpg)
+    if newUpgGraphSel
+      newUpgGraphSel.addEventListener("change", updateNewUpg)
 
 @draw_new_vs_upgraded_new = (data, src_id, title, x_label, y_label) ->
   return unless data and data.length > 0 and data[0].data and data[0].data.length > 0
@@ -4001,7 +4014,7 @@ runStatsWhenReady ->
   # Вызываем сразу, чтобы график отрисовался при вызове (в т.ч. при смене диапазона редакций)
   func()
 
-@draw_components_by_area = (points, src_id, title, y_label) ->
+@draw_area_upg = (points, src_id, title, y_label) ->
   return unless Array.isArray(points)
   func = () ->
     el = document.getElementById(src_id)
@@ -4114,7 +4127,7 @@ runStatsWhenReady ->
       )
   func()
 
-@draw_components_by_area_grouped = (series, src_id, title, y_label) ->
+@draw_area_upg_grouped = (series, src_id, title, y_label) ->
   return unless Array.isArray(series) and series.length > 0
   baseAreas = ((series[0] or {}).data or []).map((p) -> p.area).filter((a) -> a?)
   return if baseAreas.length == 0
@@ -4199,7 +4212,7 @@ formatEditionDate = (s) ->
   parts = String(s).split("-")
   if parts.length >= 2 then parts[1] + "." + (if parts[0].length >= 2 then parts[0].slice(-2) else parts[0]) else s
 
-@drawMatrix = (data, containerId, title) ->
+@drawMatrix = (data, containerId) ->
   # Очищаем контейнер
   containerSel = d3.select("##{containerId}")
   containerSel.selectAll("*").remove()
@@ -4236,18 +4249,15 @@ formatEditionDate = (s) ->
   # Контейнер
   container = d3.select("##{containerId}")
 
-  # Заголовок
-  container.append("div")
-    .text(title)
-    .style("font-family", "Arial")
-    .style("font-size", "24px")
-    .style("font-weight", "500")
-    .style("text-align", "center")
-    .style("margin-bottom", "20px")
-
   # Кнопки для фильтрации
   activeFilters = { new: true, updated: true, moved_up: true, moved_down: true }
-  buttons = container.append("div").style("margin-bottom", "10px")
+  buttons = container.append("div")
+    .style("display", "flex")
+    .style("justify-content", "center")
+    .style("align-items", "center")
+    .style("flex-wrap", "wrap")
+    .style("gap", "10px")
+    .style("margin-bottom", "10px")
 
   Object.keys(statusColors).forEach((status) ->
     buttons.append("button")
@@ -4257,7 +4267,6 @@ formatEditionDate = (s) ->
       .style("border", "2px solid #000")
       .style("border-radius", "5px")
       .style("padding", "5px 10px")
-      .style("margin-right", "10px")
       .style("cursor", "pointer")
       .style("font-weight", "bold")
       .attr("class", "toggle-btn-" + status)
@@ -4467,9 +4476,10 @@ formatEditionDate = (s) ->
             tags.push("▽ #{Math.abs(d.rank_change) || 'N/A'}")
 
           tagsText = if tags.length > 0 then tags.join(", ") else "Без тегов"
+          editionLabel = if d.list_num? and String(d.list_num).trim() != "" then d.list_num else formatEditionDate(d.edition)
 
-          sysLine = heatmapTooltipSystemLineWithId(d)
-          "Редакция: #{d.edition}\nМесто: #{d.rank}\n" +
+          sysLine = heatmapTooltipSystemLine(d)
+          "Редакция: #{editionLabel}, Место: #{d.rank}\n" +
           "Теги: #{tagsText}#{sysLine}"
         )
     )

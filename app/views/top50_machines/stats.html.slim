@@ -41,7 +41,7 @@ table
               li = link_to header, top50_stats_path(section)
 
 br
-- if ["fr_comp_lag", "new_upg", "ram_stats", "comp_stats", "fr_comp_stats", "components_by_area", "list_upg"].include?(stat_section_for_render)
+- if ["fr_comp_lag", "new_upg", "ram_stats", "comp_stats", "fr_comp_stats", "area_upg", "list_upg"].include?(stat_section_for_render)
   javascript:
     window.TOP50_MAX_RANK = #{(@max_rank || 50).to_i};
 - if @stat_section == "hybrid_intra"
@@ -2772,28 +2772,28 @@ br
         csvStr = (csvFreshestCompStats || []).join("\n")
         d3.selectAll("a").filter(() -> d3.select(this).attr("id") == "download_fr_comp_stats").attr("href", "data:text/csv;charset=utf-8," + encodeURIComponent(csvStr))
 
-- elsif stat_section_for_render == "components_by_area"
+- elsif stat_section_for_render == "area_upg"
   .container-fluid
     .menu-container
       table.mb-3 style="border: none;"
         tr style="border: none; vertical-align: middle;"
+          td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Метрика:
+          td style="border: none; padding-right: 16px;"
+            select#components-by-area-metric.form-control style="width: 240px;"
+              option value="lag_avg" selected="selected" Средняя задержка внедрения самых свежих компонент
+              option value="new_components_qty" Количество новых компонент
+              option value="systems_with_new" Количество систем с новыми компонентами
+              option value="new_systems" Количество новых систем
+              option value="upgraded_systems" Количество обновлённых систем
           td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;"
           td style="border: none; padding-right: 8px; vertical-align: middle;"
             svg id="components-by-area-prev" width="24" height="24" style="cursor: pointer;"
               polygon points="16,4 6,12 16,20" fill="#6699CC"
           td style="border: none; min-width: 135px;"
             span#components-by-area-edition-label style="font-weight: 600;"
-          td style="border: none; padding-left: 8px; vertical-align: middle;"
+          td style="border: none; padding-left: 8px; padding-right: 16px; vertical-align: middle;"
             svg id="components-by-area-next" width="24" height="24" style="cursor: pointer;"
               polygon points="8,4 18,12 8,20" fill="#6699CC"
-          td style="border: none; padding-left: 18px; white-space: nowrap; font-weight: bold;"
-          td style="border: none; padding-left: 8px;"
-            select#components-by-area-metric.form-control style="width: 360px;"
-              option value="lag_avg" selected="selected" Средняя задержка внедрения самых свежих компонент
-              option value="new_components_qty" Количество новых компонент
-              option value="systems_with_new" Количество систем с новыми компонентами
-              option value="new_systems" Количество новых систем
-              option value="upgraded_systems" Количество обновлённых систем
           td#components-by-area-lag-unit-label style="border: none; padding-left: 18px; white-space: nowrap; font-weight: bold;" Единица измерения:
           td#components-by-area-lag-unit-wrap style="border: none; padding-left: 8px;"
             select#components-by-area-lag-unit.form-control style="width: 120px;"
@@ -2801,30 +2801,30 @@ br
               option value="quarters" Кварталы
 
   div.freshest-chart-wrapper style="max-width: 1100px; margin-top: 1em;"
-    div.new-upg-chart-header id="components_by_area_chart_header" style="text-align: center; width: 100%; box-sizing: border-box; min-height: 70px;"
+    div.new-upg-chart-header id="area_upg_chart_header" style="text-align: center; width: 100%; box-sizing: border-box; min-height: 70px;"
     div.freshest-charts-scroll style="max-width: 1100px; width: 100%; overflow-x: auto; overflow-y: visible; display: flex; box-sizing: border-box;"
-      div id="components_by_area_chart" style="min-width: 900px;"
+      div id="area_upg_chart" style="min-width: 900px;"
 
   div style="clear: both;"
-  div style="margin: 10px 0 8px 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: nowrap;"
-    div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;"
-      a.button style="background: #6699CC; display: inline-block; line-height: 1.2;" href="#" id="cba-table-btn-lag"
-        = "Задержка внедрения"
-      a.button style="background: #6699CC; display: inline-block; line-height: 1.2;" href="#" id="cba-table-btn-new-components"
-        = "Новые компоненты"
-      a.button style="background: #6699CC; display: inline-block; line-height: 1.2;" href="#" id="cba-table-btn-systems-new-comp"
-        = "Системы с новыми компонентами"
-      a.button style="background: #6699CC; display: inline-block; line-height: 1.2;" href="#" id="cba-table-btn-new-systems"
-        = "Новые системы"
-      a.button style="background: #6699CC; display: inline-block; line-height: 1.2;" href="#" id="cba-table-btn-upgraded-systems"
-        = "Обновлённые системы"
-      a.button style="background: gray; display: inline-block; line-height: 1.2;" href="#" id="cba-table-btn-share"
-        = "%"
-    a class="button" style="background: #6699CC; display: inline-block; line-height: 1.2; white-space: nowrap;" target="_blank" download="components_by_area.csv" id="download_components_by_area_csv"
+  div style="margin: 10px 0 6px 0; display: flex; justify-content: flex-end;"
+    a class="button" style="background: #6699CC; display: inline-block; line-height: 1.2; white-space: nowrap;" target="_blank" download="area_upg.csv" id="download_area_upg_csv"
       = "Скачать CSV"
-  table class="table table-hover" id="components_by_area_table" style="margin: 0 auto;"
-    thead id="components_by_area_table_head"
-    tbody id="components_by_area_table_body"
+  div style="margin: 0 0 8px 0; display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; white-space: nowrap;"
+    a.button style="background: #6699CC; display: inline-block; line-height: 1.2;" href="#" id="cba-table-btn-lag"
+      = "Задержка внедрения"
+    a.button style="background: #6699CC; display: inline-block; line-height: 1.2;" href="#" id="cba-table-btn-new-components"
+      = "Новые компоненты"
+    a.button style="background: #6699CC; display: inline-block; line-height: 1.2;" href="#" id="cba-table-btn-systems-new-comp"
+      = "Системы с новыми компонентами"
+    a.button style="background: #6699CC; display: inline-block; line-height: 1.2;" href="#" id="cba-table-btn-new-systems"
+      = "Новые системы"
+    a.button style="background: #6699CC; display: inline-block; line-height: 1.2;" href="#" id="cba-table-btn-upgraded-systems"
+      = "Обновлённые системы"
+    a.button style="background: gray; display: inline-block; line-height: 1.2;" href="#" id="cba-table-btn-share"
+      = "%"
+  table class="table table-hover" id="area_upg_table" style="margin: 0 auto;"
+    thead id="area_upg_table_head"
+    tbody id="area_upg_table_body"
 
   - cba_edition_meta = {}
   - cba_total = (@top50_slists || []).size
@@ -2839,11 +2839,11 @@ br
     - cba_edition_meta[edition_no] = {label: edition_label, url: get_archive_path(list_year, list_month)}
 
   script
-    | window.componentsByAreaLagByEdition = #{raw (@components_by_area_lag_by_edition || []).to_json};
-    | window.componentsByAreaNewQtyByEdition = #{raw (@components_by_area_new_qty_by_edition || []).to_json};
-    | window.componentsByAreaSystemsWithNewByEdition = #{raw (@components_by_area_systems_with_new_by_edition || []).to_json};
-    | window.componentsByAreaNewUpgradedByEdition = #{raw (@components_by_area_new_upgraded_by_edition || []).to_json};
-    | window.componentsByAreaEditionLabels = #{raw (@components_by_area_edition_labels || []).to_json};
+    | window.componentsByAreaLagByEdition = #{raw (@area_upg_lag_by_edition || []).to_json};
+    | window.componentsByAreaNewQtyByEdition = #{raw (@area_upg_new_qty_by_edition || []).to_json};
+    | window.componentsByAreaSystemsWithNewByEdition = #{raw (@area_upg_systems_with_new_by_edition || []).to_json};
+    | window.componentsByAreaNewUpgradedByEdition = #{raw (@area_upg_new_upgraded_by_edition || []).to_json};
+    | window.componentsByAreaEditionLabels = #{raw (@area_upg_edition_labels || []).to_json};
     | window.componentsByAreaEditionMeta = #{raw (cba_edition_meta || {}).to_json};
 
 - elsif stat_section_for_render == "new_upg"
@@ -2853,21 +2853,31 @@ br
     .menu-container
       table.mb-3 style="border: none;"
         tr style="border: none; vertical-align: middle;"
+          td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Метрика:
+          td style="border: none; padding-right: 16px;"
+            select#new-upg-bar-graph-selector.form-control style="width: 240px;"
+              option value="total" selected="selected" Количество новых и обновлённых систем
+              option value="rpeak_pct" Доля Rpeak новых и обновлённых систем
+              option value="rmax_pct" Доля Rmax новых и обновлённых систем
           td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Редакции:
           td style="border: none; padding-right: 4px;"
             select#new-upg-edition-start.form-control style="width: 120px;"
-              - (@edition_dates_new_upg || []).each_with_index do |label, i|
-                option value=(i + 1) selected=(i == (@edition_dates_new_upg.size - 1)) = label
+              - dates_new_upg = (@edition_dates_new_upg || [])
+              - dates_new_upg.each_with_index.to_a.reverse_each do |pair|
+                - label, i = pair
+                option value=(i + 1) selected=(i == (dates_new_upg.size - 1)) = label
           td style="border: none; padding-right: 16px;"
             select#new-upg-edition-end.form-control style="width: 120px;"
-              - (@edition_dates_new_upg || []).each_with_index do |label, i|
+              - dates_new_upg = (@edition_dates_new_upg || [])
+              - dates_new_upg.each_with_index.to_a.reverse_each do |pair|
+                - label, i = pair
                 option value=(i + 1) selected=(i == 0) = label
   <br>
   javascript:
     window.editionDatesNewUpg = #{raw (@edition_dates_new_upg || []).to_json};
     window.ratingsSummaryNewUpg = #{raw (@ratings_summary_for_js || []).to_json};
 
-  div.new-upg-chart-wrapper style="max-width: 1000px;"
+  div.new-upg-chart-wrapper#new-upg-bar-graph-total style="max-width: 1000px;"
     div.new-upg-chart-header id="chart_new_vs_upgraded_header" style="text-align: center; width: 100%; box-sizing: border-box; min-height: 80px;"
     div.new-upg-charts-scroll style="max-width: 1000px; width: 100%; overflow-x: auto; overflow-y: visible; display: flex; box-sizing: border-box;"
       div id="chart_new_vs_upgraded"
@@ -2877,9 +2887,9 @@ br
     var chartData = window.chartData;
 
   coffee:
-    draw_new_vs_upgraded_new(chartData, "chart_new_vs_upgraded", "Новые и обновлённые системы по редакциям", "Дата (ММ.ГГ)", "Количество систем")
+    draw_new_vs_upgraded_new(chartData, "chart_new_vs_upgraded", "Гистограмма количества новых и обновлённых систем по редакциям", "Дата (ММ.ГГ)", "Количество систем")
 
-  div.new-upg-chart-wrapper style="max-width: 1000px;"
+  div.new-upg-chart-wrapper#new-upg-bar-graph-rpeak-pct style="max-width: 1000px;"
     div.new-upg-chart-header id="chart_new_vs_upgraded_rpeak_pct_header" style="text-align: center; width: 100%; box-sizing: border-box; min-height: 80px;"
     div.new-upg-charts-scroll style="max-width: 1000px; width: 100%; overflow-x: auto; overflow-y: visible; display: flex; box-sizing: border-box;"
       div id="chart_new_vs_upgraded_rpeak_pct"
@@ -2887,9 +2897,9 @@ br
     window.chartDataRpeakPct = JSON.parse("#{@ratings_rpeak_pct_chart_data.to_json}".replace(/&quot;/g, '"'));
     var chartDataRpeakPct = window.chartDataRpeakPct;
   coffee:
-    draw_new_vs_upgraded_new(chartDataRpeakPct, "chart_new_vs_upgraded_rpeak_pct", "Процент Rpeak (от общего) новых и обновлённых систем", "Дата (ММ.ГГ)", "% Rpeak")
+    draw_new_vs_upgraded_new(chartDataRpeakPct, "chart_new_vs_upgraded_rpeak_pct", "Гистограмма доли производительности Rpeak новых и обновлённых систем", "Дата (ММ.ГГ)", "% Rpeak")
 
-  div.new-upg-chart-wrapper style="max-width: 1000px;"
+  div.new-upg-chart-wrapper#new-upg-bar-graph-rmax-pct style="max-width: 1000px;"
     div.new-upg-chart-header id="chart_new_vs_upgraded_rmax_pct_header" style="text-align: center; width: 100%; box-sizing: border-box; min-height: 80px;"
     div.new-upg-charts-scroll style="max-width: 1000px; width: 100%; overflow-x: auto; overflow-y: visible; display: flex; box-sizing: border-box;"
       div id="chart_new_vs_upgraded_rmax_pct"
@@ -2897,7 +2907,7 @@ br
     window.chartDataRmaxPct = JSON.parse("#{@ratings_rmax_pct_chart_data.to_json}".replace(/&quot;/g, '"'));
     var chartDataRmaxPct = window.chartDataRmaxPct;
   coffee:
-    draw_new_vs_upgraded_new(chartDataRmaxPct, "chart_new_vs_upgraded_rmax_pct", "Процент Rmax (от общего) новых и обновлённых систем", "Дата (ММ.ГГ)", "% Rmax")
+    draw_new_vs_upgraded_new(chartDataRmaxPct, "chart_new_vs_upgraded_rmax_pct", "Гистограмма доли производительности Rmax новых и обновлённых систем", "Дата (ММ.ГГ)", "% Rmax")
   div style="clear: both;"
   a class="button" style="background: #6699CC; float: right; margin-bottom: 15px;" target="_blank" download="New_upgraded_systems.csv" id="download_new_upg"
     = "Скачать CSV"
@@ -2961,27 +2971,23 @@ br
 - elsif stat_section_for_render == "list_upg"
   .container-fluid
     .menu-container
-      table.mb-3 style="border: none;"
-        tr style="border: none; vertical-align: middle;"
-          td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Редакции:
-          td style="border: none; padding-right: 4px;"
-            select#list-upg-edition-start.form-control style="width: 120px;"
-          td style="border: none; padding-right: 16px;"
-            select#list-upg-edition-end.form-control style="width: 120px;"
-          td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Позиции:
-          td style="border: none; padding-right: 4px;"
-            select#list-upg-rank-start.form-control style="width: 70px;"
-          td style="border: none;"
-            select#list-upg-rank-end.form-control style="width: 70px;"
+      .list-upg-control-row style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;"
+        span style="width: 82px; white-space: nowrap; font-weight: bold;" Редакции:
+        select#list-upg-edition-start.form-control style="width: 120px;"
+        select#list-upg-edition-end.form-control style="width: 120px;"
+      .list-upg-control-row style="display: flex; align-items: center; gap: 10px;"
+        span style="width: 82px; white-space: nowrap; font-weight: bold;" Позиции:
+        select#list-upg-rank-start.form-control style="width: 120px;"
+        select#list-upg-rank-end.form-control style="width: 120px;"
 
-  <br>
-  div id="matrix_chart"
+  h2 Матрица обновляемости списка систем в рейтинге
+
+  #matrix_chart
     javascript:
       chartData = #{raw @chart_data};
     coffee:
-      @drawMatrix(chartData, "matrix_chart", "Эволюция систем в рейтинге")
+      @drawMatrix(chartData, "matrix_chart")
 
-  
   div style="clear: both;"
   - if @csv_string_list_upg.present?
     a class="button" style="background: #6699CC; float: right; margin-bottom: 15px;" target="_blank" download="Statuses_matrix.csv" id="download_list_upg"
