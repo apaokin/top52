@@ -1470,11 +1470,11 @@ class Top50MachinesController < Top50BaseController
     @section_headers["cpu_fam"] = "семейства CPU"
     @section_headers["cpu_gen"] = "микроархитектура CPU"
     @section_headers["cpu_cnt"] = "количество CPU"
-    @section_headers["freshest_components_lag"] = "задержка внедрения самых свежих компонент"
+    @section_headers["fr_comp_lag"] = "задержка внедрения самых свежих компонент"
     @section_headers["new_upg"] = "новые и обновлённые системы"
     @section_headers["ram_stats"] = "среднее количество памяти"
-    @section_headers["component_stats"] = "количество компонент"
-    @section_headers["freshest_comp_stats"] = "статистика новых компонент"
+    @section_headers["comp_stats"] = "количественные характеристики"
+    @section_headers["fr_comp_stats"] = "характеристики новых компонент"
     @section_headers["components_by_area"] = "область применения"
     @section_headers["list_upg"] = "изменение списка рейтинга"
     @section_headers["core_cnt"] = "количество вычислительных ядер"
@@ -1495,10 +1495,10 @@ class Top50MachinesController < Top50BaseController
       heatmap_rank_vs_years
     ].freeze
     @comp_upg_section_keys = %w[
-      freshest_components_lag
+      fr_comp_lag
       ram_stats
-      component_stats
-      freshest_comp_stats
+      comp_stats
+      fr_comp_stats
     ].freeze
     @upgradability_section_keys = (@sys_upg_section_keys + @comp_upg_section_keys).freeze
     @upgradability_group_keys = %w[sys_upg comp_upg].freeze
@@ -1520,18 +1520,21 @@ class Top50MachinesController < Top50BaseController
         @upgradability_section_group_map[@stat_section]
       end
 
-    # Landing pages: /stats/sys_upg -> list_upg, /stats/comp_upg -> freshest_components_lag.
     path_subsection = params[:subsection].is_a?(Array) ? params[:subsection].first : params[:subsection]
     query_go_section = params[:go].is_a?(Array) ? params[:go].first : params[:go]
     go_section = path_subsection.presence || query_go_section
     allowed_go_sections = @upgradability_group_sections[@active_upgradability_group]
+    if @active_upgradability_group.present? && path_subsection.present? && !allowed_go_sections&.include?(path_subsection)
+      redirect_to top50_stats_path(@active_upgradability_group)
+      return
+    end
     @stat_section_for_loading =
       if go_section.present? && allowed_go_sections&.include?(go_section)
         go_section
       elsif @stat_section == "sys_upg"
         "list_upg"
       elsif @stat_section == "comp_upg"
-        "freshest_components_lag"
+        "fr_comp_lag"
       else
         @stat_section
       end
@@ -2303,7 +2306,7 @@ class Top50MachinesController < Top50BaseController
       @prec_vendors = prec_relation.joins(:top50_object).merge(Top50Object.joins(:top50_object_type).merge(Top50ObjectType.where(name_eng: "Vendor")))
     elsif  @stat_section == 'type'
       @top50_mtypes = get_avail_mtypes
-    elsif (@stat_section_for_loading || @stat_section) == 'freshest_components_lag'
+    elsif (@stat_section_for_loading || @stat_section) == 'fr_comp_lag'
       calc_machine_attrs
       @cpu_model_attrid_lag = Top50Attribute.where(name_eng: "CPU model").first&.id
       @gpu_model_attrid_lag = Top50Attribute.where(name_eng: "GPU model").first&.id
@@ -2863,7 +2866,7 @@ class Top50MachinesController < Top50BaseController
       merge_application_area_into_heatmap_rows!(@ram_per_cpu_data)
       merge_application_area_into_heatmap_rows!(@ram_per_node_data)
 
-    elsif (@stat_section_for_loading || @stat_section) == 'component_stats'
+    elsif (@stat_section_for_loading || @stat_section) == 'comp_stats'
       @cpu_total_data = []
       @cpu_per_node_data = []
       @gpu_total_data = []
@@ -3073,7 +3076,7 @@ class Top50MachinesController < Top50BaseController
       merge_application_area_into_heatmap_rows!(@gpu_microcores_only_total_data)
       merge_application_area_into_heatmap_rows!(@gpu_microcores_only_per_node_data)
 
-    elsif (@stat_section_for_loading || @stat_section) == 'freshest_comp_stats'
+    elsif (@stat_section_for_loading || @stat_section) == 'fr_comp_stats'
       @freshest_cpu_quantity_data = []
       @freshest_gpu_quantity_data = []
       @announce_to_mention_cpu_data = []
@@ -3453,7 +3456,7 @@ class Top50MachinesController < Top50BaseController
       end
 
       # Table for export: one row per edition with all chart metrics
-      @freshest_comp_stats_table = chart_editions.each_with_index.map do |ed, idx|
+      @fr_comp_stats_table = chart_editions.each_with_index.map do |ed, idx|
         sum = @freshest_quantity_summary.find { |s| s[:edition] == ed } || {}
         mod = @freshest_quantity_models_summary.find { |s| s[:edition] == ed } || {}
         comp = @freshest_quantity_components_summary.find { |s| s[:edition] == ed } || {}
@@ -3497,9 +3500,9 @@ class Top50MachinesController < Top50BaseController
       end
 
       # CSV lines for download (header + one row per edition)
-      @freshest_comp_stats_csv_header = "Редакция,Системы с новыми CPU,Системы с новыми GPU,Системы с новыми CPU или GPU,Новых моделей CPU,Новых моделей GPU,Новых моделей CPU+GPU,Кол-во новых CPU,Кол-во новых GPU,Кол-во новых CPU+GPU,% новых CPU (все),% новых GPU (все),% новых CPU+GPU (все),% новых CPU (сист. с нов.),% новых GPU (сист. с нов.),% новых CPU+GPU (сист. с нов.),% Rpeak CPU,% Rmax CPU,% Rpeak GPU,% Rmax GPU,% Rpeak CPU или GPU,% Rmax CPU или GPU"
-      @freshest_comp_stats_csv_lines = [@freshest_comp_stats_csv_header]
-      @freshest_comp_stats_table.reverse.each do |r|
+      @fr_comp_stats_csv_header = "Редакция,Системы с новыми CPU,Системы с новыми GPU,Системы с новыми CPU или GPU,Новых моделей CPU,Новых моделей GPU,Новых моделей CPU+GPU,Кол-во новых CPU,Кол-во новых GPU,Кол-во новых CPU+GPU,% новых CPU (все),% новых GPU (все),% новых CPU+GPU (все),% новых CPU (сист. с нов.),% новых GPU (сист. с нов.),% новых CPU+GPU (сист. с нов.),% Rpeak CPU,% Rmax CPU,% Rpeak GPU,% Rmax GPU,% Rpeak CPU или GPU,% Rmax CPU или GPU"
+      @fr_comp_stats_csv_lines = [@fr_comp_stats_csv_header]
+      @fr_comp_stats_table.reverse.each do |r|
         list_num = r[:list_id].present? ? @num_vals.find_by(obj_id: r[:list_id]) : nil
         date_val = r[:list_id].present? ? @date_vals.find_by(obj_id: r[:list_id]) : nil
         edition_csv = list_num.present? && date_val.present? ? "#{list_num.value} (#{date_val.value})" : r[:date_label].to_s
@@ -3528,7 +3531,7 @@ class Top50MachinesController < Top50BaseController
           pct.call(r[:pct_rpeak_union]),
           pct.call(r[:pct_rmax_union])
         ]
-        @freshest_comp_stats_csv_lines << csv_row.join(",")
+        @fr_comp_stats_csv_lines << csv_row.join(",")
       end
 
       # Exclude the first list from heatmaps (same as charts)
@@ -4049,7 +4052,7 @@ class Top50MachinesController < Top50BaseController
         end
 
         case section
-        when "freshest_components_lag"
+        when "fr_comp_lag"
           max_edition = (@edition_dates_lag || []).length
           max_edition = 1 if max_edition <= 0
           ed_from = parse_i.call(params[:edition_start], 1)
@@ -4099,7 +4102,7 @@ class Top50MachinesController < Top50BaseController
             rank_end: rk_to
           }
 
-        when "component_stats"
+        when "comp_stats"
           max_edition = (@edition_dates_component || []).length
           max_edition = 1 if max_edition <= 0
           ed_from = parse_i.call(params[:edition_start], 1)
@@ -4133,7 +4136,7 @@ class Top50MachinesController < Top50BaseController
             rank_end: rk_to
           }
 
-        when "freshest_comp_stats"
+        when "fr_comp_stats"
           # Edition-only range for newest component statistics
           max_edition =
             if defined?(@edition_dates_freshest_quantity) && @edition_dates_freshest_quantity

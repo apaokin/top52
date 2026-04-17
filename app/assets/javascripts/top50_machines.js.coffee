@@ -2110,7 +2110,7 @@ drawFreshestLagHeatmap = (data, containerId, title, scaleMethod, gradientId) ->
       unit = " дн."
     suffix = if d.lag < 0 then " до анонса" else ""
     header = if d.vendor_name and d.component_name then "#{d.vendor_name} #{d.component_name}" else if d.component_name then d.component_name else if d.vendor_name then d.vendor_name else title
-    info = "#{header},\nРедакция: #{d.edition}, Место: #{d.rank},\nЗначение: #{absVal}#{unit}#{suffix},"
+    info = "Компонент: #{header}\nРедакция: #{d.edition}, Место: #{d.rank}\nЗначение: #{absVal}#{unit}#{suffix}"
     info += heatmapTooltipSystemLine(d)
     info
   )
@@ -2507,7 +2507,7 @@ drawComponentHeatmap = (data, containerId, title, scaleMethod, tooltipUnit = nul
     .text((d) ->
       valStr = if tooltipUnit then "#{d.lag} #{tooltipUnit}" else "#{Math.round(d.lag)}"
       header = if d.vendor_name and d.component_name then "#{d.vendor_name} #{d.component_name}" else if d.component_name then d.component_name else if d.vendor_name then d.vendor_name else title
-      info = "#{header},\nРедакция: #{d.edition}, Место: #{d.rank},\n#{if tooltipUnit then "Значение: " else "Количество: "}#{valStr},"
+      info = "Компонент: #{header}\nРедакция: #{d.edition}, Место: #{d.rank}\nЗначение: #{valStr}"
       info += heatmapTooltipSystemLine(d)
       info
     )
@@ -2607,7 +2607,7 @@ drawAnnounceToMentionHeatmap = (data, containerId, title, gradientId, unit = "da
       unitStr = " дн."
     suffix = if d.lag < 0 then " до анонса" else " после анонса"
     header = if d.vendor_name and d.component_name then "#{d.vendor_name} #{d.component_name}" else if d.component_name then d.component_name else if d.vendor_name then d.vendor_name else title
-    info = "#{header},\nРедакция: #{d.edition}, Место: #{d.rank},\nЗначение: #{absVal}#{unitStr}#{suffix},"
+    info = "Компонент: #{header},\nРедакция: #{d.edition}, Место: #{d.rank},\nЗначение: #{absVal}#{unitStr}#{suffix}"
     info += heatmapTooltipSystemLine(d)
     info
   )
@@ -2833,7 +2833,7 @@ drawRamHeatmap = (data, containerId, title, scaleMethod) ->
     )
   cells.append("title")
     .text((d) ->
-      info = "#{title}\nРедакция: #{d.edition}, Место: #{d.rank}, ГБ: #{d3.format(".2f")(d.lag)}"
+      info = "#{title}\nРедакция: #{d.edition}, Место: #{d.rank}\nЗначение: #{d3.format(".2f")(d.lag)} ГБ"
       if d.has_gpu
         info += "\nГибридная система (с GPU)"
       info += heatmapTooltipSystemLine(d)
@@ -2874,6 +2874,27 @@ runStatsWhenReady = (fn) ->
   else
     fn()
 
+resolveGraphChoice = (selectorId, graphConfigs, fallbackKey) ->
+  selector = document.getElementById(selectorId)
+  selectedKey = selector?.value or fallbackKey
+  unless graphConfigs[selectedKey]?
+    selectedKey = fallbackKey
+  cfg = graphConfigs[selectedKey]
+  unless cfg?
+    keys = Object.keys(graphConfigs or {})
+    selectedKey = keys[0]
+    cfg = graphConfigs[selectedKey]
+  if selector and selectedKey? and selector.value != selectedKey
+    selector.value = selectedKey
+  { key: selectedKey, config: cfg, selector: selector }
+
+applyGraphVisibility = (graphConfigs, activeKey) ->
+  for key, cfg of (graphConfigs or {})
+    next unless cfg?.wrapperId
+    wrapper = document.getElementById(cfg.wrapperId)
+    continue unless wrapper
+    wrapper.style.display = if key == activeKey then "" else "none"
+
 runStatsWhenReady ->
   scaleSelector = document.getElementById("scale-selector")
   if scaleSelector and typeof cpuDataLinear != "undefined"
@@ -2883,6 +2904,10 @@ runStatsWhenReady ->
     downloadFilenames = ["CPU_lag.csv", "GPU_lag.csv", "Combined_lag.csv"]
     titles = ["CPU Задержка", "GPU Задержка", "Общая задержка min(CPU, GPU)"]
     gradientIds = ["lag-legend-cpu", "lag-legend-gpu", "lag-legend-combined"]
+    lagGraphConfigs =
+      cpu: { index: 0, wrapperId: "lag-graph-cpu" }
+      gpu: { index: 1, wrapperId: "lag-graph-gpu" }
+      combined: { index: 2, wrapperId: "lag-graph-combined" }
     getFreshestLagScale = () ->
       (document.getElementById("scale-selector") or {}).value or "linear"
 
@@ -2942,21 +2967,24 @@ runStatsWhenReady ->
       edTo   = parseInt(edEndSel?.value)   or (editionDatesLag?.length or edFrom)
       rkFrom = parseInt(rkStartSel?.value) or 1
       rkTo   = parseInt(rkEndSel?.value)   or getMaxRank()
-      for i in [0...dataSets.length]
-        fullData = dataSets[i] or []
-        data = fullData.filter((d) ->
-          ed = d.edition
-          rk = d.rank
-          ed? and rk? and ed >= edFrom and ed <= edTo and rk >= rkFrom and rk <= rkTo
-        )
-        drawFreshestLagHeatmap(data, containerIds[i], titles[i], scaleMethod, gradientIds[i])
-        if downloadIds and downloadIds[i]
-          csv = buildLagCsv(data, inQuarters)
-          d3.select("#" + downloadIds[i]).attr("href", "data:text/csv;charset=utf-8," + encodeURIComponent(csv))
-          if downloadFilenames and downloadFilenames[i]
-            base = downloadFilenames[i].replace(/\.csv$/, "")
-            ext = if inQuarters then "_quarters.csv" else ".csv"
-            d3.select("#" + downloadIds[i]).attr("download", base + ext)
+      selected = resolveGraphChoice("lag-graph-selector", lagGraphConfigs, "cpu")
+      applyGraphVisibility(lagGraphConfigs, selected.key)
+      i = selected.config?.index
+      return unless i?
+      fullData = dataSets[i] or []
+      data = fullData.filter((d) ->
+        ed = d.edition
+        rk = d.rank
+        ed? and rk? and ed >= edFrom and ed <= edTo and rk >= rkFrom and rk <= rkTo
+      )
+      drawFreshestLagHeatmap(data, containerIds[i], titles[i], scaleMethod, gradientIds[i])
+      if downloadIds and downloadIds[i]
+        csv = buildLagCsv(data, inQuarters)
+        d3.select("#" + downloadIds[i]).attr("href", "data:text/csv;charset=utf-8," + encodeURIComponent(csv))
+        if downloadFilenames and downloadFilenames[i]
+          base = downloadFilenames[i].replace(/\.csv$/, "")
+          ext = if inQuarters then "_quarters.csv" else ".csv"
+          d3.select("#" + downloadIds[i]).attr("download", base + ext)
 
     updateLagHeatmaps()
     scaleSelector.addEventListener("change", updateLagHeatmaps)
@@ -2968,6 +2996,8 @@ runStatsWhenReady ->
     if lagEndEd then lagEndEd.addEventListener("change", updateLagHeatmaps)
     if lagStartRank then lagStartRank.addEventListener("change", updateLagHeatmaps)
     if lagEndRank then lagEndRank.addEventListener("change", updateLagHeatmaps)
+    lagGraphSelector = document.getElementById("lag-graph-selector")
+    if lagGraphSelector then lagGraphSelector.addEventListener("change", updateLagHeatmaps)
 
   if typeof ramPerCoreData != "undefined"
     ramDataSets = [
@@ -2978,7 +3008,11 @@ runStatsWhenReady ->
     ramContainerIds = ["ram_per_core_heatmap", "ram_per_cpu_heatmap", "ram_per_node_heatmap"]
     ramDownloadIds = ["download_ram_per_core", "download_ram_per_cpu", "download_ram_per_node"]
     ramDownloadFilenames = ["RAM_per_core.csv", "RAM_per_cpu.csv", "RAM_per_node.csv"]
-    ramTitles = ["RAM на ядро (ГБ)", "RAM на CPU (ГБ)", "RAM на узел (ГБ)"]
+    ramTitles = ["RAM на ядро", "RAM на CPU", "RAM на узел"]
+    ramGraphConfigs =
+      core: { index: 0, wrapperId: "ram-graph-core" }
+      cpu: { index: 1, wrapperId: "ram-graph-cpu" }
+      node: { index: 2, wrapperId: "ram-graph-node" }
     getRamScale = () -> (document.getElementById("scale-selector-ram") or {}).value or "quantile"
     getRamShowHybrid = () ->
       el = document.getElementById("ram-show-hybrid")
@@ -3015,7 +3049,11 @@ runStatsWhenReady ->
       else
         ramDataSets.map((data) -> (data or []).filter((d) -> !d.has_gpu))
       filtered = baseSets.map((data) -> filterByRangesRam(data, ranges))
-      updateRamHeatmaps(filtered, ramContainerIds, ramTitles, ramDownloadIds, ramDownloadFilenames, getRamScale())
+      selected = resolveGraphChoice("ram-graph-selector", ramGraphConfigs, "node")
+      applyGraphVisibility(ramGraphConfigs, selected.key)
+      i = selected.config?.index
+      return unless i?
+      updateRamHeatmaps([filtered[i]], [ramContainerIds[i]], [ramTitles[i]], [ramDownloadIds[i]], [ramDownloadFilenames[i]], getRamScale())
     updateRamAll()
     ramScaleEl = document.getElementById("scale-selector-ram")
     if ramScaleEl
@@ -3028,6 +3066,9 @@ runStatsWhenReady ->
       if el
         el.addEventListener("change", updateRamAll)
     )
+    ramGraphEl = document.getElementById("ram-graph-selector")
+    if ramGraphEl
+      ramGraphEl.addEventListener("change", updateRamAll)
 
   if typeof cpuTotalData != "undefined"
     getComponentMetric = () -> (document.getElementById("metric-selector-component") or {}).value or "total"
@@ -3053,6 +3094,13 @@ runStatsWhenReady ->
         rankStart: Math.max(1, rs)
         rankEnd: Math.min(getMaxRank(), re)
       }
+    componentGraphConfigs =
+      cpu: { index: 0, wrapperId: "component-graph-cpu" }
+      gpu: { index: 1, wrapperId: "component-graph-gpu" }
+      freshest: { index: 2, wrapperId: "component-graph-freshest" }
+      cores: { index: 3, wrapperId: "component-graph-cores" }
+      gpu_cores: { index: 4, wrapperId: "component-graph-gpu-cores" }
+      gpu_microcores: { index: 5, wrapperId: "component-graph-gpu-microcores" }
 
     filterByRangesComponent = (data, ranges) ->
       (data or []).filter((d) ->
@@ -3077,7 +3125,7 @@ runStatsWhenReady ->
           gpuCoresTotalData || [],
           gpuMicrocoresOnlyTotalData || []
         ]
-        componentTitles = ["CPU: всего", "GPU: всего", "Самые свежие компоненты: всего", "Ядра: всего", "GPU ядра (мультипроцессорные блоки): всего", "GPU микроядра (CUDA): всего"]
+        componentTitles = ["Количетсво CPU: всего", "Количетсво GPU: всего", "Количетсво самых свежих компонент: всего", "Количетсво CPU ядер: всего", "Количетсво GPU ядер: всего", "Количетсво GPU микроядер: всего"]
         componentDownloadFilenames = ["CPU_total.csv", "GPU_total.csv", "Freshest_total.csv", "Cores_total.csv", "GPU_cores_total.csv", "GPU_microcores_total.csv"]
       else
         baseSets = [
@@ -3088,12 +3136,16 @@ runStatsWhenReady ->
           gpuCoresPerNodeData || [],
           gpuMicrocoresOnlyPerNodeData || []
         ]
-        componentTitles = ["CPU: на узел", "GPU: на узел", "Самые свежие компоненты: на узел", "Ядра: на узел", "GPU ядра (мультипроцессорные блоки): на узел", "GPU микроядра (CUDA): на узел"]
+        componentTitles = ["Количетсво CPU: на узел", "Количетсво GPU: на узел", "Количетсво самых свежих компонент: на узел", "Количетсво CPU ядер: на узел", "Количетсво GPU ядер: на узел", "Количетсво GPU микроядер: на узел"]
         componentDownloadFilenames = ["CPU_per_node.csv", "GPU_per_node.csv", "Freshest_per_node.csv", "Cores_per_node.csv", "GPU_cores_per_node.csv", "GPU_microcores_per_node.csv"]
       componentDataSets = baseSets.map((data) -> filterByRangesComponent(data, ranges))
       componentContainerIds = ["cpu_component_heatmap", "gpu_component_heatmap", "freshest_component_heatmap", "cores_component_heatmap", "gpu_cores_component_heatmap", "gpu_microcores_only_component_heatmap"]
       componentDownloadIds = ["download_cpu_component", "download_gpu_component", "download_freshest_component", "download_cores_component", "download_gpu_cores_component", "download_gpu_microcores_only_component"]
-      updateComponentHeatmaps(componentDataSets, componentContainerIds, componentTitles, componentDownloadIds, componentDownloadFilenames, scaleMethod)
+      selected = resolveGraphChoice("component-graph-selector", componentGraphConfigs, "cpu")
+      applyGraphVisibility(componentGraphConfigs, selected.key)
+      i = selected.config?.index
+      return unless i?
+      updateComponentHeatmaps([componentDataSets[i]], [componentContainerIds[i]], [componentTitles[i]], [componentDownloadIds[i]], [componentDownloadFilenames[i]], scaleMethod)
     updateComponentAll()
     componentMetricEl = document.getElementById("metric-selector-component")
     if componentMetricEl
@@ -3109,9 +3161,17 @@ runStatsWhenReady ->
       if el
         el.addEventListener("change", updateComponentAll)
     )
+    componentGraphEl = document.getElementById("component-graph-selector")
+    if componentGraphEl
+      componentGraphEl.addEventListener("change", updateComponentAll)
 
-  # ---------- freshest_comp_stats: heatmaps — same pattern as freshest_components_lag (option constraining + filter + redraw) ----------
+  # ---------- fr_comp_stats: heatmaps — same pattern as freshest_components_lag (option constraining + filter + redraw) ----------
   if typeof freshestCpuQuantityData != "undefined"
+    freshestHeatmapGraphConfigs =
+      cpu_quantity: { wrapperId: "freshest-heatmap-graph-cpu-quantity" }
+      gpu_quantity: { wrapperId: "freshest-heatmap-graph-gpu-quantity" }
+      announce_cpu: { wrapperId: "freshest-heatmap-graph-announce-cpu" }
+      announce_gpu: { wrapperId: "freshest-heatmap-graph-announce-gpu" }
     getFreshestQuantityScale = () -> (document.getElementById("scale-selector-freshest-quantity") or {}).value or "quantile"
     updateFreshestHeatmapEditionEndOptions = () ->
       startSel = document.getElementById("freshest-heatmap-edition-start")
@@ -3173,26 +3233,36 @@ runStatsWhenReady ->
       ranges = { editionStart: edFrom, editionEnd: edTo, rankStart: rkFrom, rankEnd: rkTo }
       dataCpu = filterByEditionAndRank(freshestCpuQuantityData or [], ranges)
       dataGpu = filterByEditionAndRank(freshestGpuQuantityData or [], ranges)
+      selected = resolveGraphChoice("freshest-heatmap-graph-selector", freshestHeatmapGraphConfigs, "cpu_quantity")
+      applyGraphVisibility(freshestHeatmapGraphConfigs, selected.key)
+      announceControls = document.getElementById("freshest-announce-controls")
+      if announceControls
+        showAnnounceControls = (selected.key == "announce_cpu" or selected.key == "announce_gpu")
+        announceControls.style.display = if showAnnounceControls then "" else "none"
       scaleMethod = getFreshestQuantityScale()
-      drawComponentHeatmap(dataCpu, "freshest_cpu_quantity_heatmap", "Самые свежие CPU: количество", scaleMethod)
-      drawComponentHeatmap(dataGpu, "freshest_gpu_quantity_heatmap", "Самые свежие GPU: количество", scaleMethod)
-      if document.getElementById("download_freshest_cpu_quantity")
-        csvCpu = buildComponentCsv(dataCpu)
-        d3.select("#download_freshest_cpu_quantity").attr("href", "data:text/csv;charset=utf-8," + encodeURIComponent(csvCpu))
-      if document.getElementById("download_freshest_gpu_quantity")
-        csvGpu = buildComponentCsv(dataGpu)
-        d3.select("#download_freshest_gpu_quantity").attr("href", "data:text/csv;charset=utf-8," + encodeURIComponent(csvGpu))
+      if selected.key == "cpu_quantity"
+        drawComponentHeatmap(dataCpu, "freshest_cpu_quantity_heatmap", "Самые свежие CPU: количество", scaleMethod)
+        if document.getElementById("download_freshest_cpu_quantity")
+          csvCpu = buildComponentCsv(dataCpu)
+          d3.select("#download_freshest_cpu_quantity").attr("href", "data:text/csv;charset=utf-8," + encodeURIComponent(csvCpu))
+      else if selected.key == "gpu_quantity"
+        drawComponentHeatmap(dataGpu, "freshest_gpu_quantity_heatmap", "Самые свежие GPU: количество", scaleMethod)
+        if document.getElementById("download_freshest_gpu_quantity")
+          csvGpu = buildComponentCsv(dataGpu)
+          d3.select("#download_freshest_gpu_quantity").attr("href", "data:text/csv;charset=utf-8," + encodeURIComponent(csvGpu))
       if typeof announceToMentionCpuData != "undefined"
         dataAnnounceCpu = filterByEditionAndRank(announceToMentionCpuData or [], ranges)
         dataAnnounceGpu = filterByEditionAndRank(announceToMentionGpuData or [], ranges)
         announceUnit = (document.getElementById("announce-to-mention-unit") or {}).value or "days"
-        drawAnnounceToMentionHeatmap(dataAnnounceCpu, "announce_to_mention_cpu_heatmap", "CPU: разница между анонсом и первым появлением в рейтинге", "announce-to-mention-legend-cpu", announceUnit)
-        drawAnnounceToMentionHeatmap(dataAnnounceGpu, "announce_to_mention_gpu_heatmap", "GPU: разница между анонсом и первым появлением в рейтинге", "announce-to-mention-legend-gpu", announceUnit)
+        if selected.key == "announce_cpu"
+          drawAnnounceToMentionHeatmap(dataAnnounceCpu, "announce_to_mention_cpu_heatmap", "CPU: разница между анонсом и первым появлением в рейтинге", "announce-to-mention-legend-cpu", announceUnit)
+        else if selected.key == "announce_gpu"
+          drawAnnounceToMentionHeatmap(dataAnnounceGpu, "announce_to_mention_gpu_heatmap", "GPU: разница между анонсом и первым появлением в рейтинге", "announce-to-mention-legend-gpu", announceUnit)
         inQuarters = (announceUnit == "quarters")
-        if document.getElementById("download_announce_to_mention_cpu")
+        if selected.key == "announce_cpu" and document.getElementById("download_announce_to_mention_cpu")
           csvCpu = if inQuarters then buildLagCsv(dataAnnounceCpu, true) else buildComponentCsv(dataAnnounceCpu)
           d3.select("#download_announce_to_mention_cpu").attr("href", "data:text/csv;charset=utf-8," + encodeURIComponent(csvCpu)).attr("download", if inQuarters then "CPU_announce_to_mention_quarters.csv" else "CPU_announce_to_mention_days.csv")
-        if document.getElementById("download_announce_to_mention_gpu")
+        if selected.key == "announce_gpu" and document.getElementById("download_announce_to_mention_gpu")
           csvGpu = if inQuarters then buildLagCsv(dataAnnounceGpu, true) else buildComponentCsv(dataAnnounceGpu)
           d3.select("#download_announce_to_mention_gpu").attr("href", "data:text/csv;charset=utf-8," + encodeURIComponent(csvGpu)).attr("download", if inQuarters then "GPU_announce_to_mention_quarters.csv" else "GPU_announce_to_mention_days.csv")
     updateFreshestQuantityHeatmaps()
@@ -3211,22 +3281,48 @@ runStatsWhenReady ->
       if el
         el.addEventListener("change", updateFreshestQuantityHeatmaps)
     )
+    freshestHeatmapGraphEl = document.getElementById("freshest-heatmap-graph-selector")
+    if freshestHeatmapGraphEl
+      freshestHeatmapGraphEl.addEventListener("change", updateFreshestQuantityHeatmaps)
 
-  # freshest_comp_stats: bar charts — separate edition dropdowns (not heatmaps), filter + scroll + sticky Y
+  # fr_comp_stats: bar charts — separate edition dropdowns (not heatmaps), filter + scroll + sticky Y
   runStatsWhenReady ->
     fqStartSel = document.getElementById("freshest-charts-edition-start")
     fqEndSel   = document.getElementById("freshest-charts-edition-end")
     fqChartEl  = document.getElementById("chart_freshest_quantity_systems")
     return unless fqStartSel and fqEndSel and fqChartEl and typeof window.editionDatesFreshestQuantity != "undefined"
-    fqCharts = [
-      { id: "chart_freshest_quantity_systems", dataKey: "chartDataFreshestQuantity", title: "Количество систем с новыми компонентами по редакциям", xLabel: "Дата (ММ.ГГ)", yLabel: "Количество систем" }
-      { id: "chart_freshest_quantity_models", dataKey: "chartDataFreshestQuantityModels", title: "Количество новых моделей компонент по редакциям", xLabel: "Дата (ММ.ГГ)", yLabel: "Количество моделей" }
-      { id: "chart_freshest_quantity_components", dataKey: "chartDataFreshestQuantityComponents", title: "Количество новых компонент по редакциям", xLabel: "Дата (ММ.ГГ)", yLabel: "Количество компонент" }
-      { id: "chart_freshest_quantity_pct_all", dataKey: "chartDataFreshestQuantityPctAll", title: "Доля новых компонент (от компонент всех систем), %", xLabel: "Дата (ММ.ГГ)", yLabel: "% от всех компонент" }
-      { id: "chart_freshest_quantity_pct_new_systems", dataKey: "chartDataFreshestQuantityPctNewSystems", title: "Доля новых компонент (от компонент систем с новыми), %", xLabel: "Дата (ММ.ГГ)", yLabel: "% от всех компонент" }
-      { id: "chart_freshest_quantity_rpeak_pct", dataKey: "chartDataFreshestQuantityRpeakPct", title: "Процент Rpeak (от общего) систем с новыми компонентами", xLabel: "Дата (ММ.ГГ)", yLabel: "% Rpeak" }
-      { id: "chart_freshest_quantity_rmax_pct", dataKey: "chartDataFreshestQuantityRmaxPct", title: "Процент Rmax (от общего) систем с новыми компонентами", xLabel: "Дата (ММ.ГГ)", yLabel: "% Rmax" }
-    ]
+    fqCharts =
+      systems: { id: "chart_freshest_quantity_systems", wrapperId: "freshest-bar-graph-systems", dataKey: "chartDataFreshestQuantity", title: "Количество систем с новыми компонентами по редакциям", xLabel: "Дата (ММ.ГГ)", yLabel: "Количество систем" }
+      models: { id: "chart_freshest_quantity_models", wrapperId: "freshest-bar-graph-models", dataKey: "chartDataFreshestQuantityModels", title: "Количество новых моделей компонент по редакциям", xLabel: "Дата (ММ.ГГ)", yLabel: "Количество моделей" }
+      components: { id: "chart_freshest_quantity_components", wrapperId: "freshest-bar-graph-components", dataKey: "chartDataFreshestQuantityComponents", title: "Количество новых компонент по редакциям", xLabel: "Дата (ММ.ГГ)", yLabel: "Количество компонент" }
+      pct_all: { id: "chart_freshest_quantity_pct_all", wrapperId: "freshest-bar-graph-pct-all", dataKey: "chartDataFreshestQuantityPctAll", title: "Доля новых компонент (от компонент всех систем), %", xLabel: "Дата (ММ.ГГ)", yLabel: "% от всех компонент" }
+      pct_new_systems: { id: "chart_freshest_quantity_pct_new_systems", wrapperId: "freshest-bar-graph-pct-new-systems", dataKey: "chartDataFreshestQuantityPctNewSystems", title: "Доля новых компонент (от компонент систем с новыми), %", xLabel: "Дата (ММ.ГГ)", yLabel: "% от всех компонент" }
+      rpeak_pct: { id: "chart_freshest_quantity_rpeak_pct", wrapperId: "freshest-bar-graph-rpeak-pct", dataKey: "chartDataFreshestQuantityRpeakPct", title: "Процент Rpeak (от общего) систем с новыми компонентами", xLabel: "Дата (ММ.ГГ)", yLabel: "% Rpeak" }
+      rmax_pct: { id: "chart_freshest_quantity_rmax_pct", wrapperId: "freshest-bar-graph-rmax-pct", dataKey: "chartDataFreshestQuantityRmaxPct", title: "Процент Rmax (от общего) систем с новыми компонентами", xLabel: "Дата (ММ.ГГ)", yLabel: "% Rmax" }
+    fqGraphSelector = document.getElementById("freshest-bar-graph-selector")
+    availableFqCharts = {}
+    for key, cfg of fqCharts
+      chartEl = document.getElementById(cfg.id)
+      wrapperEl = document.getElementById(cfg.wrapperId)
+      availableFqCharts[key] = !!(chartEl and wrapperEl)
+    getAvailableFqKey = () ->
+      keys = Object.keys(fqCharts)
+      for i in [0...keys.length]
+        key = keys[i]
+        return key if availableFqCharts[key]
+      "systems"
+    updateFqGraphOptions = () ->
+      return unless fqGraphSelector
+      selected = fqGraphSelector.value
+      hasSelected = false
+      for i in [0...fqGraphSelector.options.length]
+        opt = fqGraphSelector.options[i]
+        isAvailable = !!availableFqCharts[opt.value]
+        opt.hidden = !isAvailable
+        opt.disabled = !isAvailable
+        hasSelected = true if isAvailable and opt.value == selected
+      unless hasSelected
+        fqGraphSelector.value = getAvailableFqKey()
     # Second dropdown (start) = main (all options). First dropdown (end) = dependent, limited by start.
     updateFqStartOptions = () ->
       return unless fqStartSel
@@ -3246,6 +3342,7 @@ runStatsWhenReady ->
         { name: s.name, color: s.color, data: arr.map((p) -> [p[0], p[1]]) }
       )
     updateFqBarCharts = () ->
+      updateFqGraphOptions()
       updateFqStartOptions()
       updateFqEndOptions()
       startVal = parseInt(fqStartSel?.value, 10) or 1
@@ -3257,19 +3354,23 @@ runStatsWhenReady ->
       edTo = Math.max(startVal, endVal)
       numPoints = Math.max(0, edTo - edFrom + 1)
       minChartWidth = Math.max(1000, numPoints * 40)
-      fqCharts.forEach((cfg) ->
-        el = document.getElementById(cfg.id)
-        if !el then return
-        el.style.minWidth = minChartWidth + "px"
-        data = window[cfg.dataKey]
-        if !data or !data.length or !data[0].data then return
-        filtered = sliceFqChartData(data, edFrom, edTo)
-        if filtered.length > 0 and filtered[0].data and filtered[0].data.length > 0
-          draw_new_vs_upgraded_new(filtered, cfg.id, cfg.title, cfg.xLabel, cfg.yLabel)
-      )
+      selected = resolveGraphChoice("freshest-bar-graph-selector", fqCharts, getAvailableFqKey())
+      applyGraphVisibility(fqCharts, selected.key)
+      cfg = selected.config
+      return unless cfg?
+      el = document.getElementById(cfg.id)
+      return unless el
+      el.style.minWidth = minChartWidth + "px"
+      data = window[cfg.dataKey]
+      return unless data and data.length and data[0].data
+      filtered = sliceFqChartData(data, edFrom, edTo)
+      if filtered.length > 0 and filtered[0].data and filtered[0].data.length > 0
+        draw_new_vs_upgraded_new(filtered, cfg.id, cfg.title, cfg.xLabel, cfg.yLabel)
     updateFqBarCharts()
     fqStartSel.addEventListener("change", updateFqBarCharts)
     fqEndSel.addEventListener("change", updateFqBarCharts)
+    if fqGraphSelector
+      fqGraphSelector.addEventListener("change", updateFqBarCharts)
 
   runStatsWhenReady ->
     lagByEdition = window.componentsByAreaLagByEdition
