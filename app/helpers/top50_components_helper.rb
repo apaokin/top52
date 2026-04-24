@@ -1,2 +1,0 @@
-module Top50ComponentsHelper
-end

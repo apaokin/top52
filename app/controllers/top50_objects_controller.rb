@@ -44,7 +44,7 @@ class Top50ObjectsController < Top50BaseController
   
   def show_info
     @top50_object = Top50Object.find(params[:id])
-    @first_appearance_date = fetch_first_appearance_date(@top50_object.id) #delishakov
+    @first_appearance_date = fetch_first_appearance_date(@top50_object.id)
   end
 
   def component_dates
@@ -67,8 +67,6 @@ class Top50ObjectsController < Top50BaseController
       render :edit_component_info
     end
   end
-
-  ### delishakov ###
   
   def get_rel_contain_id
     Top50RelationType.find_by(name_eng: 'Contains').id
@@ -98,8 +96,6 @@ class Top50ObjectsController < Top50BaseController
                  .order(:created_at).first
     benchmark.created_at if benchmark
   end
-
-  ### delishakov ###
 
   def new_attribute_val_dbval
     @top50_object = Top50Object.find(params[:id])

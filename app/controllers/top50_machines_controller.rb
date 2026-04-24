@@ -5745,14 +5745,10 @@ class Top50MachinesController < Top50BaseController
     Top50Mailer.app_confirm_email({step1_data: @step1_data, step2_data: @step2_data, step3_data: @step3_data, step4_data: @step4_data, id: @top50_machine.id}).deliver!
   end
 
-  ###delishakov### duplicated from ObjectsController
-
   def show_info
     @top50_object = Top50Object.find(params[:id])
     @first_appearance_date = fetch_first_appearance_date(@top50_object.id)
   end 
-
-  ### delishakov ###
   
   def get_rel_contain_id
     Top50RelationType.find_by(name_eng: 'Contains').id
@@ -5782,8 +5778,6 @@ class Top50MachinesController < Top50BaseController
                  .order(:created_at).first
     benchmark.created_at if benchmark
   end
-
-  ###delishakov### duplicated from ObjectsController
 
   private
 
