@@ -3116,7 +3116,7 @@ runStatsWhenReady ->
           gpuCoresTotalData || [],
           gpuMicrocoresOnlyTotalData || []
         ]
-        componentTitles = ["Количетсво CPU: всего", "Количетсво GPU: всего", "Количетсво самых свежих компонент: всего", "Количетсво CPU ядер: всего", "Количетсво GPU ядер: всего", "Количетсво GPU микроядер: всего"]
+        componentTitles = ["Количество CPU: всего", "Количество GPU: всего", "Количество самых свежих компонент: всего", "Количество CPU ядер: всего", "Количество GPU ядер: всего", "Количество GPU микроядер: всего"]
         componentDownloadFilenames = ["CPU_total.csv", "GPU_total.csv", "Freshest_total.csv", "Cores_total.csv", "GPU_cores_total.csv", "GPU_microcores_total.csv"]
       else
         baseSets = [
@@ -3127,7 +3127,7 @@ runStatsWhenReady ->
           gpuCoresPerNodeData || [],
           gpuMicrocoresOnlyPerNodeData || []
         ]
-        componentTitles = ["Количетсво CPU: на узел", "Количетсво GPU: на узел", "Количетсво самых свежих компонент: на узел", "Количетсво CPU ядер: на узел", "Количетсво GPU ядер: на узел", "Количетсво GPU микроядер: на узел"]
+        componentTitles = ["Количество CPU: на узел", "Количество GPU: на узел", "Количество самых свежих компонент: на узел", "Количество CPU ядер: на узел", "Количество GPU ядер: на узел", "Количество GPU микроядер: на узел"]
         componentDownloadFilenames = ["CPU_per_node.csv", "GPU_per_node.csv", "Freshest_per_node.csv", "Cores_per_node.csv", "GPU_cores_per_node.csv", "GPU_microcores_per_node.csv"]
       componentDataSets = baseSets.map((data) -> filterByRangesComponent(data, ranges))
       componentContainerIds = ["cpu_component_heatmap", "gpu_component_heatmap", "freshest_component_heatmap", "cores_component_heatmap", "gpu_cores_component_heatmap", "gpu_microcores_only_component_heatmap"]
@@ -3277,7 +3277,7 @@ runStatsWhenReady ->
       freshestHeatmapGraphEl.addEventListener("change", updateFreshestQuantityHeatmaps)
 
   # fr_comp_stats: bar charts — separate edition dropdowns (not heatmaps), filter + scroll + sticky Y
-  runStatsWhenReady ->
+  initFreshestBarCharts = ->
     fqStartSel = document.getElementById("freshest-charts-edition-start")
     fqEndSel   = document.getElementById("freshest-charts-edition-end")
     fqChartEl  = document.getElementById("chart_freshest_quantity_systems")
@@ -3364,6 +3364,9 @@ runStatsWhenReady ->
       fqGraphSelector.addEventListener("change", updateFqBarCharts)
 
   runStatsWhenReady ->
+    initFreshestBarCharts()
+
+  initAreaAndListUpgStats = ->
     lagByEdition = window.componentsByAreaLagByEdition
     qtyByEdition = window.componentsByAreaNewQtyByEdition
     systemsWithNewByEdition = window.componentsByAreaSystemsWithNewByEdition
@@ -3677,6 +3680,9 @@ runStatsWhenReady ->
   # new_upg: edition range selector — filter charts, table, CSV (client-side)
   # Run in a separate ready pass so inline scripts (chartData + initial draw) have run
   runStatsWhenReady ->
+    initAreaAndListUpgStats()
+
+  initNewUpgStats = ->
     newUpgStartSel = document.getElementById("new-upg-edition-start")
     newUpgEndSel   = document.getElementById("new-upg-edition-end")
     newUpgGraphSel = document.getElementById("new-upg-bar-graph-selector")
@@ -3776,6 +3782,9 @@ runStatsWhenReady ->
     newUpgEndSel.addEventListener("change", updateNewUpg)
     if newUpgGraphSel
       newUpgGraphSel.addEventListener("change", updateNewUpg)
+
+  runStatsWhenReady ->
+    initNewUpgStats()
 
 @draw_new_vs_upgraded_new = (data, src_id, title, x_label, y_label) ->
   return unless data and data.length > 0 and data[0].data and data[0].data.length > 0

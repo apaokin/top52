@@ -1,0 +1,85 @@
+head
+  title RAM: среднее на ядро/CPU/узел
+  style
+    | .cell-fill { stroke-width: 0.5; }
+    | .heatmap-wrapper { position: relative; display: inline-block; }
+    | .heatmap-footer { position: absolute; bottom: 15px; right: 20px; }
+body
+  .container-fluid
+    .menu-container
+      table.mb-3 style="border: none;"
+        tr style="border: none; vertical-align: middle;"
+          td style="border: none; padding-right: 24px; vertical-align: top;"
+            table style="border: none;"
+              tr style="border: none; vertical-align: middle;"
+                td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Метрика:
+                td style="border: none;"
+                  select#ram-graph-selector.form-control style="width: 230px;"
+                    option value="node" selected="selected" RAM на узел
+                    option value="cpu" RAM на CPU
+                    option value="core" RAM на ядро
+              tr style="border: none; vertical-align: middle;"
+                td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold; padding-top: 6px;" Шкала:
+                td style="border: none; padding-top: 6px;"
+                  select#scale-selector-ram.form-control style="width: 230px;"
+                    option value="quantile" selected="selected" По квантилям
+                    option value="linear" Равные интервалы
+                    option value="fixed" Равные интервалы (0–max)
+                    option value="log" log интервалы
+                    option value="gradient_linear" Градиент (lin)
+                    option value="gradient" Градиент (log)
+                    option value="gradient_sqrt" Градиент (sqrt)
+          td colspan="3" style="border: none; vertical-align: top;"
+            table style="border: none;"
+              tr style="border: none; vertical-align: middle;"
+                td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Редакции:
+                td style="border: none; padding-right: 4px;"
+                  select#ram-edition-start.form-control style="width: 120px;"
+                    - (@edition_dates_ram || []).each_with_index do |label, i|
+                      option value=(i + 1) selected=(i == 0) = label
+                td style="border: none;"
+                  select#ram-edition-end.form-control style="width: 120px;"
+                    - (@edition_dates_ram || []).each_with_index do |label, i|
+                      option value=(i + 1) selected=(i == (@edition_dates_ram.size - 1)) = label
+              tr style="border: none; vertical-align: middle;"
+                td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold; padding-top: 6px;" Позиции:
+                td style="border: none; padding-right: 4px; padding-top: 6px;"
+                  select#ram-rank-start.form-control style="width: 120px;"
+                    - (1..(@max_rank || 50)).each do |i|
+                      option value=i selected=(i == 1) = i
+                td style="border: none; padding-top: 6px;"
+                  select#ram-rank-end.form-control style="width: 120px;"
+                    - (1..(@max_rank || 50)).each do |i|
+                      option value=i selected=(i == (@max_rank || 50)) = i
+
+    .row.mb-2
+      .col-md-12
+        input#ram-show-hybrid type="checkbox" checked="checked"
+        label for="ram-show-hybrid" Показывать гибридные системы (с GPU)
+
+  div.heatmap-section#ram-graph-node
+    h2 Тепловая карта среднего количества памяти на узел
+    div.heatmap-wrapper
+      #ram_per_node_heatmap
+      div.heatmap-footer
+        a.button style="background: #6699CC;" id="download_ram_per_node" download="RAM_per_node.csv" Скачать CSV
+  
+  div.heatmap-section#ram-graph-cpu
+    h2 Тепловая карта среднего количества памяти на CPU
+    div.heatmap-wrapper
+      #ram_per_cpu_heatmap
+      div.heatmap-footer
+        a.button style="background: #6699CC;" id="download_ram_per_cpu" download="RAM_per_cpu.csv" Скачать CSV
+        
+  div.heatmap-section#ram-graph-core
+    h2 Тепловая карта среднего количества памяти на ядро
+    div.heatmap-wrapper
+      #ram_per_core_heatmap
+      div.heatmap-footer
+        a.button style="background: #6699CC;" id="download_ram_per_core" download="RAM_per_core.csv" Скачать CSV
+
+  script
+    | const ramPerCoreData = #{raw @ram_per_core_data.to_json};
+    | const ramPerCpuData = #{raw @ram_per_cpu_data.to_json};
+    | const ramPerNodeData = #{raw @ram_per_node_data.to_json};
+    | const editionDatesRam = #{raw (@edition_dates_ram || []).to_json};

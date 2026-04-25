@@ -1,0 +1,27 @@
+.container-fluid
+  .menu-container
+    .list-upg-control-row style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;"
+      span style="width: 82px; white-space: nowrap; font-weight: bold;" Редакции:
+      select#list-upg-edition-start.form-control style="width: 120px;"
+      select#list-upg-edition-end.form-control style="width: 120px;"
+    .list-upg-control-row style="display: flex; align-items: center; gap: 10px;"
+      span style="width: 82px; white-space: nowrap; font-weight: bold;" Позиции:
+      select#list-upg-rank-start.form-control style="width: 120px;"
+      select#list-upg-rank-end.form-control style="width: 120px;"
+
+h2 Матрица обновляемости списка систем в рейтинге
+
+#matrix_chart
+  javascript:
+    chartData = #{raw @chart_data};
+  coffee:
+    @drawMatrix(chartData, "matrix_chart")
+
+div style="clear: both;"
+- if @csv_string_list_upg.present?
+  a class="button" style="background: #6699CC; float: right; margin-bottom: 15px;" target="_blank" download="Statuses_matrix.csv" id="download_list_upg"
+    = "Скачать CSV"
+  javascript:
+    var csvListUpg = JSON.parse("#{@csv_string_list_upg.to_json}".replace(/&quot;/g, '"')).join("\n");
+  coffee:
+    d3.selectAll("a").filter(() -> d3.select(this).attr("id") == "download_list_upg").attr("href", "data:text/csv;charset=utf-8," + encodeURIComponent(csvListUpg))

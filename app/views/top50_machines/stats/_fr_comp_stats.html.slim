@@ -1,0 +1,263 @@
+head
+  title Количество самых свежих компонент
+  style
+    | .cell-fill { stroke-width: 0.5; }
+    | .heatmap-wrapper { position: relative; display: inline-block; }
+    | .heatmap-footer { position: absolute; bottom: 15px; right: 20px; }
+body
+  .container-fluid
+    .menu-container
+      table.mb-3 style="border: none;"
+        tr style="border: none; vertical-align: middle;"
+          td colspan="4" style="border: none; padding-right: 16px;"
+            table style="border: none;"
+              tr style="border: none; vertical-align: middle;"
+                td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Метрика:
+                td style="border: none;"
+                  select#freshest-heatmap-graph-selector.form-control style="width: 230px;"
+                    option value="cpu_quantity" selected="selected" Количество новых CPU
+                    option value="gpu_quantity" Количество новых GPU
+                    option value="announce_cpu" Разница анонса и появления CPU
+                    option value="announce_gpu" Разница анонса и появления GPU
+              tr style="border: none; vertical-align: middle;"
+                td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold; padding-top: 6px;" Шкала:
+                td style="border: none; padding-top: 6px;"
+                  select#scale-selector-freshest-quantity.form-control style="width: 230px;"
+                    option value="quantile" selected="selected" По квантилям
+                    option value="linear" Равные интервалы
+                    option value="fixed" Равные интервалы (0–max)
+                    option value="log" log интервалы
+                    option value="gradient_linear" Градиент (lin)
+                    option value="gradient" Градиент (log)
+                    option value="gradient_sqrt" Градиент (sqrt)
+          td colspan="3" style="border: none;"
+            table style="border: none;"
+              tr style="border: none; vertical-align: middle;"
+                td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Редакции:
+                td style="border: none; padding-right: 4px;"
+                  select#freshest-heatmap-edition-start.form-control style="width: 120px;"
+                    - (@edition_dates_freshest_quantity || []).each_with_index do |label, i|
+                      option value=(i + 1) selected=(i == 0) = label
+                td style="border: none;"
+                  select#freshest-heatmap-edition-end.form-control style="width: 120px;"
+                    - (@edition_dates_freshest_quantity || []).each_with_index do |label, i|
+                      option value=(i + 1) selected=(i == (@edition_dates_freshest_quantity.size - 1)) = label
+              tr style="border: none; vertical-align: middle;"
+                td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold; padding-top: 6px;" Позиции:
+                td style="border: none; padding-right: 4px; padding-top: 6px;"
+                  select#freshest-heatmap-rank-start.form-control style="width: 120px;"
+                    - (1..(@max_rank || 50)).each do |r|
+                      option value=r selected=(r == 1) = r
+                td style="border: none; padding-top: 6px;"
+                  select#freshest-heatmap-rank-end.form-control style="width: 120px;"
+                    - (1..(@max_rank || 50)).each do |r|
+                      option value=r selected=(r == (@max_rank || 50)) = r
+
+  div.heatmap-section#freshest-heatmap-graph-cpu-quantity
+    h2 Тепловая карта количества новых CPU
+    div.heatmap-wrapper
+      #freshest_cpu_quantity_heatmap
+      div.heatmap-footer
+        a.button style="background: #6699CC;" id="download_freshest_cpu_quantity" download="Freshest_CPU_quantity.csv" Скачать CSV
+
+  div.heatmap-section#freshest-heatmap-graph-gpu-quantity
+    h2 Тепловая карта количества новых GPU
+    div.heatmap-wrapper
+      #freshest_gpu_quantity_heatmap
+      div.heatmap-footer
+        a.button style="background: #6699CC;" id="download_freshest_gpu_quantity" download="Freshest_GPU_quantity.csv" Скачать CSV
+
+  div#freshest-announce-controls style="margin-top: 1.5em;"
+    p
+      label for="announce-to-mention-only-new"
+        input#announce-to-mention-only-new type="checkbox"
+        |  Показывать только новые компоненты (впервые появившиеся в рейтинге)
+    p
+      label for="announce-to-mention-unit" Единица измерения:
+      select#announce-to-mention-unit
+        option value="days" Дни
+        option value="quarters" Кварталы
+
+  div.heatmap-section#freshest-heatmap-graph-announce-cpu style="margin-top: 1.5em;"
+    h2 Тепловая карта разницы между анонсом и первым появлением в рейтинге CPU
+    div.heatmap-wrapper
+      #announce_to_mention_cpu_heatmap
+      div.heatmap-footer
+        a.button style="background: #6699CC;" id="download_announce_to_mention_cpu" download="CPU_announce_to_mention_days.csv" Скачать CSV
+
+  div.heatmap-section#freshest-heatmap-graph-announce-gpu
+    h2 Тепловая карта разницы между анонсом и первым появлением в рейтинге GPU
+    div.heatmap-wrapper
+      #announce_to_mention_gpu_heatmap
+      div.heatmap-footer
+        a.button style="background: #6699CC;" id="download_announce_to_mention_gpu" download="GPU_announce_to_mention_days.csv" Скачать CSV
+
+  script
+    | const freshestCpuQuantityData = #{raw (@freshest_cpu_quantity_data || []).to_json};
+    | const freshestGpuQuantityData = #{raw (@freshest_gpu_quantity_data || []).to_json};
+    | const announceToMentionCpuData = #{raw (@announce_to_mention_cpu_data || []).to_json};
+    | const announceToMentionGpuData = #{raw (@announce_to_mention_gpu_data || []).to_json};
+    | window.editionDatesFreshestQuantity = #{raw (@edition_dates_freshest_quantity || []).to_json};
+    | const editionDatesFreshestQuantity = window.editionDatesFreshestQuantity;
+    | const editionDatesComponent = #{raw (@edition_dates_freshest_quantity || []).to_json};
+
+  .container-fluid
+    .menu-container
+      .freshest-charts-toolbar style="margin-top: 2em; margin-bottom: 1em;"
+        table.mb-3 style="border: none;"
+          tr style="border: none; vertical-align: middle;"
+            td colspan="4" style="border: none; padding-right: 16px;"
+              table style="border: none;"
+                tr style="border: none; vertical-align: middle;"
+                  td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Метрика:
+                  td style="border: none;"
+                    select#freshest-bar-graph-selector.form-control style="width: 230px;"
+                      option value="systems" selected="selected" Системы с новыми компонентами
+                      option value="models" Новые модели компонент
+                      option value="components" Новые компоненты
+                      option value="pct_all" Доля новых компонент (от всех систем)
+                      option value="pct_new_systems" Доля новых компонент (от систем с новыми)
+                      option value="rpeak_pct" Процент Rpeak (систем с новыми)
+                      option value="rmax_pct" Процент Rmax (систем с новыми)
+            td colspan="3" style="border: none;"
+              table style="border: none;"
+                tr style="border: none; vertical-align: middle;"
+                  td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Редакции:
+                  td style="border: none; padding-right: 4px;"
+                    select#freshest-charts-edition-end.form-control style="width: 120px;"
+                      - (@edition_dates_freshest_quantity || []).each_with_index do |label, i|
+                        option value=(i + 1) selected=(i == 0) = label
+                  td style="border: none;"
+                    select#freshest-charts-edition-start.form-control style="width: 120px;"
+                      - (@edition_dates_freshest_quantity || []).each_with_index do |label, i|
+                        option value=(i + 1) selected=(i == (@edition_dates_freshest_quantity.size - 1)) = label
+
+  div.freshest-chart-wrapper#freshest-bar-graph-systems style="max-width: 1000px; margin-top: 2em;"
+    div.new-upg-chart-header id="chart_freshest_quantity_systems_header" style="text-align: center; width: 100%; box-sizing: border-box; min-height: 80px;"
+    div.freshest-charts-scroll style="max-width: 1000px; width: 100%; overflow-x: auto; overflow-y: visible; display: flex; box-sizing: border-box;"
+      div id="chart_freshest_quantity_systems"
+  javascript:
+    window.chartDataFreshestQuantity = #{raw (@freshest_quantity_chart_data || []).to_json};
+    var chartDataFreshestQuantity = window.chartDataFreshestQuantity;
+
+  div.freshest-chart-wrapper#freshest-bar-graph-models style="max-width: 1000px; margin-top: 2em;"
+    div.new-upg-chart-header id="chart_freshest_quantity_models_header" style="text-align: center; width: 100%; box-sizing: border-box; min-height: 80px;"
+    div.freshest-charts-scroll style="max-width: 1000px; width: 100%; overflow-x: auto; overflow-y: visible; display: flex; box-sizing: border-box;"
+      div id="chart_freshest_quantity_models"
+  javascript:
+    window.chartDataFreshestQuantityModels = #{raw (@freshest_quantity_models_chart_data || []).to_json};
+    var chartDataFreshestQuantityModels = window.chartDataFreshestQuantityModels;
+
+  div.freshest-chart-wrapper#freshest-bar-graph-components style="max-width: 1000px; margin-top: 2em;"
+    div.new-upg-chart-header id="chart_freshest_quantity_components_header" style="text-align: center; width: 100%; box-sizing: border-box; min-height: 80px;"
+    div.freshest-charts-scroll style="max-width: 1000px; width: 100%; overflow-x: auto; overflow-y: visible; display: flex; box-sizing: border-box;"
+      div id="chart_freshest_quantity_components"
+  javascript:
+    window.chartDataFreshestQuantityComponents = #{raw (@freshest_quantity_components_chart_data || []).to_json};
+    var chartDataFreshestQuantityComponents = window.chartDataFreshestQuantityComponents;
+
+  div.freshest-chart-wrapper#freshest-bar-graph-pct-all style="max-width: 1000px; margin-top: 2em;"
+    div.new-upg-chart-header id="chart_freshest_quantity_pct_all_header" style="text-align: center; width: 100%; box-sizing: border-box; min-height: 80px;"
+    div.freshest-charts-scroll style="max-width: 1000px; width: 100%; overflow-x: auto; overflow-y: visible; display: flex; box-sizing: border-box;"
+      div id="chart_freshest_quantity_pct_all"
+  javascript:
+    window.chartDataFreshestQuantityPctAll = #{raw (@freshest_quantity_pct_all_chart_data || []).to_json};
+    var chartDataFreshestQuantityPctAll = window.chartDataFreshestQuantityPctAll;
+
+  div.freshest-chart-wrapper#freshest-bar-graph-pct-new-systems style="max-width: 1000px; margin-top: 2em;"
+    div.new-upg-chart-header id="chart_freshest_quantity_pct_new_systems_header" style="text-align: center; width: 100%; box-sizing: border-box; min-height: 80px;"
+    div.freshest-charts-scroll style="max-width: 1000px; width: 100%; overflow-x: auto; overflow-y: visible; display: flex; box-sizing: border-box;"
+      div id="chart_freshest_quantity_pct_new_systems"
+  javascript:
+    window.chartDataFreshestQuantityPctNewSystems = #{raw (@freshest_quantity_pct_new_systems_chart_data || []).to_json};
+    var chartDataFreshestQuantityPctNewSystems = window.chartDataFreshestQuantityPctNewSystems;
+
+  - if (@freshest_quantity_rpeak_pct_chart_data || []).any?
+    div.freshest-chart-wrapper#freshest-bar-graph-rpeak-pct style="max-width: 1000px; margin-top: 2em;"
+      div.new-upg-chart-header id="chart_freshest_quantity_rpeak_pct_header" style="text-align: center; width: 100%; box-sizing: border-box; min-height: 80px;"
+      div.freshest-charts-scroll style="max-width: 1000px; width: 100%; overflow-x: auto; overflow-y: visible; display: flex; box-sizing: border-box;"
+        div id="chart_freshest_quantity_rpeak_pct"
+    javascript:
+      window.chartDataFreshestQuantityRpeakPct = #{raw (@freshest_quantity_rpeak_pct_chart_data || []).to_json};
+      var chartDataFreshestQuantityRpeakPct = window.chartDataFreshestQuantityRpeakPct;
+  - if (@freshest_quantity_rmax_pct_chart_data || []).any?
+    div.freshest-chart-wrapper#freshest-bar-graph-rmax-pct style="max-width: 1000px; margin-top: 2em;"
+      div.new-upg-chart-header id="chart_freshest_quantity_rmax_pct_header" style="text-align: center; width: 100%; box-sizing: border-box; min-height: 80px;"
+      div.freshest-charts-scroll style="max-width: 1000px; width: 100%; overflow-x: auto; overflow-y: visible; display: flex; box-sizing: border-box;"
+        div id="chart_freshest_quantity_rmax_pct"
+    javascript:
+      window.chartDataFreshestQuantityRmaxPct = #{raw (@freshest_quantity_rmax_pct_chart_data || []).to_json};
+      var chartDataFreshestQuantityRmaxPct = window.chartDataFreshestQuantityRmaxPct;
+  div style="clear: both;"
+  - if (@fr_comp_stats_table || []).any?
+    a class="button" style="background: #6699CC; float: right; margin-bottom: 15px;" target="_blank" download="Freshest_comp_stats.csv" id="download_fr_comp_stats"
+      = "Скачать CSV"
+    table class="table table-hover" style="width: 1400px; margin: 0 auto; table-layout: fixed;"
+      thead
+        tr
+          th style="text-align: center; min-width: 160px;" Редакция
+          th style="text-align: center;" Системы с нов. CPU
+          th style="text-align: center;" Системы с нов. GPU
+          th style="text-align: center;" Системы с нов. CPU или GPU
+          th style="text-align: center;" Новых моделей CPU
+          th style="text-align: center;" Новых моделей GPU
+          th style="text-align: center;" Новых моделей CPU+GPU
+          th style="text-align: center;" Кол-во новых CPU
+          th style="text-align: center;" Кол-во новых GPU
+          th style="text-align: center;" Кол-во новых CPU+GPU
+          th style="text-align: center;" % новых CPU (от всех сист.)
+          th style="text-align: center;" % новых GPU (от всех сист.)
+          th style="text-align: center;" % новых CPU + GPU (от всех сист.)
+          th style="text-align: center;" % новых CPU (от сист. с нов.)
+          th style="text-align: center;" % новых GPU (сист. с нов.)
+          th style="text-align: center;" % новых CPU + GPU (сист. с нов.)
+          th style="text-align: center;" % Rpeak/Rmax с нов. CPU
+          th style="text-align: center;" % Rpeak/Rmax с нов. GPU
+          th style="text-align: center;" % Rpeak/Rmax с нов. CPU или GPU
+      tbody
+        - (@fr_comp_stats_table || []).reverse.each do |r|
+          - list_num = r[:list_id].present? ? @num_vals.find_by(obj_id: r[:list_id]) : nil
+          - date_val = r[:list_id].present? ? @date_vals.find_by(obj_id: r[:list_id]) : nil
+          - list_year = date_val.present? ? date_val.value.split(".")[2] : nil
+          - list_month = date_val.present? ? date_val.value.split(".")[1] : nil
+          - pct_all_cpu_s = r[:pct_all_cpu].present? ? "#{r[:pct_all_cpu].to_f.round(2)}%" : "—"
+          - pct_all_gpu_s = r[:pct_all_gpu].present? ? "#{r[:pct_all_gpu].to_f.round(2)}%" : "—"
+          - pct_all_both_s = r[:pct_all_both].present? ? "#{r[:pct_all_both].to_f.round(2)}%" : "—"
+          - pct_new_cpu_s = r[:pct_new_cpu].present? ? "#{r[:pct_new_cpu].to_f.round(2)}%" : "—"
+          - pct_new_gpu_s = r[:pct_new_gpu].present? ? "#{r[:pct_new_gpu].to_f.round(2)}%" : "—"
+          - pct_new_both_s = r[:pct_new_both].present? ? "#{r[:pct_new_both].to_f.round(2)}%" : "—"
+          - rpeak_cpu_s = r[:pct_rpeak_cpu].present? ? "#{r[:pct_rpeak_cpu].to_f.round(2)}%" : "—"
+          - rmax_cpu_s = r[:pct_rmax_cpu].present? ? "#{r[:pct_rmax_cpu].to_f.round(2)}%" : "—"
+          - rpeak_gpu_s = r[:pct_rpeak_gpu].present? ? "#{r[:pct_rpeak_gpu].to_f.round(2)}%" : "—"
+          - rmax_gpu_s = r[:pct_rmax_gpu].present? ? "#{r[:pct_rmax_gpu].to_f.round(2)}%" : "—"
+          - rpeak_union_s = r[:pct_rpeak_union].present? ? "#{r[:pct_rpeak_union].to_f.round(2)}%" : "—"
+          - rmax_union_s = r[:pct_rmax_union].present? ? "#{r[:pct_rmax_union].to_f.round(2)}%" : "—"
+          tr
+            td style="text-align: center; min-width: 160px;"
+              - if list_num.present? && date_val.present?
+                = link_to "#{list_num.value}#{8209.chr}я (#{date_val.value})", get_archive_path(list_year, list_month)
+              - else
+                = r[:date_label]
+            td style="text-align: right;" = r[:systems_cpu]
+            td style="text-align: right;" = r[:systems_gpu]
+            td style="text-align: right;" = r[:systems_union]
+            td style="text-align: right;" = r[:models_cpu]
+            td style="text-align: right;" = r[:models_gpu]
+            td style="text-align: right;" = r[:models_union]
+            td style="text-align: right;" = r[:components_cpu]
+            td style="text-align: right;" = r[:components_gpu]
+            td style="text-align: right;" = r[:components_both]
+            td style="text-align: right;" = pct_all_cpu_s
+            td style="text-align: right;" = pct_all_gpu_s
+            td style="text-align: right;" = pct_all_both_s
+            td style="text-align: right;" = pct_new_cpu_s
+            td style="text-align: right;" = pct_new_gpu_s
+            td style="text-align: right;" = pct_new_both_s
+            td style="text-align: right;" = (r[:pct_rpeak_cpu].blank? && r[:pct_rmax_cpu].blank?) ? "—" : "#{rpeak_cpu_s} / #{rmax_cpu_s}"
+            td style="text-align: right;" = (r[:pct_rpeak_gpu].blank? && r[:pct_rmax_gpu].blank?) ? "—" : "#{rpeak_gpu_s} / #{rmax_gpu_s}"
+            td style="text-align: right;" = (r[:pct_rpeak_union].blank? && r[:pct_rmax_union].blank?) ? "—" : "#{rpeak_union_s} / #{rmax_union_s}"
+    javascript:
+      var csvFreshestCompStats = #{raw (@fr_comp_stats_csv_lines || []).to_json};
+    coffee:
+      csvStr = (csvFreshestCompStats || []).join("\n")
+      d3.selectAll("a").filter(() -> d3.select(this).attr("id") == "download_fr_comp_stats").attr("href", "data:text/csv;charset=utf-8," + encodeURIComponent(csvStr))
