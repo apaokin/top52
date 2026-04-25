@@ -1,8 +1,14 @@
 # encoding: UTF-8
 class Top50MachinesController < Top50BaseController
   require_dependency "stats/percent"
+  require_dependency "stats/lineage"
+  require_dependency "stats/edition_timeline"
+  require_dependency "stats/edition_label"
+  require_dependency "stats/rpeak_rmax_index"
+  require_dependency "stats/attribute_value_cache"
   require_dependency "stats/new_upg_builder"
   require_dependency "stats/list_upg_builder"
+  require_dependency "stats/sections/base_section_service"
   require_dependency "stats/sections/dispatcher"
   require_dependency "stats/sections/json_payload_builder"
 
@@ -4299,25 +4305,12 @@ class Top50MachinesController < Top50BaseController
 
   # Upgradability heatmaps only: stable Precedes map (valid relations; first edge per successor).
   def precedes_child_to_parent_map_for_lineage
-    precedes_type_id = Top50RelationType.find_by(name_eng: "Precedes")&.id
-    return {} unless precedes_type_id
-    rels = Top50Relation.where(type_id: precedes_type_id, is_valid: [1, 2]).order(:id)
-    rels.each_with_object({}) { |r, h| h[r.sec_obj_id] ||= r.prim_obj_id }
+    Stats::Lineage.precedes_child_to_parent_map
   end
 
   # Hover key: do not merge sibling upgrade branches that share one root ancestor.
   def lineage_branch_key_machine_id(machine_id, map = nil)
-    return nil if machine_id.nil?
-    map ||= precedes_child_to_parent_map_for_lineage
-    child_count_by_parent = Hash.new(0)
-    map.each_value { |parent_id| child_count_by_parent[parent_id] += 1 }
-    mid = machine_id
-    while map[mid]
-      parent = map[mid]
-      break if child_count_by_parent[parent].to_i > 1
-      mid = parent
-    end
-    mid
+    Stats::Lineage.branch_key_machine_id(machine_id, map)
   end
 
   # One rank row per machine after CSV duplicates: keep best list position (min Linpack result) per machine.

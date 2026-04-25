@@ -1,13 +1,9 @@
 module Stats
   module Sections
-    class FrCompStatsService
-      def initialize(context:)
-        @context = context
-      end
+    class FrCompStatsService < BaseSectionService
 
       def call
-        controller_class = context.class
-        context.instance_eval do
+        run_in_context do
           @freshest_cpu_quantity_data = []
           @freshest_gpu_quantity_data = []
           @announce_to_mention_cpu_data = []
@@ -30,17 +26,9 @@ module Stats
           @gpu_vendor_attrid_fq = Top50Attribute.where(name_eng: "GPU Vendor").first&.id
 
           top50_slists = get_top50_lists_sorted
-          top_50_dates = []
-          top50_slists.each do |top50_list|
-            date_val = @date_vals.find_by(obj_id: top50_list.id)
-            next unless date_val.present?
+          top_50_dates = Stats::EditionTimeline.from_lists(top50_slists: top50_slists, date_vals: @date_vals)
 
-            list_year = date_val.value.split(".")[2]
-            list_month = date_val.value.split(".")[1]
-            top_50_dates.push([list_year, list_month])
-          end
-
-          precedes_map_lineage_fq = precedes_child_to_parent_map_for_lineage
+          precedes_map_lineage_fq = Stats::Lineage.precedes_child_to_parent_map
           all_list_ids_fq = top_50_dates.map { |y, m| get_list_id_by_date(y, m) }.compact
           all_machine_ids_fq = all_list_ids_fq.any? ? Top50BenchmarkResult.where(benchmark_id: all_list_ids_fq).pluck(:machine_id).uniq : []
           machine_names_fq = machine_display_name_map_for_ids(all_machine_ids_fq)
@@ -53,23 +41,9 @@ module Stats
           end
           component_type_by_id = {}
           component_info_by_id = {}
-          attr_dict_cache = {}
-          dbval_cache = {}
-          dict_name_for = lambda do |obj_id, attr_id|
-            key = [obj_id, attr_id]
-            avd = attr_dict_cache[key]
-            if avd.nil?
-              avd = Top50AttributeValDict.find_by(obj_id: obj_id, attr_id: attr_id)
-              attr_dict_cache[key] = avd
-            end
-            avd&.top50_dictionary_elem&.name
-          end
-          dbval_for = lambda do |obj_id, attr_id|
-            key = [obj_id, attr_id]
-            dbval_cache[key] ||= Top50AttributeValDbval.find_by(obj_id: obj_id, attr_id: attr_id)
-          end
+          value_cache = Stats::AttributeValueCache.new
 
-          max_rank_limit = @max_rank || controller_class::TOP50_MAX_RANK
+          max_rank_limit = @max_rank || self.class::TOP50_MAX_RANK
           @edition_dates_freshest_quantity = Array.new(top_50_dates.size)
           top_50_dates.each_with_index do |top50_date, reverse_edition_index|
             list_year, list_month = top50_date[0], top50_date[1]
@@ -77,8 +51,7 @@ module Stats
             list_date = @date_vals.find_by(obj_id: list_id)&.value
             edition = top_50_dates.size - reverse_edition_index
             if list_date.present?
-              parts = list_date.split(".")
-              @edition_dates_freshest_quantity[edition - 1] = parts.size >= 3 ? "#{parts[1]}.#{parts[2][-2..-1]}" : list_date
+              @edition_dates_freshest_quantity[edition - 1] = Stats::EditionLabel.from_list_date(list_date)
             end
 
             list_date_parsed = nil
@@ -138,11 +111,11 @@ module Stats
                   comp_model_name = nil
                   comp_vendor_name = nil
                   if component_type == @cpu_typeid && @cpu_model_attrid_fq.present?
-                    comp_model_name = dict_name_for.call(component_id, @cpu_model_attrid_fq)
-                    comp_vendor_name = dict_name_for.call(component_id, @cpu_vendor_attrid_fq) if @cpu_vendor_attrid_fq.present?
+                    comp_model_name = value_cache.dict_name_for(component_id, @cpu_model_attrid_fq)
+                    comp_vendor_name = value_cache.dict_name_for(component_id, @cpu_vendor_attrid_fq) if @cpu_vendor_attrid_fq.present?
                   elsif component_type == @gpu_typeid && @gpu_model_attrid_fq.present?
-                    comp_model_name = dict_name_for.call(component_id, @gpu_model_attrid_fq)
-                    comp_vendor_name = dict_name_for.call(component_id, @gpu_vendor_attrid_fq) if @gpu_vendor_attrid_fq.present?
+                    comp_model_name = value_cache.dict_name_for(component_id, @gpu_model_attrid_fq)
+                    comp_vendor_name = value_cache.dict_name_for(component_id, @gpu_vendor_attrid_fq) if @gpu_vendor_attrid_fq.present?
                   end
 
                   dm = ci.date_mentioned
@@ -189,16 +162,16 @@ module Stats
               end
 
               if total_cpu_count == 0 && @cpu_qty_attrid.present?
-                cpu_qty_val = dbval_for.call(machine_id, @cpu_qty_attrid)
+                cpu_qty_val = value_cache.dbval_for(machine_id, @cpu_qty_attrid)
                 total_cpu_count = cpu_qty_val.value.to_i if cpu_qty_val.present?
               end
               if total_gpu_count == 0 && @gpu_qty_attrid.present?
-                gpu_qty_val = dbval_for.call(machine_id, @gpu_qty_attrid)
+                gpu_qty_val = value_cache.dbval_for(machine_id, @gpu_qty_attrid)
                 total_gpu_count = gpu_qty_val.value.to_i if gpu_qty_val.present?
               end
 
               machine_name_fq = machine_names_fq[machine_id] || "н/д"
-              machine_key_fq = lineage_branch_key_machine_id(machine_id, precedes_map_lineage_fq)
+              machine_key_fq = Stats::Lineage.branch_key_machine_id(machine_id, precedes_map_lineage_fq)
               @freshest_cpu_quantity_data << { edition: edition, rank: rank, lag: (freshest_cpu_count > 0 ? freshest_cpu_count : nil), total_cpu: total_cpu_count, total_gpu: total_gpu_count, machine_id: machine_id, machine_name: machine_name_fq, machine_key: machine_key_fq, component_name: cpu_new_component_name, vendor_name: cpu_new_vendor_name }
               @freshest_gpu_quantity_data << { edition: edition, rank: rank, lag: (freshest_gpu_count > 0 ? freshest_gpu_count : nil), total_cpu: total_cpu_count, total_gpu: total_gpu_count, machine_id: machine_id, machine_name: machine_name_fq, machine_key: machine_key_fq, component_name: gpu_new_component_name, vendor_name: gpu_new_vendor_name }
               show_cpu_contour = min_cpu_announce_to_mention_days.present? && min_cpu_announce_to_mention_days < 0 && cpu_contour_date_announced.present? && list_date_parsed < cpu_contour_date_announced
@@ -320,15 +293,9 @@ module Stats
           ]
 
           if @rpeak_attrid.present? && @rmax_benchid.present?
-            rmax_by_machine = Top50BenchmarkResult.where(benchmark_id: @rmax_benchid).index_by(&:machine_id)
-            rpeak_rows = ActiveRecord::Base.connection.select_all(
-              "SELECT obj_id, cast(encode(value, 'escape') as double precision) as num FROM top50_attribute_val_dbvals WHERE attr_id = #{@rpeak_attrid}"
-            )
-            rpeak_by_machine = rpeak_rows.rows.each_with_object({}) do |row, h|
-              val = (row[1] || 0).to_f
-              h[row[0].to_i] = val
-              h[row[0].to_s] = val
-            end
+            indexes = Stats::RpeakRmaxIndex.build(rpeak_attrid: @rpeak_attrid, rmax_benchid: @rmax_benchid)
+            rmax_by_machine = indexes[:rmax_by_machine]
+            rpeak_by_machine = indexes[:rpeak_by_machine]
 
             rpeak_pct_cpu = []
             rpeak_pct_gpu = []
@@ -470,8 +437,6 @@ module Stats
       end
 
       private
-
-      attr_reader :context
     end
   end
 end

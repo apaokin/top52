@@ -1,24 +1,12 @@
 module Stats
   module Sections
-    class NewUpgService
-      def initialize(context:)
-        @context = context
-      end
+    class NewUpgService < BaseSectionService
 
       def call
-        context.instance_eval do
+        run_in_context do
           @all_ratings_data = []
           top50_slists = get_top50_lists_sorted
-          top_50_dates = []
-
-          top50_slists.each do |top50_list|
-            date_val = @date_vals.find_by(obj_id: top50_list.id)
-            next unless date_val.present?
-
-            list_year = date_val.value.split(".")[2]
-            list_month = date_val.value.split(".")[1]
-            top_50_dates.push([list_year, list_month])
-          end
+          top_50_dates = Stats::EditionTimeline.from_lists(top50_slists: top50_slists, date_vals: @date_vals)
 
           top_50_dates.each do |top50_date|
             list_id = get_list_id_by_date(top50_date[0], top50_date[1])
@@ -38,15 +26,9 @@ module Stats
           end
           @ratings_summary = []
 
-          rmax_by_machine = Top50BenchmarkResult.where(benchmark_id: @rmax_benchid).index_by(&:machine_id)
-          rpeak_rows = ActiveRecord::Base.connection.select_all(
-            "SELECT obj_id, cast(encode(value, 'escape') as double precision) as num FROM top50_attribute_val_dbvals WHERE attr_id = #{@rpeak_attrid}"
-          )
-          rpeak_by_machine = rpeak_rows.rows.each_with_object({}) do |row, h|
-            val = (row[1] || 0).to_f
-            h[row[0].to_i] = val
-            h[row[0].to_s] = val
-          end
+          indexes = Stats::RpeakRmaxIndex.build(rpeak_attrid: @rpeak_attrid, rmax_benchid: @rmax_benchid)
+          rmax_by_machine = indexes[:rmax_by_machine]
+          rpeak_by_machine = indexes[:rpeak_by_machine]
 
           @all_ratings_data.pop
           @all_ratings_data.each do |rating|
@@ -134,8 +116,6 @@ module Stats
       end
 
       private
-
-      attr_reader :context
     end
   end
 end

@@ -1,13 +1,9 @@
 module Stats
   module Sections
-    class AreaUpgService
-      def initialize(context:)
-        @context = context
-      end
+    class AreaUpgService < BaseSectionService
 
       def call
-        controller_class = context.class
-        context.instance_eval do
+        run_in_context do
           @area_upg_lag_by_edition = []
           @area_upg_new_qty_by_edition = []
           @area_upg_systems_with_new_by_edition = []
@@ -20,15 +16,7 @@ module Stats
           @rel_contain_id = get_rel_contain_id
 
           top50_slists = get_top50_lists_sorted
-          top_50_dates = []
-          top50_slists.each do |top50_list|
-            date_val = @date_vals.find_by(obj_id: top50_list.id)
-            next unless date_val.present?
-
-            list_year = date_val.value.split(".")[2]
-            list_month = date_val.value.split(".")[1]
-            top_50_dates.push([list_year, list_month])
-          end
+          top_50_dates = Stats::EditionTimeline.from_lists(top50_slists: top50_slists, date_vals: @date_vals)
 
           editions_total = top_50_dates.size
           per_edition_area = Hash.new do |h, k|
@@ -41,9 +29,9 @@ module Stats
           end
           all_area_names = Set.new
           fallback_area_name = "Не указано/Прочие"
-          palette = controller_class::D3_SCHEME_PAIRED
-          target_areas = controller_class::HEATMAP_TARGET_APP_AREAS
-          max_rank_limit = @max_rank || controller_class::TOP50_MAX_RANK
+          palette = self.class::D3_SCHEME_PAIRED
+          target_areas = self.class::HEATMAP_TARGET_APP_AREAS
+          max_rank_limit = @max_rank || self.class::TOP50_MAX_RANK
           fallback_area_color = palette[target_areas.size % palette.size]
           area_colors = {}
           precedes_type_id = Top50RelationType.find_by(name_eng: "Precedes")&.id
@@ -68,10 +56,9 @@ module Stats
             list_date = @date_vals.find_by(obj_id: list_id)&.value
             edition = editions_total - reverse_edition_index
             if list_date.present?
-              parts = list_date.split(".")
-              @area_upg_edition_labels[edition - 1] = parts.size >= 3 ? "#{parts[1]}.#{parts[2][-2..-1]}" : list_date
+              @area_upg_edition_labels[edition - 1] = Stats::EditionLabel.from_list_date(list_date)
             else
-              @area_upg_edition_labels[edition - 1] = "#{list_month}.#{list_year.to_s[-2..-1]}"
+              @area_upg_edition_labels[edition - 1] = Stats::EditionLabel.from_month_year(month: list_month, year: list_year)
             end
 
             next unless list_date.present?
@@ -225,8 +212,6 @@ module Stats
       end
 
       private
-
-      attr_reader :context
     end
   end
 end

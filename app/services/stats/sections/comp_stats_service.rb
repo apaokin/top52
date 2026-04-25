@@ -1,13 +1,9 @@
 module Stats
   module Sections
-    class CompStatsService
-      def initialize(context:)
-        @context = context
-      end
+    class CompStatsService < BaseSectionService
 
       def call
-        controller_class = context.class
-        context.instance_eval do
+        run_in_context do
           @cpu_total_data = []
           @cpu_per_node_data = []
           @gpu_total_data = []
@@ -33,17 +29,9 @@ module Stats
           @rel_contain_id = get_rel_contain_id
 
           top50_slists = get_top50_lists_sorted
-          top_50_dates = []
-          top50_slists.each do |top50_list|
-            date_val = @date_vals.find_by(obj_id: top50_list.id)
-            next unless date_val.present?
+          top_50_dates = Stats::EditionTimeline.from_lists(top50_slists: top50_slists, date_vals: @date_vals)
 
-            list_year = date_val.value.split(".")[2]
-            list_month = date_val.value.split(".")[1]
-            top_50_dates.push([list_year, list_month])
-          end
-
-          precedes_map_lineage_comp = precedes_child_to_parent_map_for_lineage
+          precedes_map_lineage_comp = Stats::Lineage.precedes_child_to_parent_map
           all_list_ids_comp = top_50_dates.map { |y, m| get_list_id_by_date(y, m) }.compact
           comp_machine_ids = all_list_ids_comp.any? ? Top50BenchmarkResult.where(benchmark_id: all_list_ids_comp).pluck(:machine_id).uniq : []
           machine_names_comp = machine_display_name_map_for_ids(comp_machine_ids)
@@ -56,21 +44,16 @@ module Stats
           end
           component_type_by_id = {}
           component_info_by_id = {}
-          dbval_cache = {}
-          dbval_for = lambda do |obj_id, attr_id|
-            key = [obj_id, attr_id]
-            dbval_cache[key] ||= Top50AttributeValDbval.find_by(obj_id: obj_id, attr_id: attr_id)
-          end
+          value_cache = Stats::AttributeValueCache.new
 
-          max_rank_limit = @max_rank || controller_class::TOP50_MAX_RANK
+          max_rank_limit = @max_rank || self.class::TOP50_MAX_RANK
           @edition_dates_component = Array.new(top_50_dates.size)
           top_50_dates.each_with_index do |top50_date, reverse_edition_index|
             list_id = get_list_id_by_date(top50_date[0], top50_date[1])
             list_date = @date_vals.find_by(obj_id: list_id)&.value
             edition = top_50_dates.size - reverse_edition_index
             if list_date.present?
-              parts = list_date.split(".")
-              @edition_dates_component[edition - 1] = parts.size >= 3 ? "#{parts[1]}.#{parts[2][-2..-1]}" : list_date
+              @edition_dates_component[edition - 1] = Stats::EditionLabel.from_list_date(list_date)
             end
 
             ranked_machine_ids_for_list(list_id, max_rank_limit).each_with_index do |machine_id, rank_index|
@@ -105,7 +88,7 @@ module Stats
 
                   if component_type == @cpu_typeid
                     total_cpus += component_qty
-                    cores_val = dbval_for.call(component_id, @core_qty_attrid)
+                    cores_val = value_cache.dbval_for(component_id, @core_qty_attrid)
                     if cores_val&.value.present?
                       cores_per_cpu = cores_val.value.to_i
                       total_cores += component_qty * cores_per_cpu if cores_per_cpu > 0
@@ -136,14 +119,14 @@ module Stats
                   elsif component_type == @gpu_typeid
                     total_gpus += component_qty
                     if @core_qty_attrid.present?
-                      cores_val = dbval_for.call(component_id, @core_qty_attrid)
+                      cores_val = value_cache.dbval_for(component_id, @core_qty_attrid)
                       if cores_val&.value.present?
                         c = cores_val.value.to_i
                         total_gpu_cores += component_qty * c if c > 0
                       end
                     end
                     if @microcore_qty_attrid.present?
-                      microcores_val = dbval_for.call(component_id, @microcore_qty_attrid)
+                      microcores_val = value_cache.dbval_for(component_id, @microcore_qty_attrid)
                       if microcores_val&.value.present?
                         mc = microcores_val.value.to_i
                         total_gpu_microcores_only += component_qty * mc if mc > 0
@@ -170,15 +153,15 @@ module Stats
               end
 
               if total_cpus == 0 && @cpu_qty_attrid_comp.present?
-                cpu_qty_val = dbval_for.call(machine_id, @cpu_qty_attrid_comp)
+                cpu_qty_val = value_cache.dbval_for(machine_id, @cpu_qty_attrid_comp)
                 total_cpus = cpu_qty_val.value.to_i if cpu_qty_val.present?
               end
               if total_gpus == 0 && @gpu_qty_attrid_comp.present?
-                gpu_qty_val = dbval_for.call(machine_id, @gpu_qty_attrid_comp)
+                gpu_qty_val = value_cache.dbval_for(machine_id, @gpu_qty_attrid_comp)
                 total_gpus = gpu_qty_val.value.to_i if gpu_qty_val.present?
               end
               if total_cores == 0 && @core_qty_attrid.present?
-                core_qty_val = dbval_for.call(machine_id, @core_qty_attrid)
+                core_qty_val = value_cache.dbval_for(machine_id, @core_qty_attrid)
                 total_cores = core_qty_val.value.to_i if core_qty_val.present?
               end
 
@@ -194,7 +177,7 @@ module Stats
               freshest_total_cpu_only = (min_lag_cpu_only != Float::INFINITY && freshest_cpu_only_count > 0) ? freshest_cpu_only_count : nil
 
               machine_name_comp = machine_names_comp[machine_id] || "н/д"
-              machine_key_comp = lineage_branch_key_machine_id(machine_id, precedes_map_lineage_comp)
+              machine_key_comp = Stats::Lineage.branch_key_machine_id(machine_id, precedes_map_lineage_comp)
               mk = { machine_id: machine_id, machine_name: machine_name_comp, machine_key: machine_key_comp }
               @cpu_total_data << { edition: edition, rank: rank, lag: (total_cpus > 0 ? total_cpus : nil) }.merge(mk)
               @cpu_per_node_data << { edition: edition, rank: rank, lag: cpu_per_node }.merge(mk)
@@ -231,8 +214,6 @@ module Stats
       end
 
       private
-
-      attr_reader :context
     end
   end
 end

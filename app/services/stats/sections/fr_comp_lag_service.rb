@@ -1,12 +1,9 @@
 module Stats
   module Sections
-    class FrCompLagService
-      def initialize(context:)
-        @context = context
-      end
+    class FrCompLagService < BaseSectionService
 
       def call
-        context.instance_eval do
+        run_in_context do
           calc_machine_attrs
           @cpu_model_attrid_lag = Top50Attribute.where(name_eng: "CPU model").first&.id
           @gpu_model_attrid_lag = Top50Attribute.where(name_eng: "GPU model").first&.id
@@ -14,18 +11,9 @@ module Stats
           @gpu_vendor_attrid_lag = Top50Attribute.where(name_eng: "GPU Vendor").first&.id
           @all_ratings_data = []
           top50_slists = get_top50_lists_sorted
-          top_50_dates = []
+          top_50_dates = Stats::EditionTimeline.from_lists(top50_slists: top50_slists, date_vals: @date_vals)
 
-          precedes_map_lineage = precedes_child_to_parent_map_for_lineage
-
-          top50_slists.each do |top50_list|
-            date_val = @date_vals.find_by(obj_id: top50_list.id)
-            next unless date_val.present?
-
-            list_year = date_val.value.split(".")[2]
-            list_month = date_val.value.split(".")[1]
-            top_50_dates.push([list_year, list_month])
-          end
+          precedes_map_lineage = Stats::Lineage.precedes_child_to_parent_map
 
           all_list_ids_lag = top_50_dates.map { |y, m| get_list_id_by_date(y, m) }.compact
           all_machine_ids_lag = all_list_ids_lag.any? ? Top50BenchmarkResult.where(benchmark_id: all_list_ids_lag).pluck(:machine_id).uniq : []
@@ -54,24 +42,14 @@ module Stats
           @edition_dates_lag = Array.new(@all_ratings_data.size)
 
           component_info_cache = {}
-          attr_dict_cache = {}
-          dict_name_for = lambda do |obj_id, attr_id|
-            key = [obj_id, attr_id]
-            avd = attr_dict_cache[key]
-            if avd.nil?
-              avd = Top50AttributeValDict.find_by(obj_id: obj_id, attr_id: attr_id)
-              attr_dict_cache[key] = avd
-            end
-            avd&.top50_dictionary_elem&.name
-          end
+          value_cache = Stats::AttributeValueCache.new
 
           @all_ratings_data.each_with_index do |rating_data, reverse_edition_index|
             edition = @all_ratings_data.size - reverse_edition_index
             machines = rating_data[:machines]
             list_date = rating_data[:list_date]
             if list_date.present?
-              parts = list_date.split(".")
-              @edition_dates_lag[edition - 1] = parts.size >= 3 ? "#{parts[1]}.#{parts[2][-2..-1]}" : list_date
+              @edition_dates_lag[edition - 1] = Stats::EditionLabel.from_list_date(list_date)
             end
             next unless list_date.present?
 
@@ -108,8 +86,8 @@ module Stats
                       newest_cpu_diff = diff
                       freshest_cpu_count = cpu.cnt
                       cpu_announced_after_mention = (da > dm)
-                      cpu_component_name = dict_name_for.call(cpu.id, @cpu_model_attrid_lag) if @cpu_model_attrid_lag.present?
-                      cpu_vendor_name = dict_name_for.call(cpu.id, @cpu_vendor_attrid_lag) if @cpu_vendor_attrid_lag.present?
+                      cpu_component_name = value_cache.dict_name_for(cpu.id, @cpu_model_attrid_lag) if @cpu_model_attrid_lag.present?
+                      cpu_vendor_name = value_cache.dict_name_for(cpu.id, @cpu_vendor_attrid_lag) if @cpu_vendor_attrid_lag.present?
                     elsif diff == newest_cpu_diff
                       freshest_cpu_count += cpu.cnt
                     end
@@ -130,8 +108,8 @@ module Stats
                       newest_gpu_diff = diff
                       freshest_gpu_count = gpu.cnt
                       gpu_announced_after_mention = (da > dm)
-                      gpu_component_name = dict_name_for.call(gpu.id, @gpu_model_attrid_lag) if @gpu_model_attrid_lag.present?
-                      gpu_vendor_name = dict_name_for.call(gpu.id, @gpu_vendor_attrid_lag) if @gpu_vendor_attrid_lag.present?
+                      gpu_component_name = value_cache.dict_name_for(gpu.id, @gpu_model_attrid_lag) if @gpu_model_attrid_lag.present?
+                      gpu_vendor_name = value_cache.dict_name_for(gpu.id, @gpu_vendor_attrid_lag) if @gpu_vendor_attrid_lag.present?
                     elsif diff == newest_gpu_diff
                       freshest_gpu_count += gpu.cnt
                     end
@@ -186,7 +164,7 @@ module Stats
 
               machine_id = machine["id"]
               machine_name = machine_display_names_lag[machine_id] || "н/д"
-              machine_key = lineage_branch_key_machine_id(machine_id, precedes_map_lineage)
+              machine_key = Stats::Lineage.branch_key_machine_id(machine_id, precedes_map_lineage)
               @cpu_data << { edition: edition, rank: rank_index + 1, lag: newest_cpu_diff, freshest_count: freshest_cpu_count, machine_id: machine_id, machine_name: machine_name, machine_key: machine_key, component_name: cpu_component_name, vendor_name: cpu_vendor_name, show_before_announce_contour: show_cpu_contour_lag }
               @gpu_data << { edition: edition, rank: rank_index + 1, lag: newest_gpu_diff, freshest_count: freshest_gpu_count, machine_id: machine_id, machine_name: machine_name, machine_key: machine_key, component_name: gpu_component_name, vendor_name: gpu_vendor_name, show_before_announce_contour: show_gpu_contour_lag }
               @combined_data << { edition: edition, rank: rank_index + 1, lag: combined_diff, freshest_count: freshest_combined_count, machine_id: machine_id, machine_name: machine_name, machine_key: machine_key, component_name: combined_component_name, vendor_name: combined_vendor_name, show_before_announce_contour: show_combined_contour_lag }
@@ -200,8 +178,6 @@ module Stats
       end
 
       private
-
-      attr_reader :context
     end
   end
 end
