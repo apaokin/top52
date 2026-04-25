@@ -1152,10 +1152,50 @@ escapeCsvField = (v) ->
   s = String(v)
   if /[,"\n\r]/.test(s) then '"' + s.replace(/"/g, '""') + '"' else s
 
+fetchStatsDatasets = (url, datasets, storeObj, done) ->
+  return done?() unless url and datasets and datasets.length > 0
+  storeObj ?= {}
+  missing = datasets.filter((key) -> !storeObj[key]?)
+  return done?() if missing.length == 0
+  window.__statsDatasetPromises ?= {}
+  cacheKey = url + "::" + missing.slice().sort().join(",")
+  promise = window.__statsDatasetPromises[cacheKey]
+  unless promise?
+    sep = if url.indexOf("?") >= 0 then "&" else "?"
+    query = "datasets=" + encodeURIComponent(missing.join(","))
+    promise = fetch(url + sep + query, { headers: { "Accept": "application/json" } })
+      .then((resp) ->
+        throw new Error("Failed to load stats datasets") unless resp.ok
+        resp.json()
+      )
+      .then((json) ->
+        unresolvedKeys = []
+        missing.forEach((key) ->
+          hasKey = Object.prototype.hasOwnProperty.call(json, key)
+          if hasKey
+            storeObj[key] = if json[key]? then json[key] else []
+          else
+            storeObj[key] = []
+            unresolvedKeys.push(key)
+        )
+        if unresolvedKeys.length > 0
+          window.__statsDatasetMissingKeyWarnings ?= {}
+          warnKey = url + "::" + unresolvedKeys.slice().sort().join(",")
+          unless window.__statsDatasetMissingKeyWarnings[warnKey]
+            console.warn("stats datasets missing in payload", unresolvedKeys, url)
+            window.__statsDatasetMissingKeyWarnings[warnKey] = true
+      )
+    window.__statsDatasetPromises[cacheKey] = promise
+  promise.then(() -> done?()).catch((err) ->
+    console.error("stats dataset load failed", err)
+    done?()
+  )
+
 runStatsWhenReady ->
   scaleSelector = document.getElementById("scale-selector")
   if scaleSelector and typeof cpuDataLinear != "undefined"
-    dataSets = [cpuDataLinear, gpuDataLinear, combinedDataLinear]
+    lagDataKeys = ["cpu_data", "gpu_data", "combined_data"]
+    lagStore = window.frCompLagDataByKey or {}
     containerIds = ["cpu_heatmap", "gpu_heatmap", "combined_heatmap"]
     downloadIds = ["download_cpu_lag", "download_gpu_lag", "download_combined_lag"]
     downloadFilenames = ["CPU_lag.csv", "GPU_lag.csv", "Combined_lag.csv"]
@@ -1186,20 +1226,23 @@ runStatsWhenReady ->
       applyGraphVisibility(lagGraphConfigs, selected.key)
       i = selected.config?.index
       return unless i?
-      fullData = dataSets[i] or []
-      data = fullData.filter((d) ->
-        ed = d.edition
-        rk = d.rank
-        ed? and rk? and ed >= edFrom and ed <= edTo and rk >= rkFrom and rk <= rkTo
+      key = lagDataKeys[i]
+      fetchStatsDatasets(window.frCompLagPayloadUrl, [key], lagStore, ->
+        fullData = lagStore[key] or []
+        data = fullData.filter((d) ->
+          ed = d.edition
+          rk = d.rank
+          ed? and rk? and ed >= edFrom and ed <= edTo and rk >= rkFrom and rk <= rkTo
+        )
+        drawFreshestLagHeatmap(data, containerIds[i], titles[i], scaleMethod, gradientIds[i])
+        if downloadIds and downloadIds[i]
+          csv = buildLagCsv(data, inQuarters)
+          setCsvDownloadLink(downloadIds[i], csv)
+          if downloadFilenames and downloadFilenames[i]
+            base = downloadFilenames[i].replace(/\.csv$/, "")
+            ext = if inQuarters then "_quarters.csv" else ".csv"
+            d3.select("#" + downloadIds[i]).attr("download", base + ext)
       )
-      drawFreshestLagHeatmap(data, containerIds[i], titles[i], scaleMethod, gradientIds[i])
-      if downloadIds and downloadIds[i]
-        csv = buildLagCsv(data, inQuarters)
-        setCsvDownloadLink(downloadIds[i], csv)
-        if downloadFilenames and downloadFilenames[i]
-          base = downloadFilenames[i].replace(/\.csv$/, "")
-          ext = if inQuarters then "_quarters.csv" else ".csv"
-          d3.select("#" + downloadIds[i]).attr("download", base + ext)
 
     updateLagHeatmaps()
     scaleSelector.addEventListener("change", updateLagHeatmaps)
@@ -1215,11 +1258,8 @@ runStatsWhenReady ->
     if lagGraphSelector then lagGraphSelector.addEventListener("change", updateLagHeatmaps)
 
   if typeof ramPerCoreData != "undefined"
-    ramDataSets = [
-      ramPerCoreData || [],
-      (if typeof ramPerCpuData != "undefined" then ramPerCpuData else []),
-      (if typeof ramPerNodeData != "undefined" then ramPerNodeData else [])
-    ]
+    ramStore = window.ramStatsDataByKey or {}
+    ramDataKeys = ["ram_per_core_data", "ram_per_cpu_data", "ram_per_node_data"]
     ramContainerIds = ["ram_per_core_heatmap", "ram_per_cpu_heatmap", "ram_per_node_heatmap"]
     ramDownloadIds = ["download_ram_per_core", "download_ram_per_cpu", "download_ram_per_node"]
     ramDownloadFilenames = ["RAM_per_core.csv", "RAM_per_cpu.csv", "RAM_per_node.csv"]
@@ -1238,16 +1278,24 @@ runStatsWhenReady ->
     updateRamAll = () ->
       showHybrid = getRamShowHybrid()
       ranges = getRamRanges()
-      baseSets = if showHybrid
-        ramDataSets
-      else
-        ramDataSets.map((data) -> (data or []).filter((d) -> !d.has_gpu))
-      filtered = baseSets.map((data) -> filterByEditionAndRankRange(data, ranges))
       selected = resolveGraphChoice("ram-graph-selector", ramGraphConfigs, "node")
       applyGraphVisibility(ramGraphConfigs, selected.key)
       i = selected.config?.index
       return unless i?
-      updateRamHeatmaps([filtered[i]], [ramContainerIds[i]], [ramTitles[i]], [ramDownloadIds[i]], [ramDownloadFilenames[i]], getRamScale())
+      key = ramDataKeys[i]
+      fetchStatsDatasets(window.ramStatsPayloadUrl, [key], ramStore, ->
+        ramDataSets = [
+          ramStore.ram_per_core_data or [],
+          ramStore.ram_per_cpu_data or [],
+          ramStore.ram_per_node_data or []
+        ]
+        baseSets = if showHybrid
+          ramDataSets
+        else
+          ramDataSets.map((data) -> (data or []).filter((d) -> !d.has_gpu))
+        filtered = baseSets.map((data) -> filterByEditionAndRankRange(data, ranges))
+        updateRamHeatmaps([filtered[i]], [ramContainerIds[i]], [ramTitles[i]], [ramDownloadIds[i]], [ramDownloadFilenames[i]], getRamScale())
+      )
     updateRamAll()
     ramScaleEl = document.getElementById("scale-selector-ram")
     if ramScaleEl
@@ -1261,6 +1309,10 @@ runStatsWhenReady ->
       ramGraphEl.addEventListener("change", updateRamAll)
 
   if typeof cpuTotalData != "undefined"
+    componentStore = window.compStatsDataByKey or {}
+    componentDataKeys =
+      total: ["cpu_total_data", "gpu_total_data", "freshest_total_data", "freshest_total_data_cpu_only", "cores_total_data", "gpu_cores_total_data", "gpu_microcores_only_total_data"]
+      per_node: ["cpu_per_node_data", "gpu_per_node_data", "freshest_per_node_data", "freshest_per_node_data_cpu_only", "cores_per_node_data", "gpu_cores_per_node_data", "gpu_microcores_only_per_node_data"]
     getComponentMetric = () -> valueOr("metric-selector-component", "total")
     getComponentScale = () -> valueOr("scale-selector-component", "quantile")
     getFreshestIncludeGpu = () ->
@@ -1282,38 +1334,42 @@ runStatsWhenReady ->
       scaleMethod = getComponentScale()
       includeGpu = getFreshestIncludeGpu()
       ranges = getComponentRanges()
-      freshestTotal = if includeGpu then (freshestTotalData || []) else (freshestTotalDataCpuOnly || [])
-      freshestPerNode = if includeGpu then (freshestPerNodeData || []) else (freshestPerNodeDataCpuOnly || [])
-      if metric == "total"
-        baseSets = [
-          cpuTotalData || [],
-          gpuTotalData || [],
-          freshestTotal,
-          coresTotalData || [],
-          gpuCoresTotalData || [],
-          gpuMicrocoresOnlyTotalData || []
-        ]
-        componentTitles = ["Количество CPU: всего", "Количество GPU: всего", "Количество самых свежих компонент: всего", "Количество CPU ядер: всего", "Количество GPU ядер: всего", "Количество GPU микроядер: всего"]
-        componentDownloadFilenames = ["CPU_total.csv", "GPU_total.csv", "Freshest_total.csv", "Cores_total.csv", "GPU_cores_total.csv", "GPU_microcores_total.csv"]
-      else
-        baseSets = [
-          cpuPerNodeData || [],
-          gpuPerNodeData || [],
-          freshestPerNode,
-          coresPerNodeData || [],
-          gpuCoresPerNodeData || [],
-          gpuMicrocoresOnlyPerNodeData || []
-        ]
-        componentTitles = ["Количество CPU: на узел", "Количество GPU: на узел", "Количество самых свежих компонент: на узел", "Количество CPU ядер: на узел", "Количество GPU ядер: на узел", "Количество GPU микроядер: на узел"]
-        componentDownloadFilenames = ["CPU_per_node.csv", "GPU_per_node.csv", "Freshest_per_node.csv", "Cores_per_node.csv", "GPU_cores_per_node.csv", "GPU_microcores_per_node.csv"]
-      componentDataSets = baseSets.map((data) -> filterByEditionAndRankRange(data, ranges))
-      componentContainerIds = ["cpu_component_heatmap", "gpu_component_heatmap", "freshest_component_heatmap", "cores_component_heatmap", "gpu_cores_component_heatmap", "gpu_microcores_only_component_heatmap"]
-      componentDownloadIds = ["download_cpu_component", "download_gpu_component", "download_freshest_component", "download_cores_component", "download_gpu_cores_component", "download_gpu_microcores_only_component"]
-      selected = resolveGraphChoice("component-graph-selector", componentGraphConfigs, "cpu")
-      applyGraphVisibility(componentGraphConfigs, selected.key)
-      i = selected.config?.index
-      return unless i?
-      updateComponentHeatmaps([componentDataSets[i]], [componentContainerIds[i]], [componentTitles[i]], [componentDownloadIds[i]], [componentDownloadFilenames[i]], scaleMethod)
+      datasetGroup = if metric == "total" then "total" else "per_node"
+      requiredKeys = componentDataKeys[datasetGroup] or []
+      fetchStatsDatasets(window.compStatsPayloadUrl, requiredKeys, componentStore, ->
+        freshestTotal = if includeGpu then (componentStore.freshest_total_data or []) else (componentStore.freshest_total_data_cpu_only or [])
+        freshestPerNode = if includeGpu then (componentStore.freshest_per_node_data or []) else (componentStore.freshest_per_node_data_cpu_only or [])
+        if metric == "total"
+          baseSets = [
+            componentStore.cpu_total_data or [],
+            componentStore.gpu_total_data or [],
+            freshestTotal,
+            componentStore.cores_total_data or [],
+            componentStore.gpu_cores_total_data or [],
+            componentStore.gpu_microcores_only_total_data or []
+          ]
+          componentTitles = ["Количество CPU: всего", "Количество GPU: всего", "Количество самых свежих компонент: всего", "Количество CPU ядер: всего", "Количество GPU ядер: всего", "Количество GPU микроядер: всего"]
+          componentDownloadFilenames = ["CPU_total.csv", "GPU_total.csv", "Freshest_total.csv", "Cores_total.csv", "GPU_cores_total.csv", "GPU_microcores_total.csv"]
+        else
+          baseSets = [
+            componentStore.cpu_per_node_data or [],
+            componentStore.gpu_per_node_data or [],
+            freshestPerNode,
+            componentStore.cores_per_node_data or [],
+            componentStore.gpu_cores_per_node_data or [],
+            componentStore.gpu_microcores_only_per_node_data or []
+          ]
+          componentTitles = ["Количество CPU: на узел", "Количество GPU: на узел", "Количество самых свежих компонент: на узел", "Количество CPU ядер: на узел", "Количество GPU ядер: на узел", "Количество GPU микроядер: на узел"]
+          componentDownloadFilenames = ["CPU_per_node.csv", "GPU_per_node.csv", "Freshest_per_node.csv", "Cores_per_node.csv", "GPU_cores_per_node.csv", "GPU_microcores_per_node.csv"]
+        componentDataSets = baseSets.map((data) -> filterByEditionAndRankRange(data, ranges))
+        componentContainerIds = ["cpu_component_heatmap", "gpu_component_heatmap", "freshest_component_heatmap", "cores_component_heatmap", "gpu_cores_component_heatmap", "gpu_microcores_only_component_heatmap"]
+        componentDownloadIds = ["download_cpu_component", "download_gpu_component", "download_freshest_component", "download_cores_component", "download_gpu_cores_component", "download_gpu_microcores_only_component"]
+        selected = resolveGraphChoice("component-graph-selector", componentGraphConfigs, "cpu")
+        applyGraphVisibility(componentGraphConfigs, selected.key)
+        i = selected.config?.index
+        return unless i?
+        updateComponentHeatmaps([componentDataSets[i]], [componentContainerIds[i]], [componentTitles[i]], [componentDownloadIds[i]], [componentDownloadFilenames[i]], scaleMethod)
+      )
     updateComponentAll()
     componentMetricEl = document.getElementById("metric-selector-component")
     if componentMetricEl
@@ -1331,6 +1387,7 @@ runStatsWhenReady ->
 
   # ---------- fr_comp_stats: heatmaps — same pattern as freshest_components_lag (option constraining + filter + redraw) ----------
   if typeof freshestCpuQuantityData != "undefined"
+    freshestStore = window.frCompStatsDataByKey or {}
     freshestHeatmapGraphConfigs =
       cpu_quantity: { wrapperId: "freshest-heatmap-graph-cpu-quantity" }
       gpu_quantity: { wrapperId: "freshest-heatmap-graph-gpu-quantity" }
@@ -1360,19 +1417,29 @@ runStatsWhenReady ->
         showAnnounceControls = (selected.key == "announce_cpu" or selected.key == "announce_gpu")
         announceControls.style.display = if showAnnounceControls then "" else "none"
       scaleMethod = getFreshestQuantityScale()
-      if selected.key == "cpu_quantity"
-        drawComponentHeatmap(dataCpu, "freshest_cpu_quantity_heatmap", "Самые свежие CPU: количество", scaleMethod)
-        if document.getElementById("download_freshest_cpu_quantity")
-          csvCpu = buildComponentCsv(dataCpu)
-          setCsvDownloadLink("download_freshest_cpu_quantity", csvCpu)
+      requiredKeys = if selected.key == "cpu_quantity"
+        ["freshest_cpu_quantity_data"]
       else if selected.key == "gpu_quantity"
-        drawComponentHeatmap(dataGpu, "freshest_gpu_quantity_heatmap", "Самые свежие GPU: количество", scaleMethod)
-        if document.getElementById("download_freshest_gpu_quantity")
-          csvGpu = buildComponentCsv(dataGpu)
-          setCsvDownloadLink("download_freshest_gpu_quantity", csvGpu)
-      if typeof announceToMentionCpuData != "undefined"
-        dataAnnounceCpu = filterByEditionAndRankRange(announceToMentionCpuData or [], ranges)
-        dataAnnounceGpu = filterByEditionAndRankRange(announceToMentionGpuData or [], ranges)
+        ["freshest_gpu_quantity_data"]
+      else if selected.key == "announce_cpu"
+        ["announce_to_mention_cpu_data"]
+      else
+        ["announce_to_mention_gpu_data"]
+      fetchStatsDatasets(window.frCompStatsPayloadUrl, requiredKeys, freshestStore, ->
+        dataCpu = filterByEditionAndRankRange(freshestStore.freshest_cpu_quantity_data or [], ranges)
+        dataGpu = filterByEditionAndRankRange(freshestStore.freshest_gpu_quantity_data or [], ranges)
+        if selected.key == "cpu_quantity"
+          drawComponentHeatmap(dataCpu, "freshest_cpu_quantity_heatmap", "Самые свежие CPU: количество", scaleMethod)
+          if document.getElementById("download_freshest_cpu_quantity")
+            csvCpu = buildComponentCsv(dataCpu)
+            setCsvDownloadLink("download_freshest_cpu_quantity", csvCpu)
+        else if selected.key == "gpu_quantity"
+          drawComponentHeatmap(dataGpu, "freshest_gpu_quantity_heatmap", "Самые свежие GPU: количество", scaleMethod)
+          if document.getElementById("download_freshest_gpu_quantity")
+            csvGpu = buildComponentCsv(dataGpu)
+            setCsvDownloadLink("download_freshest_gpu_quantity", csvGpu)
+        dataAnnounceCpu = filterByEditionAndRankRange(freshestStore.announce_to_mention_cpu_data or [], ranges)
+        dataAnnounceGpu = filterByEditionAndRankRange(freshestStore.announce_to_mention_gpu_data or [], ranges)
         announceUnit = valueOr("announce-to-mention-unit", "days")
         if selected.key == "announce_cpu"
           drawAnnounceToMentionHeatmap(dataAnnounceCpu, "announce_to_mention_cpu_heatmap", "CPU: разница между анонсом и первым появлением в рейтинге", "announce-to-mention-legend-cpu", announceUnit)
@@ -1385,6 +1452,7 @@ runStatsWhenReady ->
         if selected.key == "announce_gpu" and document.getElementById("download_announce_to_mention_gpu")
           csvGpu = if inQuarters then buildLagCsv(dataAnnounceGpu, true) else buildComponentCsv(dataAnnounceGpu)
           setCsvDownloadLink("download_announce_to_mention_gpu", csvGpu, if inQuarters then "GPU_announce_to_mention_quarters.csv" else "GPU_announce_to_mention_days.csv")
+      )
     updateFreshestQuantityHeatmaps()
     scaleFreshestEl = document.getElementById("scale-selector-freshest-quantity")
     if scaleFreshestEl
@@ -1486,10 +1554,18 @@ runStatsWhenReady ->
   initFreshestBarCharts()
 
   initAreaAndListUpgStats = ->
-    lagByEdition = window.componentsByAreaLagByEdition
-    qtyByEdition = window.componentsByAreaNewQtyByEdition
-    systemsWithNewByEdition = window.componentsByAreaSystemsWithNewByEdition
-    newUpgradedByEdition = window.componentsByAreaNewUpgradedByEdition
+    areaUpgStore = window.areaUpgDataByKey or {}
+    areaUpgPayloadUrl = window.areaUpgPayloadUrl
+    lagByEdition = []
+    qtyByEdition = []
+    systemsWithNewByEdition = []
+    newUpgradedByEdition = []
+    syncAreaUpgDataFromStore = () ->
+      lagByEdition = areaUpgStore.area_upg_lag_by_edition or window.componentsByAreaLagByEdition or []
+      qtyByEdition = areaUpgStore.area_upg_new_qty_by_edition or window.componentsByAreaNewQtyByEdition or []
+      systemsWithNewByEdition = areaUpgStore.area_upg_systems_with_new_by_edition or window.componentsByAreaSystemsWithNewByEdition or []
+      newUpgradedByEdition = areaUpgStore.area_upg_new_upgraded_by_edition or window.componentsByAreaNewUpgradedByEdition or []
+    syncAreaUpgDataFromStore()
     return unless Array.isArray(lagByEdition) and Array.isArray(qtyByEdition) and lagByEdition.length > 0
     prevBtn = document.getElementById("components-by-area-prev")
     nextBtn = document.getElementById("components-by-area-next")
@@ -1514,6 +1590,23 @@ runStatsWhenReady ->
     maxIdx = lagByEdition.length - 1
     tableMetric = "lag_avg"
     tableShowShare = false
+    metricToDatasetKey =
+      lag_avg: "area_upg_lag_by_edition"
+      new_components_qty: "area_upg_new_qty_by_edition"
+      systems_with_new: "area_upg_systems_with_new_by_edition"
+      new_systems: "area_upg_new_upgraded_by_edition"
+      upgraded_systems: "area_upg_new_upgraded_by_edition"
+    ensureAreaUpgDataset = (metric, done) ->
+      key = metricToDatasetKey[metric]
+      return done?() unless key
+      hasLoaded = Object.prototype.hasOwnProperty.call(areaUpgStore, key)
+      if hasLoaded and Array.isArray(areaUpgStore[key])
+        return done?()
+      return done?() unless areaUpgPayloadUrl
+      fetchStatsDatasets(areaUpgPayloadUrl, [key], areaUpgStore, ->
+        syncAreaUpgDataFromStore()
+        done?()
+      )
     metricSupportsShare = (m) -> ["systems_with_new", "new_systems", "upgraded_systems"].indexOf(m) >= 0
     lagValueWithUnit = (days, unit) ->
       raw = +(days or 0)
@@ -1584,6 +1677,7 @@ runStatsWhenReady ->
         metricValueFromPoint(m, p)
     renderComponentsByAreaTable = () ->
       return unless tableBody and tableHead
+      areaColumns = collectAreas()
       src = metricSource(tableMetric) or []
       src = src.slice().sort((a, b) -> (+(b?.edition or 0)) - (+(a?.edition or 0)))
       headHtml = "<tr><th>Редакция</th>"
@@ -1642,6 +1736,16 @@ runStatsWhenReady ->
         tableBtnShare.style.opacity = if metricSupportsShare(tableMetric) then (if shareEnabled then "1" else "0.75") else "0.45"
         tableBtnShare.style.pointerEvents = if metricSupportsShare(tableMetric) then "" else "none"
     redrawComponentsByArea = () ->
+      syncAreaUpgDataFromStore()
+      currentMetric = metricSel?.value or "lag_avg"
+      ensureAreaUpgDataset(currentMetric, ->
+        syncAreaUpgDataFromStore()
+        maxIdx = Math.max(0, lagByEdition.length - 1)
+        idx = Math.max(0, Math.min(idx, maxIdx))
+        redrawComponentsByAreaCore()
+      )
+
+    redrawComponentsByAreaCore = () ->
       idx = Math.max(0, Math.min(idx, maxIdx))
       lagItem = lagByEdition[idx] or {}
       qtyItem = qtyByEdition[idx] or {}
@@ -1689,6 +1793,13 @@ runStatsWhenReady ->
       d3.select(prevBtn).select("polygon").attr("fill", prevColor)
       d3.select(nextBtn).select("polygon").attr("fill", nextColor)
 
+    refreshAreaUpgTableMetric = () ->
+      ensureAreaUpgDataset(tableMetric, ->
+        syncAreaUpgDataFromStore()
+        renderComponentsByAreaTable()
+        setActiveTableBtn()
+      )
+
     prevBtn.addEventListener("click", () ->
       return if idx <= 0
       idx -= 1
@@ -1704,90 +1815,118 @@ runStatsWhenReady ->
     if metricSel
       metricSel.addEventListener("change", redrawComponentsByArea)
     if tableBtnLag
-      tableBtnLag.addEventListener("click", (e) -> e.preventDefault(); tableMetric = "lag_avg"; tableShowShare = false unless metricSupportsShare(tableMetric); renderComponentsByAreaTable(); setActiveTableBtn())
+      tableBtnLag.addEventListener("click", (e) -> e.preventDefault(); tableMetric = "lag_avg"; tableShowShare = false unless metricSupportsShare(tableMetric); refreshAreaUpgTableMetric())
     if tableBtnNewComponents
-      tableBtnNewComponents.addEventListener("click", (e) -> e.preventDefault(); tableMetric = "new_components_qty"; tableShowShare = false unless metricSupportsShare(tableMetric); renderComponentsByAreaTable(); setActiveTableBtn())
+      tableBtnNewComponents.addEventListener("click", (e) -> e.preventDefault(); tableMetric = "new_components_qty"; tableShowShare = false unless metricSupportsShare(tableMetric); refreshAreaUpgTableMetric())
     if tableBtnSystemsNewComp
-      tableBtnSystemsNewComp.addEventListener("click", (e) -> e.preventDefault(); tableMetric = "systems_with_new"; renderComponentsByAreaTable(); setActiveTableBtn())
+      tableBtnSystemsNewComp.addEventListener("click", (e) -> e.preventDefault(); tableMetric = "systems_with_new"; refreshAreaUpgTableMetric())
     if tableBtnNewSystems
-      tableBtnNewSystems.addEventListener("click", (e) -> e.preventDefault(); tableMetric = "new_systems"; renderComponentsByAreaTable(); setActiveTableBtn())
+      tableBtnNewSystems.addEventListener("click", (e) -> e.preventDefault(); tableMetric = "new_systems"; refreshAreaUpgTableMetric())
     if tableBtnUpgradedSystems
-      tableBtnUpgradedSystems.addEventListener("click", (e) -> e.preventDefault(); tableMetric = "upgraded_systems"; renderComponentsByAreaTable(); setActiveTableBtn())
+      tableBtnUpgradedSystems.addEventListener("click", (e) -> e.preventDefault(); tableMetric = "upgraded_systems"; refreshAreaUpgTableMetric())
     if tableBtnShare
       tableBtnShare.addEventListener("click", (e) ->
         e.preventDefault()
         return unless metricSupportsShare(tableMetric)
         tableShowShare = !tableShowShare
-        renderComponentsByAreaTable()
-        setActiveTableBtn()
+        refreshAreaUpgTableMetric()
       )
     redrawComponentsByArea()
 
-  # list_upg: матрица, фильтрация по редакциям и местам
-  if typeof chartData != "undefined" and document.getElementById("matrix_chart")
+  # list_upg: матрица, фильтрация по редакциям и местам (ленивая загрузка)
+  if document.getElementById("matrix_chart")
     listStartEd = document.getElementById("list-upg-edition-start")
     listEndEd   = document.getElementById("list-upg-edition-end")
     listStartRank = document.getElementById("list-upg-rank-start")
     listEndRank   = document.getElementById("list-upg-rank-end")
     if listStartEd and listEndEd and listStartRank and listEndRank
-      origMatrixData = chartData.slice()
-      updateListUpg = ->
-        esVal = listStartEd.value
-        eeVal = listEndEd.value
-        rkFrom = parseInt(listStartRank.value) or minRank
-        rkTo   = parseInt(listEndRank.value) or maxRank
-        if rkFrom > rkTo then [rkFrom, rkTo] = [rkTo, rkFrom]
-        allowed = []
-        idxFrom = editions.indexOf(esVal)
-        idxTo   = editions.indexOf(eeVal)
-        if idxFrom < 0 or idxTo < 0
-          allowed = editions
-        else
-          if idxFrom > idxTo then [idxFrom, idxTo] = [idxTo, idxFrom]
-          allowed = editions.slice(idxFrom, idxTo + 1)
-        filteredMatrix = origMatrixData.filter((row) ->
-          ed = row.edition
-          rk = row.rank
-          allowed.includes(ed) and rk? and rk >= rkFrom and rk <= rkTo
-        )
-        drawMatrix(filteredMatrix, "matrix_chart")
-      # Инициализация списков редакций и мест
-      editions = Array.from(new Set(origMatrixData.map((r) -> r.edition))).sort()
-      ranks = Array.from(new Set(origMatrixData.map((r) -> r.rank))).sort((a, b) -> a - b)
-      minRank = ranks[0] or 1
-      maxRank = ranks[ranks.length - 1] or getMaxRank()
-      # Заполняем селекторы редакций
-      ;[listStartEd, listEndEd].forEach((sel, idx) ->
+      listUpgPayloadUrl = window.listUpgPayloadUrl
+      defaultMaxRank = getMaxRank()
+      initialRankEnd = Math.min(window.listUpgInitialRankEnd or defaultMaxRank, defaultMaxRank)
+      listUpgInitialized = false
+      listUpgLoading = false
+
+      fillEditionSelect = (sel, editions, selectedValue) ->
         while sel.options.length > 0
           sel.remove(0)
-        editions.forEach((ed, i) ->
+        editions.forEach((ed) ->
           opt = document.createElement("option")
           opt.value = ed
           opt.text = formatEditionDate(ed)
           sel.appendChild(opt)
         )
-        if idx == 0
-          sel.selectedIndex = 0
-        else
-          sel.selectedIndex = sel.options.length - 1
-      )
-      # Заполняем селекторы мест
-      ;[listStartRank, listEndRank].forEach((sel, idx) ->
+        if selectedValue?
+          for i in [0...sel.options.length]
+            if sel.options[i].value == selectedValue
+              sel.selectedIndex = i
+              break
+
+      fillRankSelect = (sel, minRank, maxRank, selectedValue) ->
         while sel.options.length > 0
           sel.remove(0)
-        ranks.forEach((rk) ->
+        for rk in [minRank..maxRank]
           opt = document.createElement("option")
           opt.value = rk
           opt.text = rk
           sel.appendChild(opt)
-        )
-        if idx == 0
-          sel.selectedIndex = 0
-        else
-          sel.selectedIndex = sel.options.length - 1
-      )
-      # Начальная отрисовка с учетом селекторов
-      updateListUpg()
+        if selectedValue?
+          idx = parseInt(selectedValue, 10) - minRank
+          if idx >= 0 and idx < sel.options.length
+            sel.selectedIndex = idx
+
+      fetchAndDrawListUpg = (opts = {}) ->
+        return unless listUpgPayloadUrl
+        return if listUpgLoading
+        listUpgLoading = true
+        preserveSelection = opts.preserveSelection is true
+        params = new URLSearchParams()
+        rankFrom = parseInt(listStartRank.value, 10)
+        rankTo = parseInt(listEndRank.value, 10)
+        if !rankFrom or !rankTo
+          rankFrom = 1
+          rankTo = initialRankEnd
+        if rankFrom > rankTo then [rankFrom, rankTo] = [rankTo, rankFrom]
+        params.set("rank_start", rankFrom)
+        params.set("rank_end", rankTo)
+        if listStartEd.value? and listStartEd.value.length > 0
+          params.set("edition_start", listStartEd.value)
+        if listEndEd.value? and listEndEd.value.length > 0
+          params.set("edition_end", listEndEd.value)
+        url = listUpgPayloadUrl + "?" + params.toString()
+        fetch(url, { headers: { "Accept": "application/json" } })
+          .then((resp) ->
+            throw new Error("Failed to load list_upg matrix data") unless resp.ok
+            resp.json()
+          )
+          .then((json) ->
+            editions = json.editions or []
+            prevStartEd = listStartEd.value
+            prevEndEd = listEndEd.value
+            if !listUpgInitialized
+              fillEditionSelect(listStartEd, editions, editions[0])
+              fillEditionSelect(listEndEd, editions, editions[editions.length - 1])
+              fillRankSelect(listStartRank, 1, defaultMaxRank, "1")
+              fillRankSelect(listEndRank, 1, defaultMaxRank, String(initialRankEnd))
+              listUpgInitialized = true
+              drawMatrix(json.matrix_data or [], "matrix_chart")
+              return
+            if preserveSelection
+              fillEditionSelect(listStartEd, editions, prevStartEd)
+              fillEditionSelect(listEndEd, editions, prevEndEd)
+            drawMatrix(json.matrix_data or [], "matrix_chart")
+          )
+          .catch((err) ->
+            console.error("list_upg payload load failed", err)
+          )
+          .finally(() ->
+            listUpgLoading = false
+          )
+
+      fetchAndDrawListUpg()
+      updateListUpg = ->
+        syncRangePair("list-upg-edition-start", "list-upg-edition-end", "start_lte_end")
+        syncRangePair("list-upg-rank-start", "list-upg-rank-end", "start_lte_end")
+        fetchAndDrawListUpg(preserveSelection: true)
       listStartEd.addEventListener("change", updateListUpg)
       listEndEd.addEventListener("change", updateListUpg)
       listStartRank.addEventListener("change", updateListUpg)
@@ -1807,6 +1946,7 @@ runStatsWhenReady ->
         id: "chart_new_vs_upgraded"
         wrapperId: "new-upg-bar-graph-total"
         dataKey: "chartData"
+        datasetKey: "ratings_chart_data"
         title: "Гистограмма количества новых и обновлённых систем по редакциям"
         xLabel: "Дата (ММ.ГГ)"
         yLabel: "Количество систем"
@@ -1814,6 +1954,7 @@ runStatsWhenReady ->
         id: "chart_new_vs_upgraded_rpeak_pct"
         wrapperId: "new-upg-bar-graph-rpeak-pct"
         dataKey: "chartDataRpeakPct"
+        datasetKey: "ratings_rpeak_pct_chart_data"
         title: "Гистограмма доли производительности Rpeak новых и обновлённых систем"
         xLabel: "Дата (ММ.ГГ)"
         yLabel: "% Rpeak"
@@ -1821,6 +1962,7 @@ runStatsWhenReady ->
         id: "chart_new_vs_upgraded_rmax_pct"
         wrapperId: "new-upg-bar-graph-rmax-pct"
         dataKey: "chartDataRmaxPct"
+        datasetKey: "ratings_rmax_pct_chart_data"
         title: "Гистограмма доли производительности Rmax новых и обновлённых систем"
         xLabel: "Дата (ММ.ГГ)"
         yLabel: "% Rmax"
@@ -1833,6 +1975,23 @@ runStatsWhenReady ->
       for i in [0...newUpgStartSel.options.length]
         newUpgStartSel.options[i].hidden = false
     sliceNewUpgChartData = sliceChartSeriesByEditionRange
+    ensureNewUpgDataset = (cfg, done) ->
+      store = window.newUpgDataByKey or {}
+      if cfg.dataKey == "chartData"
+        window.chartData = store.ratings_chart_data or window.chartData or []
+        return done?()
+      if window[cfg.dataKey]? and window[cfg.dataKey].length > 0
+        return done?()
+      payloadUrl = window.newUpgPayloadUrl
+      return done?() unless payloadUrl
+      fetchStatsDatasets(payloadUrl, [cfg.datasetKey], store, ->
+        if cfg.datasetKey == "ratings_rpeak_pct_chart_data"
+          window.chartDataRpeakPct = store.ratings_rpeak_pct_chart_data or []
+        if cfg.datasetKey == "ratings_rmax_pct_chart_data"
+          window.chartDataRmaxPct = store.ratings_rmax_pct_chart_data or []
+        done?()
+      )
+
     updateNewUpg = () ->
       updateNewUpgEditionEndOptions()
       updateNewUpgEditionStartOptions()
@@ -1845,6 +2004,8 @@ runStatsWhenReady ->
       edTo = Math.max(startVal, endVal)
       selected = resolveGraphChoice("new-upg-bar-graph-selector", newUpgCharts, "total")
       applyGraphVisibility(newUpgCharts, selected.key)
+      store = window.newUpgDataByKey or {}
+      window.chartData = store.ratings_chart_data or window.chartData or []
       filteredMain = sliceNewUpgChartData(window.chartData, edFrom, edTo)
       numPoints = (filteredMain[0]?.data?.length) or 0
       minChartWidth = Math.max(1000, numPoints * 40)
@@ -1856,9 +2017,11 @@ runStatsWhenReady ->
       )
       cfg = selected.config
       if cfg?
-        filteredSelected = sliceNewUpgChartData(window[cfg.dataKey], edFrom, edTo)
-        if filteredSelected.length > 0 and filteredSelected[0].data and filteredSelected[0].data.length > 0
-          draw_new_vs_upgraded_new(filteredSelected, cfg.id, cfg.title, cfg.xLabel, cfg.yLabel)
+        ensureNewUpgDataset(cfg, ->
+          filteredSelected = sliceNewUpgChartData(window[cfg.dataKey], edFrom, edTo)
+          if filteredSelected.length > 0 and filteredSelected[0].data and filteredSelected[0].data.length > 0
+            draw_new_vs_upgraded_new(filteredSelected, cfg.id, cfg.title, cfg.xLabel, cfg.yLabel)
+        )
       rows = document.querySelectorAll("table.table tbody tr[data-edition-index]")
       for i in [0...rows.length]
         idx = parseInt(rows[i].getAttribute("data-edition-index"), 10)

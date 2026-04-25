@@ -12,10 +12,8 @@
 h2 Матрица обновляемости списка систем в рейтинге
 
 #matrix_chart
-  javascript:
-    chartData = #{raw @chart_data};
-  coffee:
-    @drawMatrix(chartData, "matrix_chart")
+script
+  | window.listUpgPayloadUrl = "#{request.path}.json";
 
 div style="clear: both;"
 - if @csv_string_list_upg.present?

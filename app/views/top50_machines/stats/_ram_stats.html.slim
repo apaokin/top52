@@ -79,7 +79,9 @@ body
         a.button style="background: #6699CC;" id="download_ram_per_core" download="RAM_per_core.csv" Скачать CSV
 
   script
-    | const ramPerCoreData = #{raw @ram_per_core_data.to_json};
-    | const ramPerCpuData = #{raw @ram_per_cpu_data.to_json};
-    | const ramPerNodeData = #{raw @ram_per_node_data.to_json};
+    | window.ramStatsPayloadUrl = "#{request.path}.json";
+    | window.ramStatsDataByKey = { ram_per_node_data: #{raw @ram_per_node_data.to_json} };
+    | const ramPerCoreData = [];
+    | const ramPerCpuData = [];
+    | const ramPerNodeData = window.ramStatsDataByKey.ram_per_node_data;
     | const editionDatesRam = #{raw (@edition_dates_ram || []).to_json};

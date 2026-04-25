@@ -11,7 +11,8 @@ module Stats
       sorted_data = @new_upd_data.sort_by { |entry| [-entry[:edition].split("-").join.to_i, entry[:rank]] }
       lists_chronological = @top50_slists.reverse
       new_upd_list_ids = lists_chronological.map(&:id)
-      new_upd_list_nums = new_upd_list_ids.map { |lid| @num_vals.find_by(obj_id: lid)&.value.presence || "—" }
+      num_by_list_id = @num_vals.pluck(:obj_id, :value).to_h
+      new_upd_list_nums = new_upd_list_ids.map { |lid| num_by_list_id[lid].presence || "—" }
       entry_by_rank_and_list = sorted_data.each_with_object({}) { |e, h| h[[e[:rank], e[:list_id]]] = e }
       matrix = (1..@max_rank).map do |rank|
         new_upd_list_ids.map { |list_id| entry_by_rank_and_list[[rank, list_id]] }

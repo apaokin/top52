@@ -8,32 +8,33 @@ module Stats
           @ram_per_cpu_data = []
           @ram_per_node_data = []
 
-          calc_machine_attrs
-          @ram_size_attrid = Top50Attribute.where(name_eng: "RAM size (GB)").first&.id
-          @core_qty_attrid = Top50Attribute.where(name_eng: "Number of cores").first&.id
-          @cpu_qty_attrid_ram = Top50Attribute.where(name_eng: "Number of CPUs").first&.id
-          @cpu_typeid = Top50ObjectType.where(name_eng: "CPU").first&.id
-          @gpu_typeid = Top50ObjectType.where(name_eng: "GPU").first&.id
+          @ram_size_attrid = Top50Attribute.find_by(name_eng: "RAM size (GB)")&.id
+          @core_qty_attrid = Top50Attribute.find_by(name_eng: "Number of cores")&.id
+          @cpu_qty_attrid_ram = Top50Attribute.find_by(name_eng: "Number of CPUs")&.id
+          @cpu_typeid = Top50ObjectType.find_by(name_eng: "CPU")&.id
+          @gpu_typeid = Top50ObjectType.find_by(name_eng: "GPU")&.id
           @rel_contain_id = get_rel_contain_id
 
           top50_slists = get_top50_lists_sorted
           top_50_dates = Stats::EditionTimeline.from_lists(top50_slists: top50_slists, date_vals: @date_vals)
 
-          precedes_map_lineage_ram = Stats::Lineage.precedes_child_to_parent_map
+          precedes_map_lineage_ram = precedes_child_to_parent_map_for_lineage
           all_list_ids_ram = top_50_dates.map { |y, m| get_list_id_by_date(y, m) }.compact
-          all_machine_ids_ram = all_list_ids_ram.any? ? Top50BenchmarkResult.where(benchmark_id: all_list_ids_ram).pluck(:machine_id).uniq : []
-          machine_names_ram = machine_display_name_map_for_ids(all_machine_ids_ram)
-
-          node_rels_by_machine = Hash.new do |h, machine_id|
-            h[machine_id] = Top50Relation.where(prim_obj_id: machine_id, type_id: @rel_contain_id).to_a
-          end
-          comp_rels_by_node = Hash.new do |h, node_id|
-            h[node_id] = Top50Relation.where(prim_obj_id: node_id, type_id: @rel_contain_id).to_a
-          end
-          object_type_by_id = {}
-          value_cache = Stats::AttributeValueCache.new
-
           max_rank_limit = @max_rank || self.class::TOP50_MAX_RANK
+          ranked_machine_ids_by_list = all_list_ids_ram.each_with_object({}) do |list_id, h|
+            h[list_id] = ranked_machine_ids_for_list(list_id, max_rank_limit)
+          end
+          all_machine_ids_ram = ranked_machine_ids_by_list.values.flatten.uniq
+          machine_names_ram = machine_display_name_map_for_ids(all_machine_ids_ram)
+          graph = preload_machine_component_graph(all_machine_ids_ram, rel_contain_id: @rel_contain_id)
+          node_rels_by_machine = graph[:node_rels_by_machine]
+          comp_rels_by_node = graph[:comp_rels_by_node]
+          object_type_by_id = graph[:component_type_by_id]
+          value_cache = Stats::AttributeValueCache.new
+          warm_attr_ids = [@ram_size_attrid, @core_qty_attrid, @cpu_qty_attrid_ram].compact
+          warm_obj_ids = object_type_by_id.keys + all_machine_ids_ram + comp_rels_by_node.keys
+          value_cache.warm_dbvals(obj_ids: warm_obj_ids, attr_ids: warm_attr_ids) if warm_attr_ids.any?
+
           @edition_dates_ram = Array.new(top_50_dates.size)
           top_50_dates.each_with_index do |top50_date, reverse_edition_index|
             list_id = get_list_id_by_date(top50_date[0], top50_date[1])
@@ -43,7 +44,7 @@ module Stats
               @edition_dates_ram[edition - 1] = Stats::EditionLabel.from_list_date(list_date)
             end
 
-            ranked_machine_ids_for_list(list_id, max_rank_limit).each_with_index do |machine_id, rank_index|
+            (ranked_machine_ids_by_list[list_id] || []).each_with_index do |machine_id, rank_index|
               rank = rank_index + 1
               total_ram = 0.0
               total_cores = 0
@@ -65,11 +66,6 @@ module Stats
                 comp_rels_by_node[node_id].each do |cpu_rel|
                   cpu_id = cpu_rel.sec_obj_id
                   component_type = object_type_by_id[cpu_id]
-                  if component_type.nil?
-                    obj = Top50Object.find_by(id: cpu_id)
-                    component_type = obj&.type_id
-                    object_type_by_id[cpu_id] = component_type
-                  end
 
                   if component_type == @cpu_typeid
                     cpu_qty = cpu_rel.sec_obj_qty * node_qty

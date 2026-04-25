@@ -12,38 +12,39 @@ module Stats
           @freshest_cpu_model_ids_by_edition = Hash.new { |h, k| h[k] = Set.new }
           @freshest_gpu_model_ids_by_edition = Hash.new { |h, k| h[k] = Set.new }
 
-          calc_machine_attrs
-          @rpeak_attrid = Top50Attribute.where(name_eng: "Rpeak (MFlop/s)").first&.id
-          @rmax_benchid = Top50Benchmark.where(name_eng: "Linpack").first&.id
-          @cpu_typeid = Top50ObjectType.where(name_eng: "CPU").first&.id
-          @gpu_typeid = Top50ObjectType.where(name_eng: "GPU").first&.id
+          @rpeak_attrid = Top50Attribute.find_by(name_eng: "Rpeak (MFlop/s)")&.id
+          @rmax_benchid = Top50Benchmark.find_by(name_eng: "Linpack")&.id
+          @cpu_typeid = Top50ObjectType.find_by(name_eng: "CPU")&.id
+          @gpu_typeid = Top50ObjectType.find_by(name_eng: "GPU")&.id
           @rel_contain_id = get_rel_contain_id
-          @cpu_qty_attrid = Top50Attribute.where(name_eng: "Number of CPUs").first&.id
-          @gpu_qty_attrid = Top50Attribute.where(name_eng: "Number of GPUs").first&.id
-          @cpu_model_attrid_fq = Top50Attribute.where(name_eng: "CPU model").first&.id
-          @gpu_model_attrid_fq = Top50Attribute.where(name_eng: "GPU model").first&.id
-          @cpu_vendor_attrid_fq = Top50Attribute.where(name_eng: "CPU Vendor").first&.id
-          @gpu_vendor_attrid_fq = Top50Attribute.where(name_eng: "GPU Vendor").first&.id
+          @cpu_qty_attrid = Top50Attribute.find_by(name_eng: "Number of CPUs")&.id
+          @gpu_qty_attrid = Top50Attribute.find_by(name_eng: "Number of GPUs")&.id
+          @cpu_model_attrid_fq = Top50Attribute.find_by(name_eng: "CPU model")&.id
+          @gpu_model_attrid_fq = Top50Attribute.find_by(name_eng: "GPU model")&.id
+          @cpu_vendor_attrid_fq = Top50Attribute.find_by(name_eng: "CPU Vendor")&.id
+          @gpu_vendor_attrid_fq = Top50Attribute.find_by(name_eng: "GPU Vendor")&.id
 
           top50_slists = get_top50_lists_sorted
           top_50_dates = Stats::EditionTimeline.from_lists(top50_slists: top50_slists, date_vals: @date_vals)
 
-          precedes_map_lineage_fq = Stats::Lineage.precedes_child_to_parent_map
+          precedes_map_lineage_fq = precedes_child_to_parent_map_for_lineage
           all_list_ids_fq = top_50_dates.map { |y, m| get_list_id_by_date(y, m) }.compact
-          all_machine_ids_fq = all_list_ids_fq.any? ? Top50BenchmarkResult.where(benchmark_id: all_list_ids_fq).pluck(:machine_id).uniq : []
-          machine_names_fq = machine_display_name_map_for_ids(all_machine_ids_fq)
-
-          node_rels_by_machine = Hash.new do |h, machine_id|
-            h[machine_id] = Top50Relation.where(prim_obj_id: machine_id, type_id: @rel_contain_id).to_a
-          end
-          comp_rels_by_node = Hash.new do |h, node_id|
-            h[node_id] = Top50Relation.where(prim_obj_id: node_id, type_id: @rel_contain_id).to_a
-          end
-          component_type_by_id = {}
-          component_info_by_id = {}
-          value_cache = Stats::AttributeValueCache.new
-
           max_rank_limit = @max_rank || self.class::TOP50_MAX_RANK
+          ranked_machine_ids_by_list = all_list_ids_fq.each_with_object({}) do |list_id, h|
+            h[list_id] = ranked_machine_ids_for_list(list_id, max_rank_limit)
+          end
+          all_machine_ids_fq = ranked_machine_ids_by_list.values.flatten.uniq
+          machine_names_fq = machine_display_name_map_for_ids(all_machine_ids_fq)
+          graph = preload_machine_component_graph(all_machine_ids_fq, rel_contain_id: @rel_contain_id)
+          node_rels_by_machine = graph[:node_rels_by_machine]
+          comp_rels_by_node = graph[:comp_rels_by_node]
+          component_type_by_id = graph[:component_type_by_id]
+          component_info_by_id = graph[:component_info_by_id]
+          value_cache = Stats::AttributeValueCache.new
+          dict_attr_ids = [@cpu_model_attrid_fq, @gpu_model_attrid_fq, @cpu_vendor_attrid_fq, @gpu_vendor_attrid_fq].compact
+          value_cache.warm_dict(obj_ids: component_type_by_id.keys, attr_ids: dict_attr_ids) if dict_attr_ids.any?
+          value_cache.warm_dbvals(obj_ids: all_machine_ids_fq, attr_ids: [@cpu_qty_attrid, @gpu_qty_attrid].compact)
+
           @edition_dates_freshest_quantity = Array.new(top_50_dates.size)
           top_50_dates.each_with_index do |top50_date, reverse_edition_index|
             list_year, list_month = top50_date[0], top50_date[1]
@@ -65,7 +66,7 @@ module Stats
             next unless list_date_parsed
 
             @freshest_quantity_chart_dates[edition] = list_date_parsed.strftime("%Y-%m")
-            ranked_machine_ids_for_list(list_id, max_rank_limit).each_with_index do |machine_id, rank_index|
+            (ranked_machine_ids_by_list[list_id] || []).each_with_index do |machine_id, rank_index|
               rank = rank_index + 1
               freshest_cpu_count = 0
               freshest_gpu_count = 0
@@ -91,10 +92,6 @@ module Stats
                 comp_rels_by_node[node_id].each do |component_rel|
                   component_id = component_rel.sec_obj_id
                   component_type = component_type_by_id[component_id]
-                  if component_type.nil?
-                    component_type = Top50Object.find_by(id: component_id)&.type_id
-                    component_type_by_id[component_id] = component_type
-                  end
                   next unless component_type
 
                   component_qty = component_rel.sec_obj_qty * node_qty
@@ -102,10 +99,6 @@ module Stats
                   total_gpu_count += component_qty if component_type == @gpu_typeid
 
                   ci = component_info_by_id[component_id]
-                  if ci.nil?
-                    ci = ComponentInfo.find_by(component_id: component_id)
-                    component_info_by_id[component_id] = ci
-                  end
                   next unless ci
 
                   comp_model_name = nil
@@ -311,7 +304,7 @@ module Stats
               list_id = get_list_id_by_date(parts[0], parts[1])
               next if list_id.to_i <= 0
 
-              rank_to_machine = ranked_machine_ids_for_list(list_id, max_rank_limit).each_with_index.map { |mid, i| [i + 1, mid] }.to_h
+              rank_to_machine = (ranked_machine_ids_by_list[list_id] || []).each_with_index.map { |mid, i| [i + 1, mid] }.to_h
               cpu_entries = cpu_by_edition[ed] || []
               ranks_fresh_cpu = cpu_entries.select { |h| h[:lag].to_i > 0 }.map { |h| h[:rank] }.uniq
               ranks_fresh_gpu = (gpu_by_edition[ed] || []).select { |h| h[:lag].to_i > 0 }.map { |h| h[:rank] }.uniq

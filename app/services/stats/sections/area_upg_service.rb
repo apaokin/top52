@@ -10,9 +10,8 @@ module Stats
           @area_upg_new_upgraded_by_edition = []
           @area_upg_edition_labels = []
 
-          calc_machine_attrs
-          @cpu_typeid = Top50ObjectType.where(name_eng: "CPU").first&.id
-          @gpu_typeid = Top50ObjectType.where(name_eng: "GPU").first&.id
+          @cpu_typeid = Top50ObjectType.find_by(name_eng: "CPU")&.id
+          @gpu_typeid = Top50ObjectType.find_by(name_eng: "GPU")&.id
           @rel_contain_id = get_rel_contain_id
 
           top50_slists = get_top50_lists_sorted
@@ -34,21 +33,17 @@ module Stats
           max_rank_limit = @max_rank || self.class::TOP50_MAX_RANK
           fallback_area_color = palette[target_areas.size % palette.size]
           area_colors = {}
-          precedes_type_id = Top50RelationType.find_by(name_eng: "Precedes")&.id
-          precedes_map = if precedes_type_id
-            Top50Relation.where(type_id: precedes_type_id, is_valid: [1, 2]).order(:id).each_with_object({}) { |r, h| h[r.sec_obj_id] ||= r.prim_obj_id }
-          else
-            {}
+          precedes_map = precedes_child_to_parent_map_for_lineage
+          all_list_ids = top_50_dates.map { |y, m| get_list_id_by_date(y, m) }.compact
+          machine_ids_by_list = all_list_ids.each_with_object({}) do |list_id, h|
+            h[list_id] = ranked_machine_ids_for_list(list_id, max_rank_limit)
           end
-
-          node_rels_by_machine = Hash.new do |h, machine_id|
-            h[machine_id] = Top50Relation.where(prim_obj_id: machine_id, type_id: @rel_contain_id).to_a
-          end
-          comp_rels_by_node = Hash.new do |h, node_id|
-            h[node_id] = Top50Relation.where(prim_obj_id: node_id, type_id: @rel_contain_id).to_a
-          end
-          component_type_by_id = {}
-          component_info_by_id = {}
+          all_machine_ids = machine_ids_by_list.values.flatten.uniq
+          graph = preload_machine_component_graph(all_machine_ids, rel_contain_id: @rel_contain_id)
+          node_rels_by_machine = graph[:node_rels_by_machine]
+          comp_rels_by_node = graph[:comp_rels_by_node]
+          component_type_by_id = graph[:component_type_by_id]
+          component_info_by_id = graph[:component_info_by_id]
 
           top_50_dates.each_with_index do |top50_date, reverse_edition_index|
             list_year, list_month = top50_date[0], top50_date[1]
@@ -69,12 +64,12 @@ module Stats
               next
             end
 
-            machine_ids = ranked_machine_ids_for_list(list_id, max_rank_limit)
+            machine_ids = machine_ids_by_list[list_id] || []
             prev_machine_ids_set = nil
             if reverse_edition_index + 1 < top_50_dates.size
               prev_year, prev_month = top_50_dates[reverse_edition_index + 1]
               prev_list_id = get_list_id_by_date(prev_year, prev_month)
-              prev_machine_ids_set = ranked_machine_ids_for_list(prev_list_id, max_rank_limit).to_set if prev_list_id.present?
+              prev_machine_ids_set = (machine_ids_by_list[prev_list_id] || []).to_set if prev_list_id.present?
             end
             area_meta = application_area_color_by_machine_id(machine_ids)
 
@@ -90,18 +85,10 @@ module Stats
                 comp_rels_by_node[node_id].each do |component_rel|
                   component_id = component_rel.sec_obj_id
                   component_type = component_type_by_id[component_id]
-                  if component_type.nil?
-                    component_type = Top50Object.find_by(id: component_id)&.type_id
-                    component_type_by_id[component_id] = component_type
-                  end
                   next unless component_type
 
                   component_qty = component_rel.sec_obj_qty * node_qty
                   ci = component_info_by_id[component_id]
-                  if ci.nil?
-                    ci = ComponentInfo.find_by(component_id: component_id)
-                    component_info_by_id[component_id] = ci
-                  end
                   next unless ci
 
                   da = ci.date_announced.respond_to?(:to_date) ? ci.date_announced.to_date : (ci.date_announced.is_a?(Date) ? ci.date_announced : nil)

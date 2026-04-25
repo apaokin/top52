@@ -76,7 +76,9 @@ body
 
   / Передача данных в JavaScript (только linear; остальные шкалы вычисляются на клиенте)
   script
-    | const cpuDataLinear = #{raw @cpu_data.to_json};
-    | const gpuDataLinear = #{raw @gpu_data.to_json};
-    | const combinedDataLinear = #{raw @combined_data.to_json};
+    | window.frCompLagPayloadUrl = "#{request.path}.json";
+    | window.frCompLagDataByKey = { cpu_data: #{raw @cpu_data.to_json} };
+    | const cpuDataLinear = window.frCompLagDataByKey.cpu_data;
+    | const gpuDataLinear = [];
+    | const combinedDataLinear = [];
     | const editionDatesLag = #{raw (@edition_dates_lag || []).to_json};

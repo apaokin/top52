@@ -93,10 +93,12 @@ body
         a.button style="background: #6699CC;" id="download_announce_to_mention_gpu" download="GPU_announce_to_mention_days.csv" Скачать CSV
 
   script
-    | const freshestCpuQuantityData = #{raw (@freshest_cpu_quantity_data || []).to_json};
-    | const freshestGpuQuantityData = #{raw (@freshest_gpu_quantity_data || []).to_json};
-    | const announceToMentionCpuData = #{raw (@announce_to_mention_cpu_data || []).to_json};
-    | const announceToMentionGpuData = #{raw (@announce_to_mention_gpu_data || []).to_json};
+    | window.frCompStatsPayloadUrl = "#{request.path}.json";
+    | window.frCompStatsDataByKey = { freshest_cpu_quantity_data: #{raw (@freshest_cpu_quantity_data || []).to_json} };
+    | const freshestCpuQuantityData = window.frCompStatsDataByKey.freshest_cpu_quantity_data;
+    | const freshestGpuQuantityData = [];
+    | const announceToMentionCpuData = [];
+    | const announceToMentionGpuData = [];
     | window.editionDatesFreshestQuantity = #{raw (@edition_dates_freshest_quantity || []).to_json};
     | const editionDatesFreshestQuantity = window.editionDatesFreshestQuantity;
     | const editionDatesComponent = #{raw (@edition_dates_freshest_quantity || []).to_json};

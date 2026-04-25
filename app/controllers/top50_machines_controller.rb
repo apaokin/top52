@@ -1348,15 +1348,7 @@ class Top50MachinesController < Top50BaseController
 
   def stats_common
 
-    @top50_lists = get_top50_lists
-    @top50_slists = get_top50_lists_sorted
-
-    all_res = Top50BenchmarkResult.all.joins(:top50_benchmark).merge(@top50_lists)
-    
-    list_num_attrs = Top50AttributeDbval.all.joins(:top50_attribute).merge(Top50Attribute.where(name_eng: "Edition number"))
-    @num_vals = Top50AttributeValDbval.all.joins(:top50_attribute_dbval).merge(list_num_attrs)
-    list_date_attrs = Top50AttributeDbval.all.joins(:top50_attribute).merge(Top50Attribute.where(name_eng: "Edition date"))
-    @date_vals = Top50AttributeValDbval.all.joins(:top50_attribute_dbval).merge(list_date_attrs)
+    load_stats_base_context!(ext: 0)
     
   end
   
@@ -1566,24 +1558,7 @@ class Top50MachinesController < Top50BaseController
       _top50_cat = Struct.new('Top50Category', :id, :name)
     end
           
-    list_num_attrs = Top50AttributeDbval.all.joins(:top50_attribute).merge(Top50Attribute.where(name_eng: "Edition number"))
-    @num_vals = Top50AttributeValDbval.all.joins(:top50_attribute_dbval).merge(list_num_attrs)
-    list_date_attrs = Top50AttributeDbval.all.joins(:top50_attribute).merge(Top50Attribute.where(name_eng: "Edition date"))
-    @date_vals = Top50AttributeValDbval.all.joins(:top50_attribute_dbval).merge(list_date_attrs)
-    rel_contain_id = get_rel_contain_id
-    top50_benchmarks = Top50Relation.where(prim_obj_id: get_avail_bunches, type_id: rel_contain_id).pluck(:sec_obj_id)
-    @mach_approved = Top50BenchmarkResult.where(:benchmark_id => top50_benchmarks).pluck(:machine_id)
-    if ext == 1
-      @mach_approved = Top50BenchmarkResult.where(:benchmark_id => @list_id).pluck(:machine_id)
-    end
-    @top50_lists = get_top50_lists
-    @top50_slists = get_top50_lists_sorted
-    # Max rank = number of positions in the last (most recent) present list
-    last_list = @top50_slists.first
-    @max_rank = if last_list
-      Top50BenchmarkResult.where(benchmark_id: last_list.id).count
-    end
-    @max_rank = TOP50_MAX_RANK if @max_rank.to_i < 1
+    load_stats_base_context!(ext: ext)
 
     if @stat_section == 'hybrid_inter'
       comp_node_id = Top50ObjectType.where(name_eng: 'Compute node').first.id
@@ -4202,17 +4177,17 @@ class Top50MachinesController < Top50BaseController
   end 
   
   def get_rel_contain_id
-    Top50RelationType.find_by(name_eng: 'Contains').id
+    @get_rel_contain_id ||= Top50RelationType.find_by(name_eng: 'Contains').id
   end
 
   def get_name_eng_attr_id
-    Top50Attribute.find_by(name_eng: "Name(eng)").id
+    @get_name_eng_attr_id ||= Top50Attribute.find_by(name_eng: "Name(eng)").id
   end
 
   def get_bunch_id
-    Top50Object.joins("join top50_object_types on top50_object_types.id = top50_objects.type_id and top50_object_types.name_eng = 'Bunch of benchmarks'")
-               .joins("join top50_attribute_val_dbvals dbv on dbv.obj_id = top50_objects.id and dbv.attr_id = #{get_name_eng_attr_id} and dbv.value = 'Top50 position'")
-               .first.id
+    @get_bunch_id ||= Top50Object.joins("join top50_object_types on top50_object_types.id = top50_objects.type_id and top50_object_types.name_eng = 'Bunch of benchmarks'")
+                              .joins("join top50_attribute_val_dbvals dbv on dbv.obj_id = top50_objects.id and dbv.attr_id = #{get_name_eng_attr_id} and dbv.value = 'Top50 position'")
+                              .first.id
   end
 
   def fetch_first_appearance_date(component_id)
@@ -4231,6 +4206,24 @@ class Top50MachinesController < Top50BaseController
   end
 
   private
+
+  def load_stats_base_context!(ext:)
+    list_num_attrs = Top50AttributeDbval.all.joins(:top50_attribute).merge(Top50Attribute.where(name_eng: "Edition number"))
+    @num_vals = Top50AttributeValDbval.all.joins(:top50_attribute_dbval).merge(list_num_attrs)
+    list_date_attrs = Top50AttributeDbval.all.joins(:top50_attribute).merge(Top50Attribute.where(name_eng: "Edition date"))
+    @date_vals = Top50AttributeValDbval.all.joins(:top50_attribute_dbval).merge(list_date_attrs)
+    rel_contain_id = get_rel_contain_id
+    top50_benchmarks = Top50Relation.where(prim_obj_id: get_avail_bunches, type_id: rel_contain_id).pluck(:sec_obj_id)
+    @mach_approved = Top50BenchmarkResult.where(benchmark_id: top50_benchmarks).pluck(:machine_id)
+    if ext.to_i == 1
+      @mach_approved = Top50BenchmarkResult.where(benchmark_id: @list_id).pluck(:machine_id)
+    end
+    @top50_lists = get_top50_lists
+    @top50_slists = get_top50_lists_sorted
+    last_list = @top50_slists.first
+    @max_rank = last_list ? Top50BenchmarkResult.where(benchmark_id: last_list.id).count : nil
+    @max_rank = TOP50_MAX_RANK if @max_rank.to_i < 1
+  end
 
   def dispatch_stats_section(section_key)
     return false if section_key.blank?
@@ -4303,9 +4296,74 @@ class Top50MachinesController < Top50BaseController
     end
   end
 
+  def merge_application_area_into_many_heatmap_rows!(*rows_collections)
+    groups = rows_collections.compact
+    return if groups.empty?
+
+    machine_ids = groups.flat_map do |rows|
+      if rows.is_a?(Array)
+        rows.map { |r| r.is_a?(Hash) ? (r[:machine_id] || r["machine_id"]) : nil }
+      elsif rows.is_a?(Hash)
+        [rows[:machine_id] || rows["machine_id"]]
+      else
+        []
+      end
+    end.compact.uniq
+    return if machine_ids.empty?
+
+    meta = application_area_color_by_machine_id(machine_ids)
+    groups.each do |rows|
+      row_list = rows.is_a?(Array) ? rows : [rows]
+      row_list.each do |row|
+        next unless row.is_a?(Hash)
+
+        mid = row[:machine_id] || row["machine_id"]
+        next unless mid && meta[mid]
+
+        row[:area_name] = meta[mid][:area_name]
+        row[:area_color] = meta[mid][:area_color]
+      end
+    end
+  end
+
+  def preload_machine_component_graph(machine_ids, rel_contain_id:)
+    mids = Array(machine_ids).compact.uniq
+    empty_hash = Hash.new { |h, k| h[k] = [] }
+    return {
+      node_rels_by_machine: empty_hash,
+      comp_rels_by_node: empty_hash,
+      component_type_by_id: {},
+      component_info_by_id: {}
+    } if mids.empty?
+
+    node_rels = Top50Relation.where(prim_obj_id: mids, type_id: rel_contain_id).to_a
+    node_rels_by_machine = Hash.new { |h, k| h[k] = [] }
+    node_rels.each { |rel| node_rels_by_machine[rel.prim_obj_id] << rel }
+
+    node_ids = node_rels.map(&:sec_obj_id).compact.uniq
+    comp_rels = if node_ids.empty?
+      []
+    else
+      Top50Relation.where(prim_obj_id: node_ids, type_id: rel_contain_id).to_a
+    end
+    comp_rels_by_node = Hash.new { |h, k| h[k] = [] }
+    comp_rels.each { |rel| comp_rels_by_node[rel.prim_obj_id] << rel }
+
+    component_ids = comp_rels.map(&:sec_obj_id).compact.uniq
+    component_type_by_id = component_ids.empty? ? {} : Top50Object.where(id: component_ids).pluck(:id, :type_id).to_h
+    component_info_by_id = component_ids.empty? ? {} : ComponentInfo.where(component_id: component_ids).index_by(&:component_id)
+
+    {
+      node_rels_by_machine: node_rels_by_machine,
+      comp_rels_by_node: comp_rels_by_node,
+      component_type_by_id: component_type_by_id,
+      component_info_by_id: component_info_by_id
+    }
+  end
+
   # Upgradability heatmaps only: stable Precedes map (valid relations; first edge per successor).
   def precedes_child_to_parent_map_for_lineage
-    Stats::Lineage.precedes_child_to_parent_map
+    @precedes_child_to_parent_map_for_lineage ||= Stats::Lineage.precedes_child_to_parent_map
   end
 
   # Hover key: do not merge sibling upgrade branches that share one root ancestor.
@@ -4315,20 +4373,35 @@ class Top50MachinesController < Top50BaseController
 
   # One rank row per machine after CSV duplicates: keep best list position (min Linpack result) per machine.
   def ranked_machine_ids_for_list(benchmark_id, limit = 50)
+    @ranked_machine_ids_cache ||= {}
+    cache_key = [benchmark_id.to_i, limit.to_i]
+    cached = @ranked_machine_ids_cache[cache_key]
+    return cached if cached.present?
+
     best = {}
     Top50BenchmarkResult.where(benchmark_id: benchmark_id).each do |r|
       cur = best[r.machine_id]
       best[r.machine_id] = r if cur.nil? || r.result.to_f < cur.result.to_f
     end
-    best.values.sort_by { |r| r.result.to_f }.first(limit).map(&:machine_id)
+    @ranked_machine_ids_cache[cache_key] = best.values.sort_by { |r| r.result.to_f }.first(limit).map(&:machine_id)
   end
 
   # Display name for heatmap tooltips: system name, else organization, else "н/д" (same as archive/lists).
   def machine_display_name_map_for_ids(machine_ids)
     ids = Array(machine_ids).compact.uniq
     return {} if ids.empty?
-    Top50Machine.where(id: ids).includes(:top50_organization).each_with_object({}) do |m, h|
-      h[m.id] = m.name.presence || m.top50_organization&.name.presence || "н/д"
+
+    @machine_display_name_cache ||= {}
+    missing_ids = ids - @machine_display_name_cache.keys
+    if missing_ids.any?
+      Top50Machine.where(id: missing_ids).includes(:top50_organization).each do |m|
+        @machine_display_name_cache[m.id] = m.name.presence || m.top50_organization&.name.presence || "н/д"
+      end
+      missing_ids.each { |mid| @machine_display_name_cache[mid] ||= "н/д" }
+    end
+
+    ids.each_with_object({}) do |mid, h|
+      h[mid] = @machine_display_name_cache[mid] || "н/д"
     end
   end
 

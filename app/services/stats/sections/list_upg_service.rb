@@ -4,53 +4,53 @@ module Stats
 
       def call
         run_in_context do
-          precedes_map = Stats::Lineage.precedes_child_to_parent_map
-          @ed_num_attrid = Top50Attribute.where(name_eng: "Edition number").first&.id
-          @ed_date_attrid = Top50Attribute.where(name_eng: "Edition date").first&.id
+          precedes_map = precedes_child_to_parent_map_for_lineage
+          @ed_num_attrid = Top50Attribute.find_by(name_eng: "Edition number")&.id
+          @ed_date_attrid = Top50Attribute.find_by(name_eng: "Edition date")&.id
 
           @new_upd_data = []
           top50_slists = get_top50_lists_sorted
           top_50_dates = Stats::EditionTimeline.from_lists(top50_slists: top50_slists, date_vals: @date_vals)
+          max_rank_limit = @max_rank || self.class::TOP50_MAX_RANK
+          list_entries = top_50_dates.each_with_index.map do |top50_date, idx|
+            { list_id: get_list_id_by_date(top50_date[0], top50_date[1]), date: top50_date, idx: idx }
+          end.select { |entry| entry[:list_id].present? }
+          list_ids = list_entries.map { |entry| entry[:list_id] }
+          machine_ids_by_list = list_entries.each_with_object({}) do |entry, h|
+            h[entry[:list_id]] = ranked_machine_ids_for_list(entry[:list_id], max_rank_limit)
+          end
+          all_machine_ids = machine_ids_by_list.values.flatten.uniq
+          machine_names_by_id = machine_display_name_map_for_ids(all_machine_ids)
+          list_num_by_id = @num_vals.where(obj_id: list_ids).pluck(:obj_id, :value).to_h
 
-          all_ratings_list_upg = []
-          top_50_dates.each_with_index do |top50_date, idx|
-            list_id = get_list_id_by_date(top50_date[0], top50_date[1])
-            top50_machines = fetch_archive_list(list_id)
-            prev_rated_pos_by_machine_id = {}
-            if idx + 1 < top50_slists.size
-              prev_list_id = top50_slists[idx + 1].id
-              prev_rated_pos_by_machine_id = Top50BenchmarkResult.where(benchmark_id: prev_list_id).each_with_object({}) do |pos, h|
-                h[pos.machine_id] ||= pos
-              end
+          prev_list_ids = top50_slists.each_with_index.map { |_list, idx| top50_slists[idx + 1]&.id }.compact.uniq
+          prev_results_by_list = Top50BenchmarkResult.where(benchmark_id: prev_list_ids).group_by(&:benchmark_id)
+          prev_rank_by_list = prev_results_by_list.each_with_object({}) do |(benchmark_id, rows), h|
+            h[benchmark_id] = rows.each_with_object({}) do |pos, map|
+              map[pos.machine_id] ||= pos
             end
-            rating_data = {
-              list_id: list_id,
-              date: top50_date,
-              machines: top50_machines,
-              precedes_map: precedes_map,
-              prev_rated_pos_by_machine_id: prev_rated_pos_by_machine_id
-            }
-            all_ratings_list_upg << rating_data
           end
 
-          all_ratings_list_upg.each_with_index do |rating_data, idx|
-            top50_date = rating_data[:date]
-            is_first_list = (idx == all_ratings_list_upg.size - 1)
-            rating_data[:machines].each do |top50_machine|
-              machine_id = top50_machine["id"]
+          list_entries.each_with_index do |entry, idx|
+            list_id = entry[:list_id]
+            top50_date = entry[:date]
+            is_first_list = (idx == list_entries.size - 1)
+            prev_list_id = top50_slists[entry[:idx] + 1]&.id
+            prev_rated_pos_by_machine_id = prev_list_id.present? ? (prev_rank_by_list[prev_list_id] || {}) : {}
+            (machine_ids_by_list[list_id] || []).each_with_index do |machine_id, rank_index|
               new_upd_status = nil
               pos_status = nil
               rank_change = nil
-              rank_pos = top50_machine["result"].to_i
+              rank_pos = rank_index + 1
               unless is_first_list
                 is_upg = false
                 prev_mid = nil
-                prev_rank_pos = rating_data[:prev_rated_pos_by_machine_id][machine_id]
+                prev_rank_pos = prev_rated_pos_by_machine_id[machine_id]
 
                 if prev_rank_pos.nil?
-                  prev_mid = rating_data[:precedes_map][machine_id]
+                  prev_mid = precedes_map[machine_id]
                   if prev_mid.present?
-                    prev_rank_pos = rating_data[:prev_rated_pos_by_machine_id][prev_mid]
+                    prev_rank_pos = prev_rated_pos_by_machine_id[prev_mid]
                     is_upg = true if prev_rank_pos.present?
                   end
                 end
@@ -66,12 +66,12 @@ module Stats
                 end
               end
 
-              list_num = @num_vals.find_by(obj_id: rating_data[:list_id])&.value
-              machine_name = (top50_machine["name"] || top50_machine.try(:name)).to_s.presence || (top50_machine.try(:top50_organization).try(:name)).to_s.presence || "н/д"
-              machine_key = Stats::Lineage.branch_key_machine_id(machine_id, rating_data[:precedes_map])
+              list_num = list_num_by_id[list_id]
+              machine_name = machine_names_by_id[machine_id] || "н/д"
+              machine_key = Stats::Lineage.branch_key_machine_id(machine_id, precedes_map)
               @new_upd_data << {
                 edition: top50_date.join("-"),
-                list_id: rating_data[:list_id],
+                list_id: list_id,
                 list_num: list_num,
                 rank: rank_pos,
                 new_upd_status: new_upd_status,

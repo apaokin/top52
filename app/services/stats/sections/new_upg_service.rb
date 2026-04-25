@@ -3,24 +3,43 @@ module Stats
     class NewUpgService < BaseSectionService
 
       def call
+        ensure_machine_attrs!
         run_in_context do
           @all_ratings_data = []
           top50_slists = get_top50_lists_sorted
           top_50_dates = Stats::EditionTimeline.from_lists(top50_slists: top50_slists, date_vals: @date_vals)
+          max_rank_limit = @max_rank || self.class::TOP50_MAX_RANK
+          precedes_by_child = precedes_child_to_parent_map_for_lineage
 
-          top_50_dates.each do |top50_date|
-            list_id = get_list_id_by_date(top50_date[0], top50_date[1])
-            top50_machines = fetch_archive_list(list_id)
+          list_entries = top_50_dates.each_with_index.map do |top50_date, idx|
+            { list_id: get_list_id_by_date(top50_date[0], top50_date[1]), date: top50_date, idx: idx }
+          end.select { |entry| entry[:list_id].present? }
+          ranked_machine_ids_by_list = list_entries.each_with_object({}) do |entry, h|
+            h[entry[:list_id]] = ranked_machine_ids_for_list(entry[:list_id], max_rank_limit)
+          end
+          prev_list_id_by_list_id = list_entries.each_with_object({}) do |entry, h|
+            h[entry[:list_id]] = top50_slists[entry[:idx] + 1]&.id
+          end
+          prev_list_ids = prev_list_id_by_list_id.values.compact.uniq
+          prev_results_by_list = Top50BenchmarkResult.where(benchmark_id: prev_list_ids).group_by(&:benchmark_id)
+          prev_rank_by_list = prev_results_by_list.each_with_object({}) do |(benchmark_id, rows), h|
+            h[benchmark_id] = rows.each_with_object({}) do |pos, map|
+              map[pos.machine_id] ||= pos
+            end
+          end
+          prev_rank_by_list_id = list_entries.each_with_object({}) do |entry, h|
+            prev_list_id = prev_list_id_by_list_id[entry[:list_id]]
+            h[entry[:list_id]] = prev_list_id.present? ? (prev_rank_by_list[prev_list_id] || {}) : {}
+          end
+
+          list_entries.each do |entry|
+            list_id = entry[:list_id]
             rating_data = {
               list_id: list_id,
-              date: top50_date,
-              machines: top50_machines,
-              num_vals: @num_vals.dup,
-              date_vals: @date_vals.dup,
-              prec_machines: @prec_machines.dup,
-              ed_num_attrid: @ed_num_attrid.dup,
-              ed_date_attrid: @ed_date_attrid.dup,
-              prev_rated_pos: @prev_rated_pos.dup
+              date: entry[:date],
+              machines: ranked_machine_ids_by_list[list_id] || [],
+              prev_rank_by_machine: prev_rank_by_list_id[list_id] || {},
+              precedes_by_child: precedes_by_child
             }
             @all_ratings_data << rating_data
           end
@@ -29,9 +48,13 @@ module Stats
           indexes = Stats::RpeakRmaxIndex.build(rpeak_attrid: @rpeak_attrid, rmax_benchid: @rmax_benchid)
           rmax_by_machine = indexes[:rmax_by_machine]
           rpeak_by_machine = indexes[:rpeak_by_machine]
+          lookup_machine_value = lambda do |map, machine_id|
+            map[machine_id] || map[machine_id.to_i] || map[machine_id.to_s]
+          end
 
-          @all_ratings_data.pop
-          @all_ratings_data.each do |rating|
+          @all_ratings_data.each_with_index do |rating, idx|
+            next if idx == @all_ratings_data.size - 1
+
             new_mach = 0
             upg_mach = 0
             sum_rmax_new = 0.0
@@ -41,31 +64,31 @@ module Stats
             sum_rmax_total = 0.0
             sum_rpeak_total = 0.0
 
-            rating[:machines].each do |top50_machine|
-              prev_rank_pos = rating[:prev_rated_pos].find { |pos| pos.machine_id == top50_machine["id"] }
+            rating[:machines].each do |machine_id|
+              prev_rank_pos = rating[:prev_rank_by_machine][machine_id]
               is_upg = false
-              prec_machine = nil
+              prev_mid = nil
 
               if prev_rank_pos.nil?
-                prec_machine = rating[:prec_machines].find { |prec| prec["sec_obj_id"] == top50_machine["id"] }
-                if prec_machine.present?
-                  prev_rank_pos = rating[:prev_rated_pos].find { |pos| pos.machine_id == prec_machine["prim_obj_id"] }
+                prev_mid = rating[:precedes_by_child][machine_id]
+                if prev_mid.present?
+                  prev_rank_pos = rating[:prev_rank_by_machine][prev_mid]
                   is_upg = true if prev_rank_pos.present?
                 end
               end
 
               if prev_rank_pos.present?
                 upg_mach += 1 if is_upg
-              elsif prec_machine.present?
+              elsif prev_mid.present?
                 upg_mach += 1
               else
                 new_mach += 1
               end
 
-              mid = top50_machine["id"]
-              rmax_rec = rmax_by_machine[mid] || (mid.respond_to?(:to_i) ? rmax_by_machine[mid.to_i] : nil)
+              mid = machine_id
+              rmax_rec = lookup_machine_value.call(rmax_by_machine, mid)
               rmax_val = (rmax_rec&.result || 0).to_f
-              rpeak_val = rpeak_by_machine[mid] || (mid.respond_to?(:to_i) ? rpeak_by_machine[mid.to_i] : nil) || 0.0
+              rpeak_val = lookup_machine_value.call(rpeak_by_machine, mid) || 0.0
               sum_rmax_total += rmax_val
               sum_rpeak_total += rpeak_val
               if prev_rank_pos.present?
@@ -73,7 +96,7 @@ module Stats
                   sum_rmax_upg += rmax_val
                   sum_rpeak_upg += rpeak_val
                 end
-              elsif prec_machine.present?
+              elsif prev_mid.present?
                 sum_rmax_upg += rmax_val
                 sum_rpeak_upg += rpeak_val
               else
@@ -84,8 +107,6 @@ module Stats
 
             @ratings_summary << {
               list_id: rating[:list_id],
-              num_vals: rating[:num_vals],
-              date_vals: rating[:date_vals],
               date: rating[:date].join("-"),
               new_machines: new_mach,
               upgraded_machines: upg_mach,

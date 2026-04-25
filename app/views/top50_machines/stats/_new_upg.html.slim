@@ -25,38 +25,27 @@
 javascript:
   window.editionDatesNewUpg = #{raw (@edition_dates_new_upg || []).to_json};
   window.ratingsSummaryNewUpg = #{raw (@ratings_summary_for_js || []).to_json};
+script
+  | window.newUpgPayloadUrl = "#{request.path}.json";
+  | window.newUpgDataByKey = { ratings_chart_data: #{raw (@ratings_chart_data || []).to_json} };
+  | window.chartData = window.newUpgDataByKey.ratings_chart_data;
+  | window.chartDataRpeakPct = [];
+  | window.chartDataRmaxPct = [];
 
 div.new-upg-chart-wrapper#new-upg-bar-graph-total style="max-width: 1000px;"
   div.new-upg-chart-header id="chart_new_vs_upgraded_header" style="text-align: center; width: 100%; box-sizing: border-box; min-height: 80px;"
   div.new-upg-charts-scroll style="max-width: 1000px; width: 100%; overflow-x: auto; overflow-y: visible; display: flex; box-sizing: border-box;"
     div id="chart_new_vs_upgraded"
 
-javascript:
-  window.chartData = JSON.parse("#{@ratings_chart_data.to_json}".replace(/&quot;/g, '"'));
-  var chartData = window.chartData;
-
-coffee:
-  draw_new_vs_upgraded_new(chartData, "chart_new_vs_upgraded", "Гистограмма количества новых и обновлённых систем по редакциям", "Дата (ММ.ГГ)", "Количество систем")
-
 div.new-upg-chart-wrapper#new-upg-bar-graph-rpeak-pct style="max-width: 1000px;"
   div.new-upg-chart-header id="chart_new_vs_upgraded_rpeak_pct_header" style="text-align: center; width: 100%; box-sizing: border-box; min-height: 80px;"
   div.new-upg-charts-scroll style="max-width: 1000px; width: 100%; overflow-x: auto; overflow-y: visible; display: flex; box-sizing: border-box;"
     div id="chart_new_vs_upgraded_rpeak_pct"
-javascript:
-  window.chartDataRpeakPct = JSON.parse("#{@ratings_rpeak_pct_chart_data.to_json}".replace(/&quot;/g, '"'));
-  var chartDataRpeakPct = window.chartDataRpeakPct;
-coffee:
-  draw_new_vs_upgraded_new(chartDataRpeakPct, "chart_new_vs_upgraded_rpeak_pct", "Гистограмма доли производительности Rpeak новых и обновлённых систем", "Дата (ММ.ГГ)", "% Rpeak")
 
 div.new-upg-chart-wrapper#new-upg-bar-graph-rmax-pct style="max-width: 1000px;"
   div.new-upg-chart-header id="chart_new_vs_upgraded_rmax_pct_header" style="text-align: center; width: 100%; box-sizing: border-box; min-height: 80px;"
   div.new-upg-charts-scroll style="max-width: 1000px; width: 100%; overflow-x: auto; overflow-y: visible; display: flex; box-sizing: border-box;"
     div id="chart_new_vs_upgraded_rmax_pct"
-javascript:
-  window.chartDataRmaxPct = JSON.parse("#{@ratings_rmax_pct_chart_data.to_json}".replace(/&quot;/g, '"'));
-  var chartDataRmaxPct = window.chartDataRmaxPct;
-coffee:
-  draw_new_vs_upgraded_new(chartDataRmaxPct, "chart_new_vs_upgraded_rmax_pct", "Гистограмма доли производительности Rmax новых и обновлённых систем", "Дата (ММ.ГГ)", "% Rmax")
 div style="clear: both;"
 a class="button" style="background: #6699CC; float: right; margin-bottom: 15px;" target="_blank" download="New_upgraded_systems.csv" id="download_new_upg"
   = "Скачать CSV"

@@ -8,8 +8,11 @@ module Stats
     end
 
     def call
-      denom = @all_ratings_data[0][:machines].size.to_f
-      ratings_summary_for_js = build_summary_for_js(denom)
+      first_rating = @all_ratings_data[0] || {}
+      denom = (first_rating[:machines] || []).size.to_f
+      num_by_list_id = @num_vals.pluck(:obj_id, :value).to_h
+      date_by_list_id = @date_vals.pluck(:obj_id, :value).to_h
+      ratings_summary_for_js = build_summary_for_js(denom, num_by_list_id, date_by_list_id)
       {
         ratings_chart_data: build_count_chart_data,
         ratings_rpeak_pct_chart_data: build_rpeak_pct_chart_data,
@@ -87,14 +90,16 @@ module Stats
       end
     end
 
-    def build_summary_for_js(denom)
+    def build_summary_for_js(denom, num_by_list_id = nil, date_by_list_id = nil)
+      num_by_list_id ||= @num_vals.pluck(:obj_id, :value).to_h
+      date_by_list_id ||= @date_vals.pluck(:obj_id, :value).to_h
       @ratings_summary.each_with_index.map do |s, idx|
-        date_val = @date_vals.find_by(obj_id: s[:list_id])
-        list_num = @num_vals.find_by(obj_id: s[:list_id])
+        date_val = date_by_list_id[s[:list_id]]
+        list_num = num_by_list_id[s[:list_id]]
         edition_label = if list_num.present? && date_val.present?
-          "#{list_num.value}#{8209.chr}я (#{date_val.value})"
+          "#{list_num}#{8209.chr}я (#{date_val})"
         elsif date_val.present?
-          date_val.value
+          date_val
         else
           s[:date].to_s
         end
@@ -104,8 +109,8 @@ module Stats
         {
           edition_index: idx + 1,
           edition_label: edition_label,
-          list_num: list_num&.value,
-          date_value: date_val&.value,
+          list_num: list_num,
+          date_value: date_val,
           new_machines: s[:new_machines],
           upgraded_machines: s[:upgraded_machines],
           total_machines: total_mach,

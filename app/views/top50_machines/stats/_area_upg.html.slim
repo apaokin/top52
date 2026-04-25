@@ -64,9 +64,14 @@ table class="table table-hover" id="area_upg_table" style="margin: 0 auto;"
   - cba_edition_meta[edition_no] = {label: edition_label, url: get_archive_path(list_year, list_month)}
 
 script
-  | window.componentsByAreaLagByEdition = #{raw (@area_upg_lag_by_edition || []).to_json};
-  | window.componentsByAreaNewQtyByEdition = #{raw (@area_upg_new_qty_by_edition || []).to_json};
-  | window.componentsByAreaSystemsWithNewByEdition = #{raw (@area_upg_systems_with_new_by_edition || []).to_json};
-  | window.componentsByAreaNewUpgradedByEdition = #{raw (@area_upg_new_upgraded_by_edition || []).to_json};
-  | window.componentsByAreaEditionLabels = #{raw (@area_upg_edition_labels || []).to_json};
+  | window.areaUpgPayloadUrl = "#{request.path}.json";
+  | window.areaUpgDataByKey = {
+  |   area_upg_lag_by_edition: #{raw (@area_upg_lag_by_edition || []).to_json},
+  |   area_upg_edition_labels: #{raw (@area_upg_edition_labels || []).to_json}
+  | };
+  | window.componentsByAreaLagByEdition = window.areaUpgDataByKey.area_upg_lag_by_edition;
+  | window.componentsByAreaNewQtyByEdition = [];
+  | window.componentsByAreaSystemsWithNewByEdition = [];
+  | window.componentsByAreaNewUpgradedByEdition = [];
+  | window.componentsByAreaEditionLabels = window.areaUpgDataByKey.area_upg_edition_labels;
   | window.componentsByAreaEditionMeta = #{raw (cba_edition_meta || {}).to_json};

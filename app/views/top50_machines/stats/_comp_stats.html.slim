@@ -106,18 +106,23 @@ body
         a.button style="background: #6699CC;" id="download_gpu_microcores_only_component" download="GPU_microcores_component.csv" Скачать CSV
 
   script
-    | const cpuTotalData = #{raw @cpu_total_data.to_json};
-    | const cpuPerNodeData = #{raw @cpu_per_node_data.to_json};
-    | const gpuTotalData = #{raw @gpu_total_data.to_json};
-    | const gpuPerNodeData = #{raw @gpu_per_node_data.to_json};
-    | const freshestTotalData = #{raw @freshest_total_data.to_json};
-    | const freshestPerNodeData = #{raw @freshest_per_node_data.to_json};
-    | const freshestTotalDataCpuOnly = #{raw (@freshest_total_data_cpu_only || []).to_json};
-    | const freshestPerNodeDataCpuOnly = #{raw (@freshest_per_node_data_cpu_only || []).to_json};
-    | const coresTotalData = #{raw @cores_total_data.to_json};
-    | const coresPerNodeData = #{raw @cores_per_node_data.to_json};
-    | const gpuCoresTotalData = #{raw (@gpu_cores_total_data || []).to_json};
-    | const gpuCoresPerNodeData = #{raw (@gpu_cores_per_node_data || []).to_json};
-    | const gpuMicrocoresOnlyTotalData = #{raw (@gpu_microcores_only_total_data || []).to_json};
-    | const gpuMicrocoresOnlyPerNodeData = #{raw (@gpu_microcores_only_per_node_data || []).to_json};
+    | window.compStatsPayloadUrl = "#{request.path}.json";
+    | window.compStatsDataByKey = {
+    |   cpu_total_data: #{raw @cpu_total_data.to_json},
+    |   cpu_per_node_data: #{raw @cpu_per_node_data.to_json}
+    | };
+    | const cpuTotalData = window.compStatsDataByKey.cpu_total_data;
+    | const cpuPerNodeData = window.compStatsDataByKey.cpu_per_node_data;
+    | const gpuTotalData = [];
+    | const gpuPerNodeData = [];
+    | const freshestTotalData = [];
+    | const freshestPerNodeData = [];
+    | const freshestTotalDataCpuOnly = [];
+    | const freshestPerNodeDataCpuOnly = [];
+    | const coresTotalData = [];
+    | const coresPerNodeData = [];
+    | const gpuCoresTotalData = [];
+    | const gpuCoresPerNodeData = [];
+    | const gpuMicrocoresOnlyTotalData = [];
+    | const gpuMicrocoresOnlyPerNodeData = [];
     | const editionDatesComponent = #{raw (@edition_dates_component || []).to_json};
