@@ -54,137 +54,90 @@ applyMachineHoverHighlight = (containerId, d, keyFn) ->
     cell.select(".cell-hl-inner").style("stroke", cols.inner).style("stroke-width", 2)
   )
 
+buildEditionRankDomains = (data, options = {}) ->
+  data = data or []
+  data = [] unless Array.isArray(data)
+  rankSource = options.rankSourceData
+  rankSource = data unless Array.isArray(rankSource)
+  editionSort = options.editionSort or ((a, b) -> b - a)
+  rankSort = options.rankSort or ((a, b) -> b - a)
+  editions = Array.from(new Set(data.map((d) -> d.edition))).sort(editionSort)
+  allRanks = Array.from(new Set(rankSource.map((d) -> d.rank))).filter((r) -> r?).sort(rankSort)
+  fallbackRankAscending = options.fallbackRankAscending or false
+  if allRanks.length > 0
+    ranks = allRanks
+  else if fallbackRankAscending
+    ranks = Array.from({ length: getMaxRank() }, (_, i) -> i + 1)
+  else
+    ranks = Array.from({ length: getMaxRank() }, (_, i) -> getMaxRank() - i)
+  { editions, ranks }
 
-drawLegend = (svg, colorScale, minLag, maxLag, width, height) ->
-  # Размеры легенды
-  legendWidth = 300
-  legendHeight = 20
-  legendX = width / 2 - legendWidth / 2
-  legendY = height + 75
-
-  # Добавляем градиент в SVG
-  defs = svg.append("defs")
-  linearGradient = defs.append("linearGradient")
-    .attr("id", "legend-gradient")
-    .attr("x1", "0%")
-    .attr("x2", "100%")
-    .attr("y1", "0%")
-    .attr("y2", "0%")
-
-  # Добавляем цветовые остановки (стопы)
-  stops = [
-    { offset: "0%", color: "#00FF00" }  # Зелёный
-    { offset: "20%", color: "#FFFF00" } # Жёлтый
-    { offset: "40%", color: "#FFA500" } # Оранжевый
-    { offset: "60%", color: "#FF0000" } # Красный
-    { offset: "80%", color: "#0000FF" } # Синий
-    { offset: "100%", color: "#800080" }# Фиолетовый
-  ]
-
-  for stop in stops
-    linearGradient.append("stop")
-      .attr("offset", stop.offset)
-      .attr("stop-color", stop.color)
-
-  # Рисуем прямоугольник с градиентом
-  legend = svg.append("g")
-    .attr("class", "legend")
-    .attr("transform", "translate(#{legendX}, #{legendY})")
-
-  legend.append("rect")
-    .attr("width", legendWidth)
-    .attr("height", legendHeight)
-    .style("fill", "url(#legend-gradient)")
-
-  # Добавляем текст для интервалов (дни)
-  legend.append("g")
-    .selectAll("text")
-    .data([minLag, maxLag])
-    .enter()
-    .append("text")
-    .attr("x", (d, i) -> i * legendWidth) # Левый и правый край
-    .attr("y", legendHeight + 15)
-    .attr("text-anchor", (d, i) -> if i == 0 then "start" else "end")
-    .style("font-size", "12px")
-    .text((d) -> d3.format(".2f")(d) + " дн.")
-
-drawHeatmap = (data, containerId, title) ->
-  # Очищаем контейнер
-  containerSel = d3.select("##{containerId}")
-  containerSel.selectAll("*").remove()
-
-  # Уникальные значения редакций и рангов
-  editions = Array.from(new Set(data.map((d) -> d.edition))).sort((a, b) -> b - a)
-  allRanks = Array.from(new Set(data.map((d) -> d.rank))).filter((r) -> r?).sort((a, b) -> b - a)
-  ranks = if allRanks.length > 0 then allRanks else Array.from({ length: getMaxRank() }, (_, i) -> getMaxRank() - i)
-
-  margin = { top: 20, right: 20, bottom: 80, left: 60 }
+resolveHeatmapSize = (editions, rankCount, options = {}) ->
+  margin = options.margin or { top: 20, right: 20, bottom: 80, left: 60 }
+  sizeFn = options.sizeResolver
+  if typeof sizeFn == "function"
+    size = sizeFn(editions, rankCount)
+    return { width: size.width, height: size.height, margin: size.margin or margin }
   edCount = editions.length or 1
-  rankCount = ranks.length or 1
+  rows = rankCount or 1
   width = Math.max(edCount * HEATMAP_CELL_WIDTH, HEATMAP_MIN_WIDTH)
-  height = Math.max(rankCount * HEATMAP_CELL_HEIGHT, HEATMAP_MIN_HEIGHT)
+  height = Math.max(rows * HEATMAP_CELL_HEIGHT, HEATMAP_MIN_HEIGHT)
+  { width, height, margin }
 
-  # Определяем минимальное и максимальное значение lag
-  minLag = d3.min(data, (d) -> d.lag)
-  maxLag = d3.max(data, (d) -> d.lag)
-  if minLag == null or maxLag == null
-    minLag = 0
-    maxLag = 1
-
-  # Создаём цветовую шкалу
-  colorScale = d3.scaleSequential((d3.interpolateRgbBasis(["#00FF00", "#FFFF00", "#FFA500", "#FF0000", "#0000FF", "#800080"])))
-    .domain([minLag, maxLag])
-
-  # Шкалы
-  x = d3.scaleBand().range([width, 0]).domain(editions).padding(0.05)
-  y = d3.scaleBand().range([height, 0]).domain(ranks).padding(0.05)
-
-  # Контейнер SVG
-  svg = d3.select("##{containerId}").append("svg")
+buildHeatmapScaffold = (opts = {}) ->
+  container = d3.select("##{opts.containerId}")
+  return null if opts.requireContainer and container.empty()
+  unless opts.clearContainer == false
+    container.selectAll("*").remove()
+  domains = buildEditionRankDomains(opts.data, {
+    rankSourceData: opts.rankSourceData
+    editionSort: opts.editionSort
+    rankSort: opts.rankSort
+    fallbackRankAscending: opts.fallbackRankAscending
+  })
+  size = resolveHeatmapSize(domains.editions, domains.ranks.length, {
+    margin: opts.margin
+    sizeResolver: opts.sizeResolver
+  })
+  width = size.width
+  height = size.height
+  margin = size.margin
+  xRange = if typeof opts.xRange == "function" then opts.xRange(width, height) else if opts.xRange? then opts.xRange else [width, 0]
+  yRange = if typeof opts.yRange == "function" then opts.yRange(width, height) else if opts.yRange? then opts.yRange else [height, 0]
+  extraBottom = if opts.extraBottom? then opts.extraBottom else 70
+  x = d3.scaleBand().range(xRange).domain(domains.editions).padding(0.05)
+  y = d3.scaleBand().range(yRange).domain(domains.ranks).padding(0.05)
+  svg = container.append("svg")
     .attr("width", width + margin.left + margin.right)
-    .attr("height", height + margin.top + margin.bottom + 70)
+    .attr("height", height + margin.top + margin.bottom + extraBottom)
     .append("g")
     .attr("transform", "translate(#{margin.left}, #{margin.top})")
+  if opts.drawAxes != false
+    xAxis = svg.append("g").attr("transform", "translate(0, #{height})")
+    axisBottom = d3.axisBottom(x)
+    if typeof opts.xTickFormat == "function"
+      axisBottom = axisBottom.tickFormat(opts.xTickFormat)
+    xAxis.call(axisBottom)
+    xAxis.selectAll("text")
+      .attr("transform", "rotate(#{opts.xLabelRotate or -45})")
+      .style("text-anchor", "end")
+    svg.append("text")
+      .attr("x", width / 2)
+      .attr("y", height + 55)
+      .attr("text-anchor", "middle")
+      .style("font-size", "16px")
+      .text(opts.xLabel or "Редакция")
+    svg.append("g").call(d3.axisLeft(y))
+    svg.append("text")
+      .attr("transform", "rotate(-90)")
+      .attr("y", -margin.left + 20)
+      .attr("x", -height / 2)
+      .attr("text-anchor", "middle")
+      .style("font-size", "16px")
+      .text(opts.yLabel or "Ранг")
+  { container, svg, x, y, width, height, margin, editions: domains.editions, ranks: domains.ranks }
 
-  # Оси
-  xAxis = svg.append("g")
-    .attr("transform", "translate(0, #{height})")
-  xAxis.call(d3.axisBottom(x).tickFormat((d) ->
-    if typeof editionDatesLag != "undefined" && editionDatesLag && editionDatesLag[d - 1] then editionDatesLag[d - 1] else d
-  ))
-  xAxis.selectAll("text")
-    .attr("transform", "rotate(-45)")
-    .style("text-anchor", "end")
-  svg.append("text")
-    .attr("x", width / 2)
-    .attr("y", height + 55)
-    .attr("text-anchor", "middle")
-    .style("font-size", "16px")
-    .text("Редакция")
-
-  svg.append("g").call(d3.axisLeft(y))
-  svg.append("text")
-    .attr("transform", "rotate(-90)")
-    .attr("y", -margin.left + 20)
-    .attr("x", -height / 2)
-    .attr("text-anchor", "middle")
-    .style("font-size", "16px")
-    .text("Ранг")
-
-  # Клетки
-  cells = svg.selectAll(".cell")
-    .data(data.filter((d) -> d.lag != null))
-    .enter().append("g")
-    .attr("class", "cell")
-  cells.append("rect")
-    .attr("class", "cell-fill")
-    .attr("x", (d) -> x(d.edition))
-    .attr("y", (d) -> y(d.rank))
-    .attr("width", x.bandwidth())
-    .attr("height", y.bandwidth())
-    .attr("fill", (d) -> colorScale(d.lag))
-    .attr("stroke", "#000")
-    .attr("stroke-width", 0.5)
+appendHeatmapHighlightRects = (cells, x, y) ->
   cells.append("rect")
     .attr("class", "cell-hl-outer")
     .attr("x", (d) -> x(d.edition))
@@ -203,8 +156,9 @@ drawHeatmap = (data, containerId, title) ->
     .attr("fill", "none")
     .attr("stroke", "none")
     .attr("stroke-width", 2)
-  # Подсветка одной логической системы по всем редакциям (machine_key = root по Precedes, иначе machine_id)
-  key = (d) -> if d.machine_key? then d.machine_key else d.machine_id
+
+bindHeatmapMachineHover = (cells, containerId, keyFn = null) ->
+  key = keyFn or ((d) -> if d.machine_key? then d.machine_key else d.machine_id)
   cells.filter((d) -> key(d) != null)
     .on("mouseenter", (d) ->
       applyMachineHoverHighlight(containerId, d, key)
@@ -212,13 +166,187 @@ drawHeatmap = (data, containerId, title) ->
     .on("mouseleave", ->
       clearMachineHoverHighlight(containerId)
     )
-  cells.append("title")
-    .text((d) ->
+
+appendBasicHeatmapCells = (opts = {}) ->
+  validData = (opts.data or []).filter((d) -> d.lag != null)
+  cells = opts.svg.selectAll(".cell")
+    .data(validData)
+    .enter().append("g")
+    .attr("class", "cell")
+  cells.append("rect")
+    .attr("class", "cell-fill")
+    .attr("x", (d) -> opts.x(d.edition))
+    .attr("y", (d) -> opts.y(d.rank))
+    .attr("width", opts.x.bandwidth())
+    .attr("height", opts.y.bandwidth())
+    .attr("fill", opts.fillFn or ((d) -> opts.colorScale(d.lag)))
+    .attr("stroke", "#000")
+    .attr("stroke-width", 0.5)
+  if typeof opts.contourStrokeFn == "function"
+    cells.append("rect")
+      .attr("class", "cell-contour-sign")
+      .attr("x", (d) -> opts.x(d.edition))
+      .attr("y", (d) -> opts.y(d.rank))
+      .attr("width", opts.x.bandwidth())
+      .attr("height", opts.y.bandwidth())
+      .attr("fill", "none")
+      .attr("stroke", opts.contourStrokeFn)
+      .attr("stroke-width", opts.contourStrokeWidth or 2.5)
+  appendHeatmapHighlightRects(cells, opts.x, opts.y)
+  bindHeatmapMachineHover(cells, opts.containerId, opts.keyFn) unless opts.enableHover == false
+  if typeof opts.titleFn == "function"
+    cells.append("title").text(opts.titleFn)
+  if typeof opts.afterCells == "function"
+    opts.afterCells(cells)
+  cells
+
+appendGradientLegend = (svg, options = {}) ->
+  legendWidth = options.legendWidth or 300
+  legendHeight = options.legendHeight or 20
+  legendX = options.legendX
+  legendX = options.width / 2 - legendWidth / 2 if legendX == null or legendX == undefined
+  legendY = options.legendY
+  legendY = options.height + 75 if legendY == null or legendY == undefined
+  gradientId = options.gradientId or "legend-gradient"
+  colors = options.colors or LAG_RAINBOW or ["#00FF00", "#FFFF00", "#FFA500", "#FF0000", "#0000FF", "#800080"]
+  defs = svg.append("defs")
+  grad = defs.append("linearGradient").attr("id", gradientId).attr("x1", "0%").attr("x2", "100%").attr("y1", "0%").attr("y2", "0%")
+  for i in [0...colors.length]
+    grad.append("stop").attr("offset", (100 * i / (colors.length - 1)) + "%").attr("stop-color", colors[i])
+  legend = svg.append("g").attr("class", "legend").attr("transform", "translate(#{legendX}, #{legendY})")
+  legend.append("rect")
+    .attr("width", legendWidth)
+    .attr("height", legendHeight)
+    .style("fill", "url(##{gradientId})")
+    .attr("stroke", options.strokeColor or "#333")
+    .attr("stroke-width", options.strokeWidth or 0.5)
+  legend.append("text")
+    .attr("x", 0)
+    .attr("y", legendHeight + 14)
+    .attr("text-anchor", "start")
+    .style("font-size", "12px")
+    .style("fill", options.leftColor or "#333")
+    .text(options.leftLabel or "")
+  legend.append("text")
+    .attr("x", legendWidth)
+    .attr("y", legendHeight + 14)
+    .attr("text-anchor", "end")
+    .style("font-size", "12px")
+    .style("fill", options.rightColor or "#333")
+    .text(options.rightLabel or "")
+  legend
+
+prepareChartContainers = (src_id) ->
+  container = d3.select("##{src_id}")
+  container.selectAll("*").remove()
+  headerEl = document.getElementById(src_id + "_header")
+  headerContainer = if headerEl then d3.select(headerEl) else container
+  if headerEl then headerContainer.selectAll("*").remove()
+  { container, headerContainer }
+
+appendChartHeader = (headerContainer, title, marginBottom = "10px") ->
+  headerContainer.append("div")
+    .text(title)
+    .style("font-family", "Arial")
+    .style("font-size", "24px")
+    .style("font-weight", "500")
+    .style("text-align", "center")
+    .style("margin-bottom", marginBottom)
+
+appendYAxisLabel = (svg, marginLeft, height, y_label) ->
+  svg.append("text")
+    .attr("transform", "rotate(-90)")
+    .attr("y", marginLeft - 70)
+    .attr("x", 0 - (height / 2))
+    .attr("dy", "1em")
+    .style("text-anchor", "middle")
+    .style("font-family", "Arial")
+    .style("font-size", "14px")
+    .text(y_label)
+
+applyMatrixCellVisibility = (cellGroup, d, activeFilters, statusColors, x, y) ->
+  leftActive = d.new_upd_status and activeFilters[d.new_upd_status]
+  rightActive = d.pos_status and activeFilters[d.pos_status]
+  cellWidth = x.bandwidth()
+  if (leftActive) and (rightActive)
+    cellGroup.select(".left-half")
+      .attr("x", x(d.edition))
+      .attr("width", cellWidth / 2)
+      .attr("fill", statusColors[d.new_upd_status])
+      .attr("visibility", "visible")
+    cellGroup.select(".right-half")
+      .attr("x", x(d.edition) + cellWidth / 2)
+      .attr("width", cellWidth / 2)
+      .attr("fill", statusColors[d.pos_status])
+      .attr("visibility", "visible")
+  else if leftActive
+    cellGroup.select(".left-half")
+      .attr("x", x(d.edition))
+      .attr("width", cellWidth)
+      .attr("fill", statusColors[d.new_upd_status])
+      .attr("visibility", "visible")
+    cellGroup.select(".right-half").attr("visibility", "hidden")
+  else if rightActive
+    cellGroup.select(".left-half")
+      .attr("x", x(d.edition))
+      .attr("width", cellWidth)
+      .attr("fill", statusColors[d.pos_status])
+      .attr("visibility", "visible")
+    cellGroup.select(".right-half").attr("visibility", "hidden")
+  else
+    cellGroup.selectAll("rect").attr("visibility", "hidden")
+  if leftActive or rightActive
+    cellGroup.selectAll(".cell-hl-outer, .cell-hl-inner").attr("visibility", "visible")
+  else
+    cellGroup.selectAll(".cell-hl-outer, .cell-hl-inner").attr("visibility", "hidden")
+  { leftActive, rightActive }
+
+
+drawLegend = (svg, colorScale, minLag, maxLag, width, height) ->
+  appendGradientLegend(svg, {
+    width: width
+    height: height
+    gradientId: "legend-gradient"
+    colors: ["#00FF00", "#FFFF00", "#FFA500", "#FF0000", "#0000FF", "#800080"]
+    leftLabel: d3.format(".2f")(minLag) + " дн."
+    rightLabel: d3.format(".2f")(maxLag) + " дн."
+    strokeColor: "none"
+    strokeWidth: 0
+  })
+
+drawHeatmap = (data, containerId, title) ->
+  scaffold = buildHeatmapScaffold({
+    containerId: containerId
+    data: data
+    extraBottom: 70
+    xTickFormat: (d) ->
+      if typeof editionDatesLag != "undefined" && editionDatesLag && editionDatesLag[d - 1] then editionDatesLag[d - 1] else d
+  })
+  return unless scaffold?
+  { svg, x, y, width, height } = scaffold
+
+  # Определяем минимальное и максимальное значение lag
+  minLag = d3.min(data, (d) -> d.lag)
+  maxLag = d3.max(data, (d) -> d.lag)
+  if minLag == null or maxLag == null
+    minLag = 0
+    maxLag = 1
+
+  # Создаём цветовую шкалу
+  colorScale = d3.scaleSequential((d3.interpolateRgbBasis(["#00FF00", "#FFFF00", "#FFA500", "#FF0000", "#0000FF", "#800080"])))
+    .domain([minLag, maxLag])
+  appendBasicHeatmapCells({
+    svg: svg
+    data: data
+    x: x
+    y: y
+    containerId: containerId
+    colorScale: colorScale
+    titleFn: (d) ->
       info = "#{title}\nРедакция: #{d.edition}, Место: #{d.rank}, Задержка: #{d.lag} дн."
       info += heatmapTooltipSystemLine(d)
       info
-    )
-
+  })
 
   # Рисуем легенду
   drawLegend(svg, colorScale, minLag, maxLag, width, height)
@@ -245,22 +373,27 @@ transformLagData = (data, method) ->
     )
 
 # Build CSV from lag data (rows=rank, cols=edition). inQuarters: export values as quarters (lag/91.25)
-buildLagCsv = (data, inQuarters = false) ->
-  editions = Array.from(new Set(data.map((d) -> d.edition))).sort((a, b) -> a - b)
-  ranks = Array.from({ length: getMaxRank() }, (_, i) -> i + 1)
+buildEditionRankGridCsv = (data, valueResolver, valueFormatter, rankList = null) ->
+  editions = Array.from(new Set((data or []).map((d) -> d.edition))).sort((a, b) -> a - b)
+  ranks = rankList or Array.from({ length: getMaxRank() }, (_, i) -> i + 1)
   lookup = {}
-  data.forEach((d) ->
-    if d.lag != null && d.lag != undefined
-      val = if inQuarters then d.lag / DAYS_PER_QUARTER else d.lag
-      lookup["#{d.edition}-#{d.rank}"] = val
+  (data or []).forEach((d) ->
+    resolved = valueResolver(d)
+    if resolved != null and resolved != undefined
+      lookup["#{d.edition}-#{d.rank}"] = resolved
   )
   header = "Место | Редакция," + editions.join(",")
-  fmt = (v) -> if v == null or v == undefined then "" else (if inQuarters then (if Math.abs(v) >= 10 then Math.round(v) else d3.format(".2f")(v)) else v)
   rows = ranks.map((rank) ->
-    cells = editions.map((ed) -> fmt(lookup["#{ed}-#{rank}"]))
+    cells = editions.map((ed) ->
+      valueFormatter(lookup["#{ed}-#{rank}"])
+    )
     rank + "," + cells.join(",")
   )
   [header].concat(rows).join("\n")
+
+buildLagCsv = (data, inQuarters = false) ->
+  fmt = (v) -> if v == null or v == undefined then "" else (if inQuarters then (if Math.abs(v) >= 10 then Math.round(v) else d3.format(".2f")(v)) else v)
+  buildEditionRankGridCsv(data, ((d) -> if inQuarters then d.lag / DAYS_PER_QUARTER else d.lag), fmt)
 
 LAG_RAINBOW = ["#00FF00", "#FFFF00", "#FFA500", "#FF0000", "#0000FF", "#800080"]
 DAYS_PER_QUARTER = 91.25
@@ -313,96 +446,60 @@ lagFlexibleScale = (data, method) ->
 drawFreshestLagHeatmap = (data, containerId, title, scaleMethod, gradientId) ->
   data = data or []
   data = [] unless Array.isArray(data)
-  container = d3.select("##{containerId}")
-  return if container.empty()
-  container.selectAll("*").remove()
   fullValid = data.filter((d) -> d.lag != null)
-  editions = Array.from(new Set(data.map((d) -> d.edition))).sort((a, b) -> b - a)
-  allRanks = Array.from(new Set(fullValid.map((d) -> d.rank))).filter((r) -> r?).sort((a, b) -> b - a)
-  ranks = if allRanks.length > 0 then allRanks else Array.from({ length: getMaxRank() }, (_, i) -> getMaxRank() - i)
-
-  margin = { top: 20, right: 20, bottom: 80, left: 60 }
-  edCount = editions.length or 1
-  rankCount = ranks.length or 1
-  width = Math.max(edCount * HEATMAP_CELL_WIDTH, HEATMAP_MIN_WIDTH)
-  height = Math.max(rankCount * HEATMAP_CELL_HEIGHT, HEATMAP_MIN_HEIGHT)
+  scaffold = buildHeatmapScaffold({
+    containerId: containerId
+    requireContainer: true
+    data: data
+    rankSourceData: fullValid
+    extraBottom: 75
+    xTickFormat: (d) ->
+      if typeof editionDatesLag != "undefined" && editionDatesLag && editionDatesLag[d - 1] then editionDatesLag[d - 1] else d
+  })
+  return unless scaffold?
+  { svg, x, y, width, height } = scaffold
   flexible = lagFlexibleScale(data, scaleMethod)
   colorScale = flexible.colorScale
   minLag = flexible.minLag
   maxLag = flexible.maxLag
   inQuarters = flexible.inQuarters or false
-  x = d3.scaleBand().range([width, 0]).domain(editions).padding(0.05)
-  y = d3.scaleBand().range([height, 0]).domain(ranks).padding(0.05)
-  svg = container.append("svg")
-    .attr("width", width + margin.left + margin.right)
-    .attr("height", height + margin.top + margin.bottom + 75)
-    .append("g")
-    .attr("transform", "translate(#{margin.left}, #{margin.top})")
-  xAxis = svg.append("g").attr("transform", "translate(0, #{height})")
-  xAxis.call(d3.axisBottom(x).tickFormat((d) ->
-    if typeof editionDatesLag != "undefined" && editionDatesLag && editionDatesLag[d - 1] then editionDatesLag[d - 1] else d
-  ))
-  xAxis.selectAll("text").attr("transform", "rotate(-45)").style("text-anchor", "end")
-  svg.append("text").attr("x", width / 2).attr("y", height + 55).attr("text-anchor", "middle").style("font-size", "16px").text("Редакция")
-  svg.append("g").call(d3.axisLeft(y))
-  svg.append("text").attr("transform", "rotate(-90)").attr("y", -margin.left + 20).attr("x", -height / 2).attr("text-anchor", "middle").style("font-size", "16px").text("Ранг")
-  validData = data.filter((d) -> d.lag != null)
-  cells = svg.selectAll(".cell").data(validData).enter().append("g").attr("class", "cell")
-  cells.append("rect").attr("class", "cell-fill")
-    .attr("x", (d) -> x(d.edition)).attr("y", (d) -> y(d.rank))
-    .attr("width", x.bandwidth()).attr("height", y.bandwidth())
-    .attr("fill", (d) -> colorScale(d.lag)).attr("stroke", "#000").attr("stroke-width", 0.5)
-  cells.append("rect").attr("class", "cell-contour-sign")
-    .attr("x", (d) -> x(d.edition)).attr("y", (d) -> y(d.rank))
-    .attr("width", x.bandwidth()).attr("height", y.bandwidth())
-    .attr("fill", "none")
-    .attr("stroke", (d) -> if d.show_before_announce_contour then "#e91e8c" else "none")
-    .attr("stroke-width", 2.5)
-  cells.append("rect").attr("class", "cell-hl-outer")
-    .attr("x", (d) -> x(d.edition)).attr("y", (d) -> y(d.rank))
-    .attr("width", x.bandwidth()).attr("height", y.bandwidth())
-    .attr("fill", "none").attr("stroke", "none").attr("stroke-width", 3)
-  cells.append("rect").attr("class", "cell-hl-inner")
-    .attr("x", (d) -> x(d.edition) + 2).attr("y", (d) -> y(d.rank) + 2)
-    .attr("width", x.bandwidth() - 4).attr("height", y.bandwidth() - 4)
-    .attr("fill", "none").attr("stroke", "none").attr("stroke-width", 2)
-  key = (d) -> if d.machine_key? then d.machine_key else d.machine_id
-  cells.filter((d) -> key(d) != null)
-    .on("mouseenter", (d) ->
-      applyMachineHoverHighlight(containerId, d, key)
-    )
-    .on("mouseleave", -> clearMachineHoverHighlight(containerId))
-  cells.append("title").text((d) ->
-    if inQuarters
-      q = d.lag / DAYS_PER_QUARTER
-      absVal = (if Math.abs(q) >= 10 then Math.round(q) else d3.format(".1f")(Math.abs(q)))
-      unit = " кв."
-    else
-      absVal = Math.abs(d.lag)
-      unit = " дн."
-    suffix = if d.lag < 0 then " до анонса" else ""
-    header = if d.vendor_name and d.component_name then "#{d.vendor_name} #{d.component_name}" else if d.component_name then d.component_name else if d.vendor_name then d.vendor_name else title
-    info = "Компонент: #{header}\nРедакция: #{d.edition}, Место: #{d.rank}\nЗначение: #{absVal}#{unit}#{suffix}"
-    info += heatmapTooltipSystemLine(d)
-    info
-  )
-  legendWidth = 300
-  legendHeight = 20
-  legendX = width / 2 - legendWidth / 2
-  legendY = height + 75
-  defs = svg.append("defs")
-  grad = defs.append("linearGradient").attr("id", gradientId).attr("x1", "0%").attr("x2", "100%").attr("y1", "0%").attr("y2", "0%")
-  for i in [0...LAG_RAINBOW.length]
-    grad.append("stop").attr("offset", (100 * i / (LAG_RAINBOW.length - 1)) + "%").attr("stop-color", LAG_RAINBOW[i])
-  legend = svg.append("g").attr("class", "legend").attr("transform", "translate(#{legendX}, #{legendY})")
-  legend.append("rect").attr("width", legendWidth).attr("height", legendHeight).style("fill", "url(##{gradientId})").attr("stroke", "#333").attr("stroke-width", 0.5)
+  appendBasicHeatmapCells({
+    svg: svg
+    data: data
+    x: x
+    y: y
+    containerId: containerId
+    colorScale: colorScale
+    contourStrokeFn: (d) -> if d.show_before_announce_contour then "#e91e8c" else "none"
+    titleFn: (d) ->
+      if inQuarters
+        q = d.lag / DAYS_PER_QUARTER
+        absVal = (if Math.abs(q) >= 10 then Math.round(q) else d3.format(".1f")(Math.abs(q)))
+        unit = " кв."
+      else
+        absVal = Math.abs(d.lag)
+        unit = " дн."
+      suffix = if d.lag < 0 then " до анонса" else ""
+      header = if d.vendor_name and d.component_name then "#{d.vendor_name} #{d.component_name}" else if d.component_name then d.component_name else if d.vendor_name then d.vendor_name else title
+      info = "Компонент: #{header}\nРедакция: #{d.edition}, Место: #{d.rank}\nЗначение: #{absVal}#{unit}#{suffix}"
+      info += heatmapTooltipSystemLine(d)
+      info
+  })
   unitStr = if inQuarters then " кв." else " дн."
   fmt = if inQuarters then lagFormatQuarter else lagFormatDay
   leftLabel = if minLag < 0 then fmt(Math.abs(minLag)) + unitStr + " до анонса" else fmt(minLag) + unitStr
   rightLabel = if maxLag < 0 then fmt(Math.abs(maxLag)) + unitStr + " до анонса" else fmt(maxLag) + unitStr
   leftColor = if minLag < 0 then "#2e7d32" else "#c62828"
-  legend.append("text").attr("x", 0).attr("y", legendHeight + 14).attr("text-anchor", "start").style("font-size", "12px").style("fill", leftColor).text(leftLabel)
-  legend.append("text").attr("x", legendWidth).attr("y", legendHeight + 14).attr("text-anchor", "end").style("font-size", "12px").style("fill", "#c62828").text(rightLabel)
+  appendGradientLegend(svg, {
+    width: width
+    height: height
+    gradientId: gradientId
+    colors: LAG_RAINBOW
+    leftLabel: leftLabel
+    rightLabel: rightLabel
+    leftColor: leftColor
+    rightColor: "#c62828"
+  })
 
 @updateHeatmaps = (scale, dataSets, containerIds, titles, colorScales, downloadIds, downloadFilenames) ->
   for i in [0...dataSets.length]
@@ -683,19 +780,19 @@ drawComponentHeatmap = (data, containerId, title, scaleMethod, tooltipUnit = nul
   console.log("drawComponentHeatmap called for", containerId, "with", data.length, "data points")
   data = data or []
   data = [] unless Array.isArray(data)
-  container = d3.select("##{containerId}")
-  if container.empty()
+  scaffold = buildHeatmapScaffold({
+    containerId: containerId
+    requireContainer: true
+    data: data
+    extraBottom: 75
+    sizeResolver: (editions, rankCount) -> getComponentHeatmapSize(editions, rankCount)
+    xTickFormat: (d) ->
+      if typeof editionDatesComponent != "undefined" && editionDatesComponent && editionDatesComponent[d - 1] then editionDatesComponent[d - 1] else d
+  })
+  unless scaffold?
     console.error("Container ##{containerId} not found!")
     return
-  container.selectAll("*").remove()
-  editions = Array.from(new Set(data.map((d) -> d.edition))).sort((a, b) -> b - a)
-  allRanks = Array.from(new Set(data.map((d) -> d.rank))).filter((r) -> r?).sort((a, b) -> b - a)
-  ranks = if allRanks.length > 0 then allRanks else Array.from({ length: getMaxRank() }, (_, i) -> getMaxRank() - i)
-
-  size = getComponentHeatmapSize(editions, ranks.length)
-  width = size.width
-  height = size.height
-  margin = size.margin
+  { svg, x, y, width, height } = scaffold
   method = (scaleMethod and scaleMethod.toString()) or "quantile"
   flexible = componentFlexibleScale(data, method)
   if !flexible or !flexible.colorScale
@@ -706,98 +803,26 @@ drawComponentHeatmap = (data, containerId, title, scaleMethod, tooltipUnit = nul
     { gradient: true, minVal: flexible.minVal, maxVal: flexible.maxVal, gradientId: "component-grad-" + containerId }
   else
     { labels: flexible.labels }
-  x = d3.scaleBand().range([width, 0]).domain(editions).padding(0.05)
-  y = d3.scaleBand().range([height, 0]).domain(ranks).padding(0.05)
-  svg = d3.select("##{containerId}").append("svg")
-    .attr("width", width + margin.left + margin.right)
-    .attr("height", height + margin.top + margin.bottom + 75)
-    .append("g")
-    .attr("transform", "translate(#{margin.left}, #{margin.top})")
-  xAxisComponent = svg.append("g")
-    .attr("transform", "translate(0, #{height})")
-  xAxisComponent.call(d3.axisBottom(x).tickFormat((d) ->
-    if typeof editionDatesComponent != "undefined" && editionDatesComponent && editionDatesComponent[d - 1] then editionDatesComponent[d - 1] else d
-  ))
-  xAxisComponent.selectAll("text")
-    .attr("transform", "rotate(-45)")
-    .style("text-anchor", "end")
-  svg.append("text")
-    .attr("x", width / 2)
-    .attr("y", height + 55)
-    .attr("text-anchor", "middle")
-    .style("font-size", "16px")
-    .text("Редакция")
-  svg.append("g").call(d3.axisLeft(y))
-  svg.append("text")
-    .attr("transform", "rotate(-90)")
-    .attr("y", -margin.left + 20)
-    .attr("x", -height / 2)
-    .attr("text-anchor", "middle")
-    .style("font-size", "16px")
-    .text("Ранг")
-  cells = svg.selectAll(".cell")
-    .data(data.filter((d) -> d.lag != null))
-    .enter().append("g")
-    .attr("class", "cell")
-  cells.append("rect")
-    .attr("class", "cell-fill")
-    .attr("x", (d) -> x(d.edition))
-    .attr("y", (d) -> y(d.rank))
-    .attr("width", x.bandwidth())
-    .attr("height", y.bandwidth())
-    .attr("fill", (d) -> colorScale(d.lag))
-    .attr("stroke", "#000")
-    .attr("stroke-width", 0.5)
-  cells.append("rect")
-    .attr("class", "cell-hl-outer")
-    .attr("x", (d) -> x(d.edition))
-    .attr("y", (d) -> y(d.rank))
-    .attr("width", x.bandwidth())
-    .attr("height", y.bandwidth())
-    .attr("fill", "none")
-    .attr("stroke", "none")
-    .attr("stroke-width", 3)
-  cells.append("rect")
-    .attr("class", "cell-hl-inner")
-    .attr("x", (d) -> x(d.edition) + 2)
-    .attr("y", (d) -> y(d.rank) + 2)
-    .attr("width", x.bandwidth() - 4)
-    .attr("height", y.bandwidth() - 4)
-    .attr("fill", "none")
-    .attr("stroke", "none")
-    .attr("stroke-width", 2)
-  key = (d) -> if d.machine_key? then d.machine_key else d.machine_id
-  cells.filter((d) -> key(d) != null)
-    .on("mouseenter", (d) ->
-      applyMachineHoverHighlight(containerId, d, key)
-    )
-    .on("mouseleave", ->
-      clearMachineHoverHighlight(containerId)
-    )
-  cells.append("title")
-    .text((d) ->
+  appendBasicHeatmapCells({
+    svg: svg
+    data: data
+    x: x
+    y: y
+    containerId: containerId
+    colorScale: colorScale
+    titleFn: (d) ->
       valStr = if tooltipUnit then "#{d.lag} #{tooltipUnit}" else "#{Math.round(d.lag)}"
       header = if d.vendor_name and d.component_name then "#{d.vendor_name} #{d.component_name}" else if d.component_name then d.component_name else if d.vendor_name then d.vendor_name else title
       info = "Компонент: #{header}\nРедакция: #{d.edition}, Место: #{d.rank}\nЗначение: #{valStr}"
       info += heatmapTooltipSystemLine(d)
       info
-    )
+  })
   drawComponentLegend(svg, width, height, legendSpec)
 
 buildComponentCsv = (data) ->
-  editions = Array.from(new Set(data.map((d) -> d.edition))).sort((a, b) -> a - b)
-  ranks = Array.from({ length: getMaxRank() }, (_, i) -> i + 1)
-  lookup = {}
-  data.forEach((d) -> lookup["#{d.edition}-#{d.rank}"] = d.lag)
-  header = "Место | Редакция," + editions.join(",")
-  rows = ranks.map((rank) ->
-    cells = editions.map((ed) ->
-      v = lookup["#{ed}-#{rank}"]
-      if v == null or v == undefined then "" else (if typeof v == "number" then Math.round(v).toString() else v)
-    )
-    rank + "," + cells.join(",")
+  buildEditionRankGridCsv(data, ((d) -> d.lag), (v) ->
+    if v == null or v == undefined then "" else (if typeof v == "number" then Math.round(v).toString() else v)
   )
-  [header].concat(rows).join("\n")
 
 drawAnnounceToMentionHeatmap = (data, containerId, title, gradientId, unit = "days") ->
   data = data or []
@@ -805,17 +830,17 @@ drawAnnounceToMentionHeatmap = (data, containerId, title, gradientId, unit = "da
   onlyNewEl = document.getElementById("announce-to-mention-only-new")
   if onlyNewEl and onlyNewEl.checked
     data = data.filter((d) -> d.is_new == true)
-  container = d3.select("##{containerId}")
-  return if container.empty()
-  container.selectAll("*").remove()
-  # Keep scale/axes based on currently displayed data so range borders redraw scale like fr_comp_lag.
-  editions = Array.from(new Set(data.map((d) -> d.edition))).sort((a, b) -> b - a)
-  allRanks = Array.from(new Set(data.map((d) -> d.rank))).filter((r) -> r?).sort((a, b) -> b - a)
-  ranks = if allRanks.length > 0 then allRanks else Array.from({ length: getMaxRank() }, (_, i) -> getMaxRank() - i)
-  size = getComponentHeatmapSize(editions, ranks.length)
-  width = size.width
-  height = size.height
-  margin = size.margin
+  scaffold = buildHeatmapScaffold({
+    containerId: containerId
+    requireContainer: true
+    data: data
+    extraBottom: 75
+    sizeResolver: (editions, rankCount) -> getComponentHeatmapSize(editions, rankCount)
+    xTickFormat: (d) ->
+      if typeof editionDatesComponent != "undefined" && editionDatesComponent && editionDatesComponent[d - 1] then editionDatesComponent[d - 1] else d
+  })
+  return unless scaffold?
+  { svg, x, y, width, height } = scaffold
   fullValid = data.filter((d) -> d.lag != null)
   inQuarters = (unit == "quarters")
   toVal = if inQuarters then ((d) -> d.lag / DAYS_PER_QUARTER) else ((d) -> d.lag)
@@ -827,78 +852,43 @@ drawAnnounceToMentionHeatmap = (data, containerId, title, gradientId, unit = "da
   rainbowColors = ["#00FF00", "#FFFF00", "#FFA500", "#FF0000", "#0000FF", "#800080"]
   colorScale = d3.scaleSequential(d3.interpolateRgbBasis(rainbowColors)).domain([minLag, maxLag])
   cellColor = if inQuarters then ((d) -> colorScale(d.lag / DAYS_PER_QUARTER)) else ((d) -> colorScale(d.lag))
-  x = d3.scaleBand().range([width, 0]).domain(editions).padding(0.05)
-  y = d3.scaleBand().range([height, 0]).domain(ranks).padding(0.05)
-  validData = data.filter((d) -> d.lag != null)
-  svg = container.append("svg")
-    .attr("width", width + margin.left + margin.right)
-    .attr("height", height + margin.top + margin.bottom + 75)
-    .append("g")
-    .attr("transform", "translate(#{margin.left}, #{margin.top})")
-  xAxis = svg.append("g").attr("transform", "translate(0, #{height})")
-  xAxis.call(d3.axisBottom(x).tickFormat((d) ->
-    if typeof editionDatesComponent != "undefined" && editionDatesComponent && editionDatesComponent[d - 1] then editionDatesComponent[d - 1] else d
-  ))
-  xAxis.selectAll("text").attr("transform", "rotate(-45)").style("text-anchor", "end")
-  svg.append("text").attr("x", width / 2).attr("y", height + 55).attr("text-anchor", "middle").style("font-size", "16px").text("Редакция")
-  svg.append("g").call(d3.axisLeft(y))
-  svg.append("text").attr("transform", "rotate(-90)").attr("y", -margin.left + 20).attr("x", -height / 2).attr("text-anchor", "middle").style("font-size", "16px").text("Ранг")
-  cells = svg.selectAll(".cell").data(validData).enter().append("g").attr("class", "cell")
-  cells.append("rect").attr("class", "cell-fill")
-    .attr("x", (d) -> x(d.edition)).attr("y", (d) -> y(d.rank))
-    .attr("width", x.bandwidth()).attr("height", y.bandwidth())
-    .attr("fill", (d) -> cellColor(d)).attr("stroke", "#000").attr("stroke-width", 0.5)
-  cells.append("rect").attr("class", "cell-contour-sign")
-    .attr("x", (d) -> x(d.edition)).attr("y", (d) -> y(d.rank))
-    .attr("width", x.bandwidth()).attr("height", y.bandwidth())
-    .attr("fill", "none")
-    .attr("stroke", (d) -> if d.show_before_announce_contour then "#e91e8c" else "none")
-    .attr("stroke-width", 2.5)
-  cells.append("rect").attr("class", "cell-hl-outer")
-    .attr("x", (d) -> x(d.edition)).attr("y", (d) -> y(d.rank))
-    .attr("width", x.bandwidth()).attr("height", y.bandwidth())
-    .attr("fill", "none").attr("stroke", "none").attr("stroke-width", 3)
-  cells.append("rect").attr("class", "cell-hl-inner")
-    .attr("x", (d) -> x(d.edition) + 2).attr("y", (d) -> y(d.rank) + 2)
-    .attr("width", x.bandwidth() - 4).attr("height", y.bandwidth() - 4)
-    .attr("fill", "none").attr("stroke", "none").attr("stroke-width", 2)
-  key = (d) -> if d.machine_key? then d.machine_key else d.machine_id
-  cells.filter((d) -> key(d) != null)
-    .on("mouseenter", (d) ->
-      applyMachineHoverHighlight(containerId, d, key)
-    )
-    .on("mouseleave", -> clearMachineHoverHighlight(containerId))
-  cells.append("title").text((d) ->
-    if inQuarters
-      q = d.lag / DAYS_PER_QUARTER
-      absVal = (if Math.abs(q) >= 10 then Math.round(q) else d3.format(".1f")(Math.abs(q)))
-      unitStr = " кв."
-    else
-      absVal = Math.abs(d.lag)
-      unitStr = " дн."
-    suffix = if d.lag < 0 then " до анонса" else " после анонса"
-    header = if d.vendor_name and d.component_name then "#{d.vendor_name} #{d.component_name}" else if d.component_name then d.component_name else if d.vendor_name then d.vendor_name else title
-    info = "Компонент: #{header},\nРедакция: #{d.edition}, Место: #{d.rank},\nЗначение: #{absVal}#{unitStr}#{suffix}"
-    info += heatmapTooltipSystemLine(d)
-    info
-  )
-  legendWidth = 300
-  legendHeight = 20
-  legendX = width / 2 - legendWidth / 2
-  legendY = height + 75
-  defs = svg.append("defs")
-  grad = defs.append("linearGradient").attr("id", gradientId).attr("x1", "0%").attr("x2", "100%").attr("y1", "0%").attr("y2", "0%")
-  for i in [0...rainbowColors.length]
-    grad.append("stop").attr("offset", (100 * i / (rainbowColors.length - 1)) + "%").attr("stop-color", rainbowColors[i])
-  legend = svg.append("g").attr("class", "legend").attr("transform", "translate(#{legendX}, #{legendY})")
-  legend.append("rect").attr("width", legendWidth).attr("height", legendHeight).style("fill", "url(##{gradientId})").attr("stroke", "#333").attr("stroke-width", 0.5)
+  appendBasicHeatmapCells({
+    svg: svg
+    data: data
+    x: x
+    y: y
+    containerId: containerId
+    fillFn: (d) -> cellColor(d)
+    contourStrokeFn: (d) -> if d.show_before_announce_contour then "#e91e8c" else "none"
+    titleFn: (d) ->
+      if inQuarters
+        q = d.lag / DAYS_PER_QUARTER
+        absVal = (if Math.abs(q) >= 10 then Math.round(q) else d3.format(".1f")(Math.abs(q)))
+        unitStr = " кв."
+      else
+        absVal = Math.abs(d.lag)
+        unitStr = " дн."
+      suffix = if d.lag < 0 then " до анонса" else " после анонса"
+      header = if d.vendor_name and d.component_name then "#{d.vendor_name} #{d.component_name}" else if d.component_name then d.component_name else if d.vendor_name then d.vendor_name else title
+      info = "Компонент: #{header},\nРедакция: #{d.edition}, Место: #{d.rank},\nЗначение: #{absVal}#{unitStr}#{suffix}"
+      info += heatmapTooltipSystemLine(d)
+      info
+  })
   unitStr = if inQuarters then " кв." else " дн."
   fmt = if inQuarters then lagFormatQuarter else ((d) -> Math.round(d).toString())
   leftLabel = if minLag < 0 then fmt(Math.abs(minLag)) + unitStr + " до анонса" else fmt(minLag) + unitStr + " после анонса"
   rightLabel = if maxLag < 0 then fmt(Math.abs(maxLag)) + unitStr + " до анонса" else fmt(maxLag) + unitStr + " после анонса"
   leftColor = if minLag < 0 then "#2e7d32" else "#c62828"
-  legend.append("text").attr("x", 0).attr("y", legendHeight + 14).attr("text-anchor", "start").style("font-size", "12px").style("fill", leftColor).text(leftLabel)
-  legend.append("text").attr("x", legendWidth).attr("y", legendHeight + 14).attr("text-anchor", "end").style("font-size", "12px").style("fill", "#c62828").text(rightLabel)
+  appendGradientLegend(svg, {
+    width: width
+    height: height
+    gradientId: gradientId
+    colors: rainbowColors
+    leftLabel: leftLabel
+    rightLabel: rightLabel
+    leftColor: leftColor
+    rightColor: "#c62828"
+  })
 
 drawComponentTable = (data, containerId, title) ->
   data = data or []
@@ -999,18 +989,15 @@ drawComponentTable = (data, containerId, title) ->
 drawRamHeatmap = (data, containerId, title, scaleMethod) ->
   data = data or []
   data = [] unless Array.isArray(data)
-  containerSel = d3.select("##{containerId}")
-  containerSel.selectAll("*").remove()
-  editions = Array.from(new Set(data.map((d) -> d.edition))).sort((a, b) -> b - a)
-  allRanks = Array.from(new Set(data.map((d) -> d.rank))).filter((r) -> r?).sort((a, b) -> b - a)
-  ranks = if allRanks.length > 0 then allRanks else Array.from({ length: getMaxRank() }, (_, i) -> getMaxRank() - i)
-
-  # Размеры: 1000×600 при ≤40 редакциях и 50 рангах; иначе масштаб по ячейке 25×12 px; не меньше min для оси и подписи
-  margin = { top: 20, right: 20, bottom: 80, left: 60 }
-  edCount = editions.length or 1
-  rankCount = ranks.length or 1
-  width = Math.max(edCount * HEATMAP_CELL_WIDTH, HEATMAP_MIN_WIDTH)
-  height = Math.max(rankCount * HEATMAP_CELL_HEIGHT, HEATMAP_MIN_HEIGHT)
+  scaffold = buildHeatmapScaffold({
+    containerId: containerId
+    data: data
+    extraBottom: 75
+    xTickFormat: (d) ->
+      if typeof editionDatesRam != "undefined" && editionDatesRam && editionDatesRam[d - 1] then editionDatesRam[d - 1] else d
+  })
+  return unless scaffold?
+  { svg, x, y, width, height } = scaffold
   method = (scaleMethod and scaleMethod.toString()) or "quantile"
   flexible = ramFlexibleScale(data, method)
   colorScale = flexible.colorScale
@@ -1018,114 +1005,36 @@ drawRamHeatmap = (data, containerId, title, scaleMethod) ->
     { gradient: true, minVal: flexible.minVal, maxVal: flexible.maxVal, gradientId: "ram-grad-" + containerId }
   else
     { labels: flexible.labels }
-  x = d3.scaleBand().range([width, 0]).domain(editions).padding(0.05)
-  y = d3.scaleBand().range([height, 0]).domain(ranks).padding(0.05)
-  svg = d3.select("##{containerId}").append("svg")
-    .attr("width", width + margin.left + margin.right)
-    .attr("height", height + margin.top + margin.bottom + 75)
-    .append("g")
-    .attr("transform", "translate(#{margin.left}, #{margin.top})")
-  xAxisRam = svg.append("g")
-    .attr("transform", "translate(0, #{height})")
-  xAxisRam.call(d3.axisBottom(x).tickFormat((d) ->
-    if typeof editionDatesRam != "undefined" && editionDatesRam && editionDatesRam[d - 1] then editionDatesRam[d - 1] else d
-  ))
-  xAxisRam.selectAll("text")
-    .attr("transform", "rotate(-45)")
-    .style("text-anchor", "end")
-  svg.append("text")
-    .attr("x", width / 2)
-    .attr("y", height + 55)
-    .attr("text-anchor", "middle")
-    .style("font-size", "16px")
-    .text("Редакция")
-  svg.append("g").call(d3.axisLeft(y))
-  svg.append("text")
-    .attr("transform", "rotate(-90)")
-    .attr("y", -margin.left + 20)
-    .attr("x", -height / 2)
-    .attr("text-anchor", "middle")
-    .style("font-size", "16px")
-    .text("Ранг")
-  cells = svg.selectAll(".cell")
-    .data(data.filter((d) -> d.lag != null))
-    .enter().append("g")
-    .attr("class", "cell")
-  
-  # Background rectangle (for non-GPU systems or as base)
-  cells.append("rect")
-    .attr("class", "cell-fill")
-    .attr("x", (d) -> x(d.edition))
-    .attr("y", (d) -> y(d.rank))
-    .attr("width", x.bandwidth())
-    .attr("height", y.bandwidth())
-    .attr("fill", (d) -> if d.has_gpu then "#f0f0f0" else colorScale(d.lag))
-    .attr("stroke", "#000")
-    .attr("stroke-width", 0.5)
-  
-  # Highlight rects (black outer, yellow inner)
-  cells.append("rect")
-    .attr("class", "cell-hl-outer")
-    .attr("x", (d) -> x(d.edition))
-    .attr("y", (d) -> y(d.rank))
-    .attr("width", x.bandwidth())
-    .attr("height", y.bandwidth())
-    .attr("fill", "none")
-    .attr("stroke", "none")
-    .attr("stroke-width", 3)
-  cells.append("rect")
-    .attr("class", "cell-hl-inner")
-    .attr("x", (d) -> x(d.edition) + 2)
-    .attr("y", (d) -> y(d.rank) + 2)
-    .attr("width", x.bandwidth() - 4)
-    .attr("height", y.bandwidth() - 4)
-    .attr("fill", "none")
-    .attr("stroke", "none")
-    .attr("stroke-width", 2)
-  
-  # Ellipse for GPU systems
-  cells.filter((d) -> d.has_gpu)
-    .append("ellipse")
-    .attr("cx", (d) -> x(d.edition) + x.bandwidth() / 2)
-    .attr("cy", (d) -> y(d.rank) + y.bandwidth() / 2)
-    .attr("rx", (d) -> x.bandwidth() * 0.4)
-    .attr("ry", (d) -> y.bandwidth() * 0.4)
-    .attr("fill", (d) -> colorScale(d.lag))
-    .attr("stroke", "#000")
-    .attr("stroke-width", 0.5)
-  
-  key = (d) -> if d.machine_key? then d.machine_key else d.machine_id
-  cells.filter((d) -> key(d) != null)
-    .on("mouseenter", (d) ->
-      applyMachineHoverHighlight(containerId, d, key)
-    )
-    .on("mouseleave", ->
-      clearMachineHoverHighlight(containerId)
-    )
-  cells.append("title")
-    .text((d) ->
+  appendBasicHeatmapCells({
+    svg: svg
+    data: data
+    x: x
+    y: y
+    containerId: containerId
+    fillFn: (d) -> if d.has_gpu then "#f0f0f0" else colorScale(d.lag)
+    afterCells: (cells) ->
+      cells.filter((d) -> d.has_gpu)
+        .append("ellipse")
+        .attr("cx", (d) -> x(d.edition) + x.bandwidth() / 2)
+        .attr("cy", (d) -> y(d.rank) + y.bandwidth() / 2)
+        .attr("rx", (d) -> x.bandwidth() * 0.4)
+        .attr("ry", (d) -> y.bandwidth() * 0.4)
+        .attr("fill", (d) -> colorScale(d.lag))
+        .attr("stroke", "#000")
+        .attr("stroke-width", 0.5)
+    titleFn: (d) ->
       info = "#{title}\nРедакция: #{d.edition}, Место: #{d.rank}\nЗначение: #{d3.format(".2f")(d.lag)} ГБ"
       if d.has_gpu
         info += "\nГибридная система (с GPU)"
       info += heatmapTooltipSystemLine(d)
       info
-    )
+  })
   drawRamLegend(svg, width, height, legendSpec)
 
 buildRamCsv = (data) ->
-  editions = Array.from(new Set(data.map((d) -> d.edition))).sort((a, b) -> a - b)
-  ranks = Array.from({ length: getMaxRank() }, (_, i) -> i + 1)
-  lookup = {}
-  data.forEach((d) -> lookup["#{d.edition}-#{d.rank}"] = d.lag)
-  header = "Место | Редакция," + editions.join(",")
-  rows = ranks.map((rank) ->
-    cells = editions.map((ed) ->
-      v = lookup["#{ed}-#{rank}"]
-      if v == null or v == undefined then "" else (if typeof v == "number" then v.toFixed(2) else v)
-    )
-    rank + "," + cells.join(",")
+  buildEditionRankGridCsv(data, ((d) -> d.lag), (v) ->
+    if v == null or v == undefined then "" else (if typeof v == "number" then v.toFixed(2) else v)
   )
-  [header].concat(rows).join("\n")
 
 @updateRamHeatmaps = (dataSets, containerIds, titles, downloadIds, downloadFilenames, scaleMethod) ->
   dataSets = dataSets or []
@@ -2014,13 +1923,7 @@ runStatsWhenReady ->
     topContainer = headerContainer
 
     # Заголовок
-    topContainer.append("div")
-              .text(title)
-              .style("font-family", "Arial")
-              .style("font-size", "24px")
-              .style("font-weight", "500")
-              .style("text-align", "center")
-              .style("margin-bottom", "20px")
+    appendChartHeader(topContainer, title, "20px")
 
     stickyYAxisSel = null
     # Функция обновления шкалы Y по видимым сериям (гибкая шкала при скрытии серий)
@@ -2139,15 +2042,7 @@ runStatsWhenReady ->
 
     # Подпись для оси Y (только если нет sticky — иначе она в sticky div)
     unless hasSticky
-      svg.append("text")
-         .attr("transform", "rotate(-90)")
-         .attr("y", margin.left - 70)
-         .attr("x", 0 - (height / 2))
-         .attr("dy", "1em")
-         .style("text-anchor", "middle")
-         .style("font-family", "Arial")
-         .style("font-size", "14px")
-         .text(y_label)
+      appendYAxisLabel(svg, margin.left, height, y_label)
 
     # Добавляем столбцы и точки
     data.forEach((dataset, i) ->
@@ -2232,18 +2127,10 @@ runStatsWhenReady ->
       bottom: 130
       left: 90
 
-    container = d3.select("##{src_id}")
-    container.selectAll("*").remove()
-    headerEl = document.getElementById(src_id + "_header")
-    headerContainer = if headerEl then d3.select(headerEl) else container
-    if headerEl then headerContainer.selectAll("*").remove()
-    headerContainer.append("div")
-      .text(title)
-      .style("font-family", "Arial")
-      .style("font-size", "24px")
-      .style("font-weight", "500")
-      .style("text-align", "center")
-      .style("margin-bottom", "10px")
+    chartContainers = prepareChartContainers(src_id)
+    container = chartContainers.container
+    headerContainer = chartContainers.headerContainer
+    appendChartHeader(headerContainer, title)
 
     safePoints = points.map((p) ->
       totalSystems = +(p.total_systems or 0)
@@ -2279,15 +2166,7 @@ runStatsWhenReady ->
       .attr("transform", "translate(#{margin.left},0)")
       .call(d3.axisLeft(yScale))
 
-    svg.append("text")
-      .attr("transform", "rotate(-90)")
-      .attr("y", margin.left - 70)
-      .attr("x", 0 - (height / 2))
-      .attr("dy", "1em")
-      .style("text-anchor", "middle")
-      .style("font-family", "Arial")
-      .style("font-size", "14px")
-      .text(y_label)
+    appendYAxisLabel(svg, margin.left, height, y_label)
 
     bars = svg.selectAll(".bar")
       .data(safePoints)
@@ -2343,18 +2222,10 @@ runStatsWhenReady ->
     height = Math.max(360, Math.min(580, width * 0.58))
     margin = { top: 15, right: 20, bottom: 130, left: 90 }
 
-    container = d3.select("##{src_id}")
-    container.selectAll("*").remove()
-    headerEl = document.getElementById(src_id + "_header")
-    headerContainer = if headerEl then d3.select(headerEl) else container
-    if headerEl then headerContainer.selectAll("*").remove()
-    headerContainer.append("div")
-      .text(title)
-      .style("font-family", "Arial")
-      .style("font-size", "24px")
-      .style("font-weight", "500")
-      .style("text-align", "center")
-      .style("margin-bottom", "10px")
+    chartContainers = prepareChartContainers(src_id)
+    container = chartContainers.container
+    headerContainer = chartContainers.headerContainer
+    appendChartHeader(headerContainer, title)
 
     x0 = d3.scaleBand().domain(baseAreas).range([margin.left, width - margin.right]).padding(0.2)
     x1 = d3.scaleBand().domain(series.map((s) -> s.name)).range([0, x0.bandwidth()]).padding(0.1)
@@ -2370,15 +2241,7 @@ runStatsWhenReady ->
       .attr("transform", "rotate(-35)")
       .style("font-size", "12px")
     svg.append("g").attr("transform", "translate(#{margin.left},0)").call(d3.axisLeft(y))
-    svg.append("text")
-      .attr("transform", "rotate(-90)")
-      .attr("y", margin.left - 70)
-      .attr("x", 0 - (height / 2))
-      .attr("dy", "1em")
-      .style("text-anchor", "middle")
-      .style("font-family", "Arial")
-      .style("font-size", "14px")
-      .text(y_label)
+    appendYAxisLabel(svg, margin.left, height, y_label)
 
     normalized = baseAreas.map((area) ->
       row = { area: area }
@@ -2418,19 +2281,8 @@ formatEditionDate = (s) ->
   if parts.length >= 2 then parts[1] + "." + (if parts[0].length >= 2 then parts[0].slice(-2) else parts[0]) else s
 
 @drawMatrix = (data, containerId) ->
-  # Очищаем контейнер
-  containerSel = d3.select("##{containerId}")
-  containerSel.selectAll("*").remove()
-
-  # Уникальные значения для редакций (даты)
-  editions = Array.from(new Set(data.map((d) -> d.edition))).sort()
-  ranks = Array.from(new Set(data.map((d) -> d.rank))).sort((a, b) -> a - b)
-
-  margin = { top: 20, right: 20, bottom: 80, left: 70 }
-  edCount = editions.length or 1
-  rankCount = ranks.length or 1
-  width = Math.max(edCount * HEATMAP_CELL_WIDTH, HEATMAP_MIN_WIDTH)
-  height = Math.max(rankCount * HEATMAP_CELL_HEIGHT, HEATMAP_MIN_HEIGHT)
+  container = d3.select("##{containerId}")
+  container.selectAll("*").remove()
 
   # Цветовая шкала для статусов
   statusColors =
@@ -2446,13 +2298,6 @@ formatEditionDate = (s) ->
     updated: "Обновленная"
     moved_up: "Поднялась"
     moved_down: "Опустилась"
-
-  # Шкалы (x = дата редакции)
-  x = d3.scaleBand().range([0, width]).domain(editions).padding(0.05)
-  y = d3.scaleBand().range([0, height]).domain(ranks).padding(0.05)
-
-  # Контейнер
-  container = d3.select("##{containerId}")
 
   # Кнопки для фильтрации
   activeFilters = { new: true, updated: true, moved_up: true, moved_down: true }
@@ -2484,90 +2329,26 @@ formatEditionDate = (s) ->
         # Обновляем видимость и окрашивание клеток
         container.selectAll(".cell").each((d, i, nodes) ->
           cellGroup = d3.select(nodes[i])
-
-          # Проверяем активные статусы
-          leftActive = d.new_upd_status and activeFilters[d.new_upd_status]
-          rightActive = d.pos_status and activeFilters[d.pos_status]
-
-          cellWidth = x.bandwidth()
-          cellHeight = y.bandwidth()
-
-          if (leftActive) and (rightActive)
-            # Оба статуса активны: клетка разделена
-            cellGroup.select(".left-half")
-              .attr("x", x(d.edition))
-              .attr("width", cellWidth / 2)
-              .attr("fill", statusColors[d.new_upd_status])
-              .attr("visibility", "visible")
-
-            cellGroup.select(".right-half")
-              .attr("x", x(d.edition) + cellWidth / 2)
-              .attr("width", cellWidth / 2)
-              .attr("fill", statusColors[d.pos_status])
-              .attr("visibility", "visible")
-          else if leftActive
-            # Только левый статус активен: закрасить всю клетку в левый цвет
-            cellGroup.select(".left-half")
-              .attr("x", x(d.edition))
-              .attr("width", cellWidth)
-              .attr("fill", statusColors[d.new_upd_status])
-              .attr("visibility", "visible")
-
-            cellGroup.select(".right-half")
-              .attr("visibility", "hidden")
-          else if rightActive
-            # Только правый статус активен: закрасить всю клетку в правый цвет
-            cellGroup.select(".left-half")
-              .attr("x", x(d.edition))
-              .attr("width", cellWidth)
-              .attr("fill", statusColors[d.pos_status])
-              .attr("visibility", "visible")
-
-            cellGroup.select(".right-half")
-              .attr("visibility", "hidden")
-          else
-            # Ни один статус не активен: скрыть клетку
-            cellGroup.selectAll("rect")
-              .attr("visibility", "hidden")
-
-          # Подсветка должна оставаться доступной для видимых клеток
-          if (leftActive) or (rightActive)
-            cellGroup.selectAll(".cell-hl-outer, .cell-hl-inner").attr("visibility", "visible")
-          else
-            cellGroup.selectAll(".cell-hl-outer, .cell-hl-inner").attr("visibility", "hidden")
+          applyMatrixCellVisibility(cellGroup, d, activeFilters, statusColors, x, y)
         )
       )
   )
 
-  # Контейнер SVG
-  svg = container.append("svg")
-    .attr("width", width + margin.left + margin.right)
-    .attr("height", height + margin.top + margin.bottom)
-    .append("g")
-    .attr("transform", "translate(#{margin.left}, #{margin.top})")
-
-  # Добавляем оси
-  svg.append("g")
-    .attr("transform", "translate(0, #{height})")
-    .call(d3.axisBottom(x).tickFormat(formatEditionDate))
-    .selectAll("text")
-    .attr("transform", "rotate(-45)")
-    .style("text-anchor", "end")
-  svg.append("text")
-    .attr("x", width / 2)
-    .attr("y", height + 55)
-    .attr("text-anchor", "middle")
-    .style("font-size", "16px")
-    .text("Редакция")
-  svg.append("g")
-    .call(d3.axisLeft(y))
-  svg.append("text")
-    .attr("transform", "rotate(-90)")
-    .attr("y", -margin.left + 20)
-    .attr("x", -height / 2)
-    .attr("text-anchor", "middle")
-    .style("font-size", "16px")
-    .text("Ранг")
+  scaffold = buildHeatmapScaffold({
+    containerId: containerId
+    clearContainer: false
+    data: data
+    margin: { top: 20, right: 20, bottom: 80, left: 70 }
+    editionSort: (a, b) -> if a > b then 1 else if a < b then -1 else 0
+    rankSort: (a, b) -> a - b
+    fallbackRankAscending: true
+    xRange: (width) -> [0, width]
+    yRange: (width, height) -> [0, height]
+    xTickFormat: formatEditionDate
+    extraBottom: 0
+  })
+  return unless scaffold?
+  { svg, x, y, width } = scaffold
 
   # Рисуем клетки матрицы
   svg.selectAll(".cell")
@@ -2599,65 +2380,8 @@ formatEditionDate = (s) ->
         .attr("stroke", "black")
         .attr("stroke-width", 0.4)
 
-      # Подсветка одной системы по всем редакциям при наведении
-      cellGroup.append("rect")
-        .attr("class", "cell-hl-outer")
-        .attr("x", x(d.edition))
-        .attr("y", y(d.rank))
-        .attr("width", cellWidth)
-        .attr("height", cellHeight)
-        .attr("fill", "none")
-        .attr("stroke", "none")
-        .attr("stroke-width", 3)
-      cellGroup.append("rect")
-        .attr("class", "cell-hl-inner")
-        .attr("x", x(d.edition) + 2)
-        .attr("y", y(d.rank) + 2)
-        .attr("width", cellWidth - 4)
-        .attr("height", cellHeight - 4)
-        .attr("fill", "none")
-        .attr("stroke", "none")
-        .attr("stroke-width", 2)
-
-      # Устанавливаем цвета и видимость
-      leftActive = d.new_upd_status and activeFilters[d.new_upd_status]
-      rightActive = d.pos_status and activeFilters[d.pos_status]
-
-      if (leftActive) and (rightActive)
-        # Оба статуса активны: клетка разделена
-        cellGroup.select(".left-half")
-          .attr("width", cellWidth / 2)
-          .attr("fill", statusColors[d.new_upd_status])
-          .attr("visibility", "visible")
-
-        cellGroup.select(".right-half")
-          .attr("width", cellWidth / 2)
-          .attr("fill", statusColors[d.pos_status])
-          .attr("visibility", "visible")
-      else if leftActive
-        # Только левый статус активен: закрасить всю клетку в левый цвет
-        cellGroup.select(".left-half")
-          .attr("x", x(d.edition))
-          .attr("width", cellWidth)
-          .attr("fill", statusColors[d.new_upd_status])
-          .attr("visibility", "visible")
-
-        cellGroup.select(".right-half")
-          .attr("visibility", "hidden")
-      else if rightActive
-        # Только правый статус активен: закрасить всю клетку в правый цвет
-        cellGroup.select(".left-half")
-          .attr("x", x(d.edition))
-          .attr("width", cellWidth)
-          .attr("fill", statusColors[d.pos_status])
-          .attr("visibility", "visible")
-
-        cellGroup.select(".right-half")
-          .attr("visibility", "hidden")
-      else
-        # Ни один статус не активен: скрыть клетку
-        cellGroup.selectAll("rect")
-          .attr("visibility", "hidden")
+      appendHeatmapHighlightRects(cellGroup, x, y)
+      applyMatrixCellVisibility(cellGroup, d, activeFilters, statusColors, x, y)
 
       # Подсветка одной системы по всем редакциям при наведении
       if d.machine_id != null and d.machine_id != undefined

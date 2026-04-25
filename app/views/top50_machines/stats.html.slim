@@ -27,6 +27,7 @@ table
             - (@upgradability_group_sections[@active_upgradability_group] || []).each do |section|
               - if @section_headers[section].present?
                 li = link_to @section_headers[section], top50_stats_subsection_path(@active_upgradability_group, section)
+          
 - if @stat_section.present? and @stat_section[0..6] == "vendors"
   table
     tr
@@ -41,9 +42,11 @@ table
               li = link_to header, top50_stats_path(section)
 
 br
+              
 - if ["fr_comp_lag", "new_upg", "ram_stats", "comp_stats", "fr_comp_stats", "area_upg", "list_upg"].include?(stat_section_for_render)
   javascript:
     window.TOP50_MAX_RANK = #{(@max_rank || 50).to_i};
+
 - if @stat_section == "hybrid_intra"
   - hlist_chart_data = {}
   - hlist_dates = {}
@@ -2210,7 +2213,7 @@ br
       coffee:
         draw_type(data, "chart_1", "Типы систем", "Дата (ММ.ГГ)", "Количество систем")
       /= area_chart achart_data, max: 50, stacked: true, height: "500px"
-  
+
 - elsif stat_section_for_render == "fr_comp_lag"
   = render partial: "top50_machines/stats/fr_comp_lag"
 
@@ -2222,15 +2225,16 @@ br
 
 - elsif stat_section_for_render == "fr_comp_stats"
   = render partial: "top50_machines/stats/fr_comp_stats"
+
 - elsif stat_section_for_render == "area_upg"
   = render partial: "top50_machines/stats/area_upg"
 
 - elsif stat_section_for_render == "new_upg"
   = render partial: "top50_machines/stats/new_upg"
-     
+
 - elsif stat_section_for_render == "list_upg"
   = render partial: "top50_machines/stats/list_upg"
-
+  
 - else
   div id="chart_1"
   - chart_data_by_tp = {}
