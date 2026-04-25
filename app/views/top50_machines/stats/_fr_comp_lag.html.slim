@@ -1,5 +1,5 @@
 head
-  title Тепловые карты задержки внедрения самых свежих компонент
+  title Тепловые карты новизны компонент
   style
     | .cell-fill { stroke-width: 0.5; }
     | .tooltip { position: absolute; visibility: hidden; background: #fff; border: 1px solid #ccc; padding: 5px; border-radius: 5px; }
@@ -17,9 +17,9 @@ body
                 td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Метрика:
                 td style="border: none;"
                   select#lag-graph-selector.form-control style="width: 230px;"
-                    option value="cpu" selected="selected" Задержка CPU
-                    option value="gpu" Задержка GPU
-                    option value="combined" Общая задержка min(CPU, GPU)
+                    option value="cpu" selected="selected" Новизна CPU
+                    option value="gpu" Новизна GPU
+                    option value="combined" Общая новизна min(CPU, GPU)
               tr style="border: none; vertical-align: middle;"
                 td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold; padding-top: 6px;" Шкала:
                 td style="border: none; padding-top: 6px;"
@@ -54,21 +54,21 @@ body
 
   / Контейнеры для тепловых карт
   div.heatmap-section#lag-graph-cpu
-    h2 Тепловая карта задержки внедрения CPU
+    h2 Тепловая карта возраста самого нового CPU
     div.heatmap-wrapper
       #cpu_heatmap
       div.heatmap-footer
         a.button style="background: #6699CC;" id="download_cpu_lag" download="CPU_lag.csv" Скачать CSV
 
   div.heatmap-section#lag-graph-gpu
-    h2 Тепловая карта задержки внедрения GPU
+    h2 Тепловая карта возраста самого нового GPU
     div.heatmap-wrapper
       #gpu_heatmap
       div.heatmap-footer
         a.button style="background: #6699CC;" id="download_gpu_lag" download="GPU_lag.csv" Скачать CSV
 
   div.heatmap-section#lag-graph-combined
-    h2 Общая тепловая карта задержки
+    h2 Общая тепловая карта возраста min(CPU, GPU)
     div.heatmap-wrapper
       #combined_heatmap
       div.heatmap-footer

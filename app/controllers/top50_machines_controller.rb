@@ -1482,7 +1482,7 @@ class Top50MachinesController < Top50BaseController
     @section_headers["cpu_fam"] = "семейства CPU"
     @section_headers["cpu_gen"] = "микроархитектура CPU"
     @section_headers["cpu_cnt"] = "количество CPU"
-    @section_headers["fr_comp_lag"] = "задержка внедрения самых свежих компонент"
+    @section_headers["fr_comp_lag"] = "новизна компонент"
     @section_headers["new_upg"] = "характеристики новых и обновлённых систем"
     @section_headers["ram_stats"] = "среднее количество памяти"
     @section_headers["comp_stats"] = "количественные характеристики"

@@ -343,7 +343,7 @@ drawHeatmap = (data, containerId, title) ->
     containerId: containerId
     colorScale: colorScale
     titleFn: (d) ->
-      info = "#{title}\nРедакция: #{d.edition}, Место: #{d.rank}, Задержка: #{d.lag} дн."
+      info = "#{title}\nРедакция: #{d.edition}, Место: #{d.rank}, Значение: #{d.lag} дн."
       info += heatmapTooltipSystemLine(d)
       info
   })
@@ -813,7 +813,7 @@ drawComponentHeatmap = (data, containerId, title, scaleMethod, tooltipUnit = nul
     titleFn: (d) ->
       valStr = if tooltipUnit then "#{d.lag} #{tooltipUnit}" else "#{Math.round(d.lag)}"
       header = if d.vendor_name and d.component_name then "#{d.vendor_name} #{d.component_name}" else if d.component_name then d.component_name else if d.vendor_name then d.vendor_name else title
-      info = "Компонент: #{header}\nРедакция: #{d.edition}, Место: #{d.rank}\nЗначение: #{valStr}"
+      info = "#{header}\nРедакция: #{d.edition}, Место: #{d.rank}\nЗначение: #{valStr}"
       info += heatmapTooltipSystemLine(d)
       info
   })
@@ -1159,7 +1159,7 @@ runStatsWhenReady ->
     containerIds = ["cpu_heatmap", "gpu_heatmap", "combined_heatmap"]
     downloadIds = ["download_cpu_lag", "download_gpu_lag", "download_combined_lag"]
     downloadFilenames = ["CPU_lag.csv", "GPU_lag.csv", "Combined_lag.csv"]
-    titles = ["CPU Задержка", "GPU Задержка", "Общая задержка min(CPU, GPU)"]
+    titles = ["Новизна CPU", "Новизна GPU", "Общая новизна min(CPU, GPU)"]
     gradientIds = ["lag-legend-cpu", "lag-legend-gpu", "lag-legend-combined"]
     lagGraphConfigs =
       cpu: { index: 0, wrapperId: "lag-graph-cpu" }
@@ -1661,8 +1661,8 @@ runStatsWhenReady ->
         lagDataConverted = (lagItem.data or []).map((p) ->
           { area: p.area, color: p.color, value: lagValueWithUnit(p.value, lagUnit) }
         )
-        lagYLabel = if lagUnit == "quarters" then "Средняя задержка внедрения (кварталы)" else "Средняя задержка внедрения (дни)"
-        draw_area_upg(lagDataConverted, "area_upg_chart", "Гистограмма средней задержки внедрения самых свежих компонент по областям", lagYLabel)
+        lagYLabel = if lagUnit == "quarters" then "Средняя новизна (кварталы)" else "Средняя новизна (дни)"
+        draw_area_upg(lagDataConverted, "area_upg_chart", "Гистограмма среднего возраста компонент по областям", lagYLabel)
       else if metric == "new_components_qty"
         qtyData = (qtyItem.data or []).map((p) ->
           { area: p.area, color: p.color, value: +(p.value or 0) }
