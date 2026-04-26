@@ -825,15 +825,17 @@ buildComponentCsv = (data) ->
   )
 
 drawAnnounceToMentionHeatmap = (data, containerId, title, gradientId, unit = "days") ->
-  data = data or []
-  data = [] unless Array.isArray(data)
+  baseData = data or []
+  baseData = [] unless Array.isArray(baseData)
   onlyNewEl = document.getElementById("announce-to-mention-only-new")
+  data = baseData
   if onlyNewEl and onlyNewEl.checked
-    data = data.filter((d) -> d.is_new == true)
+    data = baseData.filter((d) -> d.is_new == true)
   scaffold = buildHeatmapScaffold({
     containerId: containerId
     requireContainer: true
-    data: data
+    # Keep chart window stable when filtering: domain/size from full ranged dataset.
+    data: baseData
     extraBottom: 75
     sizeResolver: (editions, rankCount) -> getComponentHeatmapSize(editions, rankCount)
     xTickFormat: (d) ->
@@ -1477,7 +1479,7 @@ runStatsWhenReady ->
     return unless fqStartSel and fqEndSel and fqChartEl and typeof window.editionDatesFreshestQuantity != "undefined"
     fqCharts =
       systems: { id: "chart_freshest_quantity_systems", wrapperId: "freshest-bar-graph-systems", dataKey: "chartDataFreshestQuantity", title: "Количество систем с новыми компонентами по редакциям", xLabel: "Дата (ММ.ГГ)", yLabel: "Количество систем" }
-      models: { id: "chart_freshest_quantity_models", wrapperId: "freshest-bar-graph-models", dataKey: "chartDataFreshestQuantityModels", title: "Количество новых моделей компонент по редакциям", xLabel: "Дата (ММ.ГГ)", yLabel: "Количество моделей" }
+      models: { id: "chart_freshest_quantity_models", wrapperId: "freshest-bar-graph-models", dataKey: "chartDataFreshestQuantityModels", title: "Количество уникальных моделей компонент по редакциям", xLabel: "Дата (ММ.ГГ)", yLabel: "Количество моделей" }
       components: { id: "chart_freshest_quantity_components", wrapperId: "freshest-bar-graph-components", dataKey: "chartDataFreshestQuantityComponents", title: "Количество новых компонент по редакциям", xLabel: "Дата (ММ.ГГ)", yLabel: "Количество компонент" }
       pct_all: { id: "chart_freshest_quantity_pct_all", wrapperId: "freshest-bar-graph-pct-all", dataKey: "chartDataFreshestQuantityPctAll", title: "Доля новых компонент (от компонент всех систем), %", xLabel: "Дата (ММ.ГГ)", yLabel: "% от всех компонент" }
       pct_new_systems: { id: "chart_freshest_quantity_pct_new_systems", wrapperId: "freshest-bar-graph-pct-new-systems", dataKey: "chartDataFreshestQuantityPctNewSystems", title: "Доля новых компонент (от компонент систем с новыми), %", xLabel: "Дата (ММ.ГГ)", yLabel: "% от всех компонент" }

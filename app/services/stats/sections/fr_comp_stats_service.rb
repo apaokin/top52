@@ -218,9 +218,9 @@ module Stats
             }
           end
           @freshest_quantity_models_chart_data = [
-            { name: "Новые модели CPU", data: @freshest_quantity_models_summary.map { |s| [s[:date_label], s[:models_fresh_cpu]] }, color: "#2ca02c" },
-            { name: "Новые модели GPU", data: @freshest_quantity_models_summary.map { |s| [s[:date_label], s[:models_fresh_gpu]] }, color: "#ff7f0e" },
-            { name: "Новые модели CPU + GPU", data: @freshest_quantity_models_summary.map { |s| [s[:date_label], s[:models_fresh_union]] }, color: "#0000FF" }
+            { name: "Уникальные модели CPU", data: @freshest_quantity_models_summary.map { |s| [s[:date_label], s[:models_fresh_cpu]] }, color: "#2ca02c" },
+            { name: "Уникальные модели GPU", data: @freshest_quantity_models_summary.map { |s| [s[:date_label], s[:models_fresh_gpu]] }, color: "#ff7f0e" },
+            { name: "Уникальные модели CPU + GPU", data: @freshest_quantity_models_summary.map { |s| [s[:date_label], s[:models_fresh_union]] }, color: "#0000FF" }
           ]
 
           @freshest_quantity_components_summary = chart_editions.map do |ed|
