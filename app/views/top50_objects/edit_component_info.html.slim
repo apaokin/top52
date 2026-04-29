@@ -1,0 +1,15 @@
+div class="page-header"
+  h1 Изменить даты компоненты
+  p
+    = @top50_object.top50_object_type.name
+    |  — 
+    = link_to "Карточка компоненты", top50_objects_show_info_path(@top50_object)
+
+div class="row"
+  div class="col-xs-8"
+    = bootstrap_form_for @component_info, url: update_component_info_path(@top50_object), method: :patch do |f|
+      = f.date_field :date_announced, label: "Дата анонса"
+      = f.date_field :date_mentioned, label: "Дата первого появления в рейтинге"
+      = f.form_group do
+        = f.submit "Сохранить", class: "btn btn-primary"
+        = link_to "Отмена", top50_objects_show_info_path(@top50_object), class: "btn btn-default", style: "margin-left: 8px;"

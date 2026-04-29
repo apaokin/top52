@@ -1,0 +1,93 @@
+.container-fluid
+  .menu-container
+    table.mb-3 style="border: none;"
+      tr style="border: none; vertical-align: middle;"
+        td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Метрика:
+        td style="border: none; padding-right: 16px;"
+          select#new-upg-bar-graph-selector.form-control style="width: 240px;"
+            option value="total" selected="selected" Количество новых и обновлённых систем
+            option value="rpeak_pct" Доля Rpeak новых и обновлённых систем
+            option value="rmax_pct" Доля Rmax новых и обновлённых систем
+        td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Редакции:
+        td style="border: none; padding-right: 4px;"
+          select#new-upg-edition-start.form-control style="width: 120px;"
+            - dates_new_upg = (@edition_dates_new_upg || [])
+            - dates_new_upg.each_with_index.to_a.reverse_each do |pair|
+              - label, i = pair
+              option value=(i + 1) selected=(i == (dates_new_upg.size - 1)) = label
+        td style="border: none; padding-right: 16px;"
+          select#new-upg-edition-end.form-control style="width: 120px;"
+            - dates_new_upg = (@edition_dates_new_upg || [])
+            - dates_new_upg.each_with_index.to_a.reverse_each do |pair|
+              - label, i = pair
+              option value=(i + 1) selected=(i == 0) = label
+<br>
+javascript:
+  window.editionDatesNewUpg = #{raw (@edition_dates_new_upg || []).to_json};
+  window.ratingsSummaryNewUpg = #{raw (@ratings_summary_for_js || []).to_json};
+script
+  | window.newUpgPayloadUrl = "#{request.path}.json";
+  | window.newUpgDataByKey = { ratings_chart_data: #{raw (@ratings_chart_data || []).to_json} };
+  | window.chartData = window.newUpgDataByKey.ratings_chart_data;
+  | window.chartDataRpeakPct = [];
+  | window.chartDataRmaxPct = [];
+
+div.new-upg-chart-wrapper#new-upg-bar-graph-total style="max-width: 1000px;"
+  div.new-upg-chart-header id="chart_new_vs_upgraded_header" style="text-align: center; width: 100%; box-sizing: border-box; min-height: 80px;"
+  div.new-upg-charts-scroll style="max-width: 1000px; width: 100%; overflow-x: auto; overflow-y: visible; display: flex; box-sizing: border-box;"
+    div id="chart_new_vs_upgraded"
+
+div.new-upg-chart-wrapper#new-upg-bar-graph-rpeak-pct style="max-width: 1000px;"
+  div.new-upg-chart-header id="chart_new_vs_upgraded_rpeak_pct_header" style="text-align: center; width: 100%; box-sizing: border-box; min-height: 80px;"
+  div.new-upg-charts-scroll style="max-width: 1000px; width: 100%; overflow-x: auto; overflow-y: visible; display: flex; box-sizing: border-box;"
+    div id="chart_new_vs_upgraded_rpeak_pct"
+
+div.new-upg-chart-wrapper#new-upg-bar-graph-rmax-pct style="max-width: 1000px;"
+  div.new-upg-chart-header id="chart_new_vs_upgraded_rmax_pct_header" style="text-align: center; width: 100%; box-sizing: border-box; min-height: 80px;"
+  div.new-upg-charts-scroll style="max-width: 1000px; width: 100%; overflow-x: auto; overflow-y: visible; display: flex; box-sizing: border-box;"
+    div id="chart_new_vs_upgraded_rmax_pct"
+div style="clear: both;"
+a class="button" style="background: #6699CC; float: right; margin-bottom: 15px;" target="_blank" download="New_upgraded_systems.csv" id="download_new_upg"
+  = "Скачать CSV"
+table class="table table-hover" style="width: 1400px; margin: 0 auto; table-layout: fixed;"
+  thead
+    tr
+      th style="text-align: center;" Редакция
+      th style="text-align: center;" Новые машины
+      th style="text-align: center;" Обновлённые машины
+      th style="text-align: center;" Новые и обновлённые машины
+      th style="text-align: center;" % Новых машин
+      th style="text-align: center;" % Обновлённых машин
+      th style="text-align: center;" % Новых и обновлённых машин
+      th style="text-align: center;" % Rpeak/Rmax новых машин
+      th style="text-align: center;" % Rpeak/Rmax обновлённых машин
+      th style="text-align: center;" % Rpeak/Rmax новых и обновлённых машин
+  tbody
+    - (@ratings_table_rows || []).each_with_index do |row, idx|
+      tr data-edition-index=(idx + 1)
+        td style="text-align: center;"
+          - if row[:list_num].present? && row[:date_value].present?
+            - list_year = row[:date_value].split(".")[2]
+            - list_month = row[:date_value].split(".")[1]
+            = link_to "#{row[:list_num]}#{8209.chr}я (#{row[:date_value]})", get_archive_path(list_year, list_month)
+          - else
+            = row[:edition_label]
+        td style="text-align: right;" = row[:new_machines]
+        td style="text-align: right;" = row[:upgraded_machines]
+        td style="text-align: right;" = row[:total_machines]
+        td style="text-align: right;" = row[:pct_new].nil? ? "—" : "#{row[:pct_new]}%"
+        td style="text-align: right;" = row[:pct_upg].nil? ? "—" : "#{row[:pct_upg]}%"
+        td style="text-align: right;" = row[:pct_new_upg].nil? ? "—" : "#{row[:pct_new_upg]}%"
+        - rpeak_new_s = row[:pct_rpeak_new].nil? ? "—" : "#{row[:pct_rpeak_new]}%"
+        - rmax_new_s = row[:pct_rmax_new].nil? ? "—" : "#{row[:pct_rmax_new]}%"
+        - rpeak_upg_s = row[:pct_rpeak_upg].nil? ? "—" : "#{row[:pct_rpeak_upg]}%"
+        - rmax_upg_s = row[:pct_rmax_upg].nil? ? "—" : "#{row[:pct_rmax_upg]}%"
+        - rpeak_new_upg_s = row[:pct_rpeak_new_upg].nil? ? "—" : "#{row[:pct_rpeak_new_upg]}%"
+        - rmax_new_upg_s = row[:pct_rmax_new_upg].nil? ? "—" : "#{row[:pct_rmax_new_upg]}%"
+        td style="text-align: right;" = (row[:pct_rpeak_new].nil? && row[:pct_rmax_new].nil?) ? "—" : "#{rpeak_new_s} / #{rmax_new_s}"
+        td style="text-align: right;" = (row[:pct_rpeak_upg].nil? && row[:pct_rmax_upg].nil?) ? "—" : "#{rpeak_upg_s} / #{rmax_upg_s}"
+        td style="text-align: right;" = (row[:pct_rpeak_new_upg].nil? && row[:pct_rmax_new_upg].nil?) ? "—" : "#{rpeak_new_upg_s} / #{rmax_new_upg_s}"
+javascript:
+  var csvNewUpg = JSON.parse("#{(@csv_string_new_upg || []).to_json}".replace(/&quot;/g, '"')).join("\n");
+coffee:
+  d3.selectAll("a").filter(() -> d3.select(this).attr("id") == "download_new_upg").attr("href", "data:attachment/csv," + csvNewUpg)

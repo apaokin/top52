@@ -122,8 +122,9 @@ Octoshell::Application.routes.draw do
   get 'vendor_stats/:thres', to: 'top50_vendors#stats', as:'top50_vendors_stats'
   get 'stats', to: 'top50_machines#stats', as:'top50_stats_def'
   get 'stats/:section', to: 'top50_machines#stats', as:'top50_stats'
-  get 'stats/:section/:eid', to: 'top50_machines#stats_per_list', as: 'top50_stats_per_list'
-  get 'stats/:section/:year/:month', to: 'top50_machines#get_stats_per_list', as: 'get_stats_per_list'
+  get 'stats/:section/:subsection', to: 'top50_machines#stats', as: 'top50_stats_subsection'
+  get 'stats/:section/:eid', to: 'top50_machines#stats_per_list', as: 'top50_stats_per_list', constraints: { eid: /\d+/ }
+  get 'stats/:section/:year/:month', to: 'top50_machines#get_stats_per_list', as: 'get_stats_per_list', constraints: { year: /\d+/, month: /\d+/ }
   get 'ext_stats/:eid', to: 'top50_machines#ext_stats', as: 'top50_ext_stats'
   get 'ext_stats/:year/:month', to: 'top50_machines#get_ext_stats', as: 'get_ext_stats'
   get 'about', to: 'about#help'
@@ -164,6 +165,10 @@ Octoshell::Application.routes.draw do
   get 'objects_by_type/:tid', to: 'top50_objects#objects_of_type', as: 'top50_object_by_tp'
 
   get 'components/info/:id', to: 'top50_objects#show_info', as:'top50_objects_show_info'
+
+  get 'component_dates', to: 'top50_objects#component_dates', as: 'component_dates'
+  get 'objects/:id/component_info/edit', to: 'top50_objects#edit_component_info', as: 'edit_component_info'
+  patch 'objects/:id/component_info', to: 'top50_objects#update_component_info', as: 'update_component_info'
 
   get 'systems/:id/benchmark_results', to: 'top50_machines#benchmark_results', as:'top50_machine_top50_benchmark_results'
   post 'systems/:id/benchmark_results', to: 'top50_machines#create_benchmark_result'

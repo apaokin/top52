@@ -1,3 +1,5 @@
+- stat_section_for_render = @stat_section_for_loading || @stat_section
+
 table
   tr
     td 
@@ -7,8 +9,24 @@ table
         button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown"
           span class="caret"
         ul class="dropdown-menu" role="menu"
-          - @section_headers.each do |section, header|
+          - (@main_section_headers || @section_headers).each do |section, header|
             li = link_to header, top50_stats_path(section)
+
+- if @active_upgradability_group.present?
+  - upgradability_group_name = @section_headers[@active_upgradability_group].to_s
+  - current_upgradability_name = @section_headers[stat_section_for_render]
+  table
+    tr
+      td
+        h4 = "#{upgradability_group_name.capitalize}: " + current_upgradability_name
+      td
+        div class="btn-group"
+          button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown"
+            span class="caret"
+          ul class="dropdown-menu" role="menu"
+            - (@upgradability_group_sections[@active_upgradability_group] || []).each do |section|
+              - if @section_headers[section].present?
+                li = link_to @section_headers[section], top50_stats_subsection_path(@active_upgradability_group, section)
           
 - if @stat_section.present? and @stat_section[0..6] == "vendors"
   table
@@ -25,6 +43,10 @@ table
 
 br
               
+- if ["fr_comp_lag", "new_upg", "ram_stats", "comp_stats", "fr_comp_stats", "area_upg", "list_upg"].include?(stat_section_for_render)
+  javascript:
+    window.TOP50_MAX_RANK = #{(@max_rank || 50).to_i};
+
 - if @stat_section == "hybrid_intra"
   - hlist_chart_data = {}
   - hlist_dates = {}
@@ -783,7 +805,7 @@ br
     });
 
     
-- elsif @stat_section == 'heatmap_streaks'
+- elsif stat_section_for_render == 'heatmap_streaks'
   .container-fluid
 
     #heatmap-streaks-chart(style="height: 800px; width: 100%;")
@@ -864,7 +886,7 @@ br
         Plotly.newPlot('heatmap-streaks-chart', data, layout, { displayModeBar: false });
       });
 
-- elsif @stat_section == 'heatmap_rank_vs_years'
+- elsif stat_section_for_render == 'heatmap_rank_vs_years'
   .container-fluid
     #heatmap-rank-years-chart style="height: 800px; width: 100%;"
     div#rank-years-details style="margin-top: 40px;"
@@ -974,7 +996,7 @@ br
       });
 
 
-- elsif @stat_section == "performance_3d_with_machine_status"
+- elsif stat_section_for_render == "performance_3d_with_machine_status"
   .container-fluid
     .menu-container
       .row.mb-3
@@ -2191,6 +2213,27 @@ br
       coffee:
         draw_type(data, "chart_1", "Типы систем", "Дата (ММ.ГГ)", "Количество систем")
       /= area_chart achart_data, max: 50, stacked: true, height: "500px"
+
+- elsif stat_section_for_render == "fr_comp_lag"
+  = render partial: "top50_machines/stats/fr_comp_lag"
+
+- elsif stat_section_for_render == "ram_stats"
+  = render partial: "top50_machines/stats/ram_stats"
+
+- elsif stat_section_for_render == "comp_stats"
+  = render partial: "top50_machines/stats/comp_stats"
+
+- elsif stat_section_for_render == "fr_comp_stats"
+  = render partial: "top50_machines/stats/fr_comp_stats"
+
+- elsif stat_section_for_render == "area_upg"
+  = render partial: "top50_machines/stats/area_upg"
+
+- elsif stat_section_for_render == "new_upg"
+  = render partial: "top50_machines/stats/new_upg"
+
+- elsif stat_section_for_render == "list_upg"
+  = render partial: "top50_machines/stats/list_upg"
   
 - else
   div id="chart_1"

@@ -10,7 +10,7 @@ div class="page-header"
 - if list_num.present?
 = link_to "Редакция №#{list_num.value} от #{date_val.value}", get_archive_path(list_year, list_month)
 br
-= link_to "Назад", top50_stats_path, class: "btn btn-default"
+= link_to "Назад", (@back_to_stats_url || top50_stats_def_path), class: "btn btn-default"
 br
 - c_chart_data = []
 - counter = 0

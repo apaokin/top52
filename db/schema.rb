@@ -11,7 +11,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 20181016090412) do
+ActiveRecord::Schema.define(version: 20260319090000) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -409,6 +409,16 @@ ActiveRecord::Schema.define(version: 20181016090412) do
     t.datetime "created_at"
     t.datetime "updated_at"
   end
+
+  create_table "component_infos", force: true do |t|
+    t.integer  "component_id"
+    t.date     "date_announced"
+    t.date     "date_mentioned"
+    t.datetime "created_at",      null: false
+    t.datetime "updated_at",      null: false
+  end
+
+  add_index "component_infos", ["component_id"], name: "index_component_infos_on_component_id", unique: true, using: :btree
 
   create_table "core_access_fields", force: true do |t|
     t.integer "access_id"

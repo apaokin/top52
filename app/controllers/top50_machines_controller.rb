@@ -1,5 +1,32 @@
 # encoding: UTF-8
 class Top50MachinesController < Top50BaseController
+  require_dependency "stats/percent"
+  require_dependency "stats/lineage"
+  require_dependency "stats/edition_timeline"
+  require_dependency "stats/edition_label"
+  require_dependency "stats/rpeak_rmax_index"
+  require_dependency "stats/attribute_value_cache"
+  require_dependency "stats/new_upg_builder"
+  require_dependency "stats/list_upg_builder"
+  require_dependency "stats/sections/base_section_service"
+  require_dependency "stats/sections/dispatcher"
+  require_dependency "stats/sections/json_payload_builder"
+
+  # Matches d3.schemePaired (d3-scale-chromatic) for stats/area legend colors
+  D3_SCHEME_PAIRED = %w[
+    #a6cee3 #1f78b4 #b2df8a #33a02c #fb9a99 #e31a1c
+    #fdbf6f #ff7f00 #cab2d6 #6a3d9a #ffff99 #b15928
+  ].freeze
+  HEATMAP_TARGET_APP_AREAS = [
+    "Наука и образование",
+    "Исследования",
+    "Промышленность",
+    "IT Services",
+    "Геофизика",
+    "Производитель",
+    "Финансы",
+    "Seismic Processing"
+  ].freeze
   skip_before_filter :require_login, only: [:list, :get_archive, :get_archive_by_vendor, :get_archive_by_org, :get_archive_by_city, :get_archive_by_country, :get_archive_by_vendor_excl, :get_archive_by_comp, :get_archive_by_comp_attrd, :get_archive_by_attr_dict, :archive, :archive_lists, :archive_by_vendor, :archive_by_org, :archive_by_city, :archive_by_country, :archive_by_vendor_excl, :archive_by_comp, :archive_by_comp_attrd, :archive_by_attr_dict, :show, :stats, :get_ext_stats, :ext_stats, :get_stats_per_list, :stats_per_list, :download_certificate, :app_form_new, :app_form_new_post, :app_form_upgrade, :app_form_upgrade_post, :app_form_step1, :app_form_step1_presave, :app_form_step2_presave, :app_form_step3_presave, :app_form_step4_presave, :app_form_confirm_post, :app_form_finish, :download_archive]
   skip_before_filter :require_admin_rights, only: [:list, :get_archive, :get_archive_by_vendor, :get_archive_by_org, :get_archive_by_city, :get_archive_by_country, :get_archive_by_vendor_excl, :get_archive_by_comp, :get_archive_by_comp_attrd, :get_archive_by_attr_dict, :archive, :archive_lists, :archive_by_vendor, :archive_by_org, :archive_by_city, :archive_by_country, :archive_by_vendor_excl, :archive_by_comp, :archive_by_comp_attrd, :archive_by_attr_dict, :show, :stats, :get_ext_stats, :ext_stats, :get_stats_per_list, :stats_per_list, :download_certificate, :app_form_new, :app_form_new_post, :app_form_upgrade, :app_form_upgrade_post, :app_form_step1, :app_form_step1_presave, :app_form_step2_presave, :app_form_step3_presave, :app_form_step4_presave, :app_form_confirm_post, :app_form_finish, :download_archive]
   def index
@@ -1321,15 +1348,7 @@ class Top50MachinesController < Top50BaseController
 
   def stats_common
 
-    @top50_lists = get_top50_lists
-    @top50_slists = get_top50_lists_sorted
-
-    all_res = Top50BenchmarkResult.all.joins(:top50_benchmark).merge(@top50_lists)
-    
-    list_num_attrs = Top50AttributeDbval.all.joins(:top50_attribute).merge(Top50Attribute.where(name_eng: "Edition number"))
-    @num_vals = Top50AttributeValDbval.all.joins(:top50_attribute_dbval).merge(list_num_attrs)
-    list_date_attrs = Top50AttributeDbval.all.joins(:top50_attribute).merge(Top50Attribute.where(name_eng: "Edition date"))
-    @date_vals = Top50AttributeValDbval.all.joins(:top50_attribute_dbval).merge(list_date_attrs)
+    load_stats_base_context!(ext: 0)
     
   end
   
@@ -1337,6 +1356,14 @@ class Top50MachinesController < Top50BaseController
     @list_id = get_top50_lists.find(eid).id
     stats(1)
     @top50_mtypes = get_avail_mtypes
+    @back_to_stats_url = if @upgradability_section_keys && @stat_section.present? && @upgradability_section_keys.include?(@stat_section)
+                           group = @active_upgradability_group || @upgradability_section_group_map[@stat_section] || "comp_upg"
+                           top50_stats_subsection_path(group, @stat_section)
+                         elsif @stat_section.present?
+                           top50_stats_path(@stat_section)
+                         else
+                           top50_stats_def_path
+                         end
   end
 
   def get_stats_per_list
@@ -1427,9 +1454,11 @@ class Top50MachinesController < Top50BaseController
   end
   #4 END: my code
   
+  TOP50_MAX_RANK = 50
+
   def stats(ext = 0)
     @stat_section = params[:section]
-    
+
     @section_headers = {}
     @section_headers["performance"] = "производительность систем"
     @section_headers["performance_3d"] = "производительность систем (LINPACK, 3D)"
@@ -1445,16 +1474,80 @@ class Top50MachinesController < Top50BaseController
     @section_headers["cpu_fam"] = "семейства CPU"
     @section_headers["cpu_gen"] = "микроархитектура CPU"
     @section_headers["cpu_cnt"] = "количество CPU"
+    @section_headers["fr_comp_lag"] = "характеристики новизны компонент"
+    @section_headers["new_upg"] = "характеристики новых и обновлённых систем"
+    @section_headers["ram_stats"] = "характеристики памяти"
+    @section_headers["comp_stats"] = "характеристики архитектуры"
+    @section_headers["fr_comp_stats"] = "характеристики новых компонент"
+    @section_headers["area_upg"] = "характеристики по области применения"
+    @section_headers["list_upg"] = "изменение списка рейтинга"
     @section_headers["core_cnt"] = "количество вычислительных ядер"
     @section_headers["comm_net"] = "семейства коммуникационных сетей"
     @section_headers["comm_net_sep"] = "коммуникационные сети"
     @section_headers["performance_3d_with_machine_status"] = "обновляемость систем (3D)"
     @section_headers["heatmap_streaks"] = "количество лет в рейтинге от номера редакции"
     @section_headers["heatmap_rank_vs_years"] = "количество лет в рейтинге от начальной позиции"
-    
+    @section_headers["sys_upg"] = "обновляемость систем"
+    @section_headers["comp_upg"] = "обновляемость компонент"
+
+    @sys_upg_section_keys = %w[
+      new_upg
+      area_upg
+      list_upg
+      performance_3d_with_machine_status
+      heatmap_streaks
+      heatmap_rank_vs_years
+    ].freeze
+    @comp_upg_section_keys = %w[
+      fr_comp_lag
+      ram_stats
+      comp_stats
+      fr_comp_stats
+    ].freeze
+    @upgradability_section_keys = (@sys_upg_section_keys + @comp_upg_section_keys).freeze
+    @upgradability_group_keys = %w[sys_upg comp_upg].freeze
+    @upgradability_group_sections = {
+      "sys_upg" => @sys_upg_section_keys,
+      "comp_upg" => @comp_upg_section_keys
+    }.freeze
+    @upgradability_section_group_map = {}
+    @sys_upg_section_keys.each { |key| @upgradability_section_group_map[key] = "sys_upg" }
+    @comp_upg_section_keys.each { |key| @upgradability_section_group_map[key] = "comp_upg" }
+
+    # Main stats dropdown: exclude upgradability subsections.
+    @main_section_headers = @section_headers.reject { |k, _| @upgradability_section_keys.include?(k) }
+
+    @active_upgradability_group =
+      if @upgradability_group_keys.include?(@stat_section)
+        @stat_section
+      elsif @upgradability_section_group_map.key?(@stat_section)
+        @upgradability_section_group_map[@stat_section]
+      end
+
+    path_subsection = params[:subsection].is_a?(Array) ? params[:subsection].first : params[:subsection]
+    query_go_section = params[:go].is_a?(Array) ? params[:go].first : params[:go]
+    go_section = path_subsection.presence || query_go_section
+    allowed_go_sections = @upgradability_group_sections[@active_upgradability_group]
+    if @active_upgradability_group.present? && path_subsection.present? && !allowed_go_sections&.include?(path_subsection)
+      redirect_to top50_stats_path(@active_upgradability_group)
+      return
+    end
+    @stat_section_for_loading =
+      if go_section.present? && allowed_go_sections&.include?(go_section)
+        go_section
+      elsif @stat_section == "sys_upg"
+        "list_upg"
+      elsif @stat_section == "comp_upg"
+        "fr_comp_lag"
+      else
+        @stat_section
+      end
+
     @header_text = "Статистика: " + @section_headers["performance"]
-    if @stat_section.present? 
-      if @section_headers.has_key?(@stat_section)
+    if @stat_section.present?
+      if @active_upgradability_group.present?
+        @header_text = "Статистика: " + @section_headers[@active_upgradability_group]
+      elsif @section_headers.has_key?(@stat_section)
         @header_text = "Статистика: " + @section_headers[@stat_section]
       elsif @stat_section[0..6] == 'vendors'
         @header_text = "Статистика: " + @section_headers["vendors"]
@@ -1465,18 +1558,8 @@ class Top50MachinesController < Top50BaseController
       _top50_cat = Struct.new('Top50Category', :id, :name)
     end
           
-    list_num_attrs = Top50AttributeDbval.all.joins(:top50_attribute).merge(Top50Attribute.where(name_eng: "Edition number"))
-    @num_vals = Top50AttributeValDbval.all.joins(:top50_attribute_dbval).merge(list_num_attrs)
-    list_date_attrs = Top50AttributeDbval.all.joins(:top50_attribute).merge(Top50Attribute.where(name_eng: "Edition date"))
-    @date_vals = Top50AttributeValDbval.all.joins(:top50_attribute_dbval).merge(list_date_attrs)
-    rel_contain_id = get_rel_contain_id
-    top50_benchmarks = Top50Relation.where(prim_obj_id: get_avail_bunches, type_id: rel_contain_id).pluck(:sec_obj_id)
-    @mach_approved = Top50BenchmarkResult.where(:benchmark_id => top50_benchmarks).pluck(:machine_id)
-    if ext == 1
-      @mach_approved = Top50BenchmarkResult.where(:benchmark_id => @list_id).pluck(:machine_id)
-    end
-    @top50_lists = get_top50_lists
-    @top50_slists = get_top50_lists_sorted
+    load_stats_base_context!(ext: ext)
+
     if @stat_section == 'hybrid_inter'
       comp_node_id = Top50ObjectType.where(name_eng: 'Compute node').first.id
       @hybrid_mach = {}
@@ -1628,7 +1711,7 @@ class Top50MachinesController < Top50BaseController
       # puts "==============================================="
       # puts "==============================================="
 
-    elsif @stat_section == 'heatmap_streaks'
+    elsif (@stat_section_for_loading || @stat_section) == 'heatmap_streaks'
       require 'set'
       @top50_slists = get_top50_lists_sorted
 
@@ -1743,7 +1826,7 @@ class Top50MachinesController < Top50BaseController
       #   puts "Machine #{root_id}: editions #{editions.to_a.sort.inspect}"
       # end
     
-    elsif @stat_section == 'heatmap_rank_vs_years'
+    elsif (@stat_section_for_loading || @stat_section) == 'heatmap_rank_vs_years'
       require 'set'
       @top50_slists = get_top50_lists_sorted
     
@@ -2087,7 +2170,7 @@ class Top50MachinesController < Top50BaseController
       @machine_ids = @machine_ids.transpose
       @vendor_labels = vendor_indices.invert
 
-    elsif @stat_section == 'performance_3d_with_machine_status'
+    elsif (@stat_section_for_loading || @stat_section) == 'performance_3d_with_machine_status'
       precedes_type_id = Top50RelationType.find_by(name_eng: "Precedes")&.id
       @prec_machines = precedes_type_id ? Top50Relation.where(type_id: precedes_type_id, is_valid: [1, 2]) : []
     
@@ -2209,7 +2292,9 @@ class Top50MachinesController < Top50BaseController
       prec_relation = Top50Relation.all.joins(:top50_relation_type).merge(Top50RelationType.where(name_eng: "Precedes"))
       @prec_vendors = prec_relation.joins(:top50_object).merge(Top50Object.joins(:top50_object_type).merge(Top50ObjectType.where(name_eng: "Vendor")))
     elsif  @stat_section == 'type'
-      @top50_mtypes = get_avail_mtypes 
+      @top50_mtypes = get_avail_mtypes
+    elsif dispatch_stats_section(@stat_section_for_loading || @stat_section)
+      # Payload for this section is prepared by Stats::Sections services.
     elsif  @stat_section == 'area'
       area_dict_id = Top50Dictionary.where(name_eng: 'Application areas').first.id
       @mach_x_areas = Top50DictionaryElem.all.select("top50_dictionary_elems.id area_id, top50_dictionary_elems.name area_name, top50_machines.id mach_id").
@@ -2356,6 +2441,191 @@ class Top50MachinesController < Top50BaseController
       @pop_cnets.each do |key, value|
         if !value
           @top50_cnets.delete_if{|el| el.cnet_name == key}
+        end
+      end
+    end
+
+    respond_to do |format|
+      format.html
+      format.json do
+        section = @stat_section_for_loading || @stat_section
+        json_payload = Stats::Sections::JsonPayloadBuilder.new(context: self, params: params).call(section)
+        if json_payload.present?
+          render json: json_payload
+          next
+        end
+
+        # Helpers for edition/rank ranges (1-based indices as used in heatmap data)
+        parse_i = ->(val, default) do
+          v = val.to_i
+          v > 0 ? v : default
+        end
+
+        # For heatmap-style data where each entry has :edition and :rank
+        filter_by_ranges = ->(arr, ed_from, ed_to, rk_from, rk_to) do
+          (arr || []).select do |h|
+            ed = h[:edition] || h["edition"]
+            rk = h[:rank] || h["rank"]
+            ed && rk && ed >= ed_from && ed <= ed_to && rk >= rk_from && rk <= rk_to
+          end
+        end
+
+        # For data keyed only by :edition (no rank dimension)
+        filter_by_editions = ->(arr, ed_from, ed_to) do
+          (arr || []).select do |h|
+            ed = h[:edition] || h["edition"]
+            ed && ed >= ed_from && ed <= ed_to
+          end
+        end
+
+        case section
+        when "fr_comp_lag"
+          max_edition = (@edition_dates_lag || []).length
+          max_edition = 1 if max_edition <= 0
+          ed_from = parse_i.call(params[:edition_start], 1)
+          ed_to   = parse_i.call(params[:edition_end], max_edition)
+          ed_from, ed_to = ed_to, ed_from if ed_from > ed_to
+          rk_from = parse_i.call(params[:rank_start], 1)
+          rk_to   = parse_i.call(params[:rank_end], @max_rank || TOP50_MAX_RANK)
+          rk_from, rk_to = rk_to, rk_from if rk_from > rk_to
+
+          cpu = filter_by_ranges.call(@cpu_data, ed_from, ed_to, rk_from, rk_to)
+          gpu = filter_by_ranges.call(@gpu_data, ed_from, ed_to, rk_from, rk_to)
+          combined = filter_by_ranges.call(@combined_data, ed_from, ed_to, rk_from, rk_to)
+
+          render json: {
+            cpu_data: cpu,
+            gpu_data: gpu,
+            combined_data: combined,
+            edition_dates: @edition_dates_lag || [],
+            edition_start: ed_from,
+            edition_end: ed_to,
+            rank_start: rk_from,
+            rank_end: rk_to
+          }
+
+        when "ram_stats"
+          max_edition = (@edition_dates_ram || []).length
+          max_edition = 1 if max_edition <= 0
+          ed_from = parse_i.call(params[:edition_start], 1)
+          ed_to   = parse_i.call(params[:edition_end], max_edition)
+          ed_from, ed_to = ed_to, ed_from if ed_from > ed_to
+          rk_from = parse_i.call(params[:rank_start], 1)
+          rk_to   = parse_i.call(params[:rank_end], @max_rank || TOP50_MAX_RANK)
+          rk_from, rk_to = rk_to, rk_from if rk_from > rk_to
+
+          core = filter_by_ranges.call(@ram_per_core_data, ed_from, ed_to, rk_from, rk_to)
+          cpu  = filter_by_ranges.call(@ram_per_cpu_data,  ed_from, ed_to, rk_from, rk_to)
+          node = filter_by_ranges.call(@ram_per_node_data, ed_from, ed_to, rk_from, rk_to)
+
+          render json: {
+            ram_per_core_data: core,
+            ram_per_cpu_data: cpu,
+            ram_per_node_data: node,
+            edition_dates: @edition_dates_ram || [],
+            edition_start: ed_from,
+            edition_end: ed_to,
+            rank_start: rk_from,
+            rank_end: rk_to
+          }
+
+        when "comp_stats"
+          max_edition = (@edition_dates_component || []).length
+          max_edition = 1 if max_edition <= 0
+          ed_from = parse_i.call(params[:edition_start], 1)
+          ed_to   = parse_i.call(params[:edition_end], max_edition)
+          ed_from, ed_to = ed_to, ed_from if ed_from > ed_to
+          rk_from = parse_i.call(params[:rank_start], 1)
+          rk_to   = parse_i.call(params[:rank_end], @max_rank || TOP50_MAX_RANK)
+          rk_from, rk_to = rk_to, rk_from if rk_from > rk_to
+
+          wrap = ->(arr) { filter_by_ranges.call(arr, ed_from, ed_to, rk_from, rk_to) }
+
+          render json: {
+            cpu_total_data:              wrap.call(@cpu_total_data),
+            cpu_per_node_data:           wrap.call(@cpu_per_node_data),
+            gpu_total_data:              wrap.call(@gpu_total_data),
+            gpu_per_node_data:           wrap.call(@gpu_per_node_data),
+            freshest_total_data:         wrap.call(@freshest_total_data),
+            freshest_per_node_data:      wrap.call(@freshest_per_node_data),
+            freshest_total_data_cpu_only:   wrap.call(@freshest_total_data_cpu_only),
+            freshest_per_node_data_cpu_only: wrap.call(@freshest_per_node_data_cpu_only),
+            cores_total_data:            wrap.call(@cores_total_data),
+            cores_per_node_data:         wrap.call(@cores_per_node_data),
+            gpu_cores_total_data:        wrap.call(@gpu_cores_total_data),
+            gpu_cores_per_node_data:     wrap.call(@gpu_cores_per_node_data),
+            gpu_microcores_only_total_data: wrap.call(@gpu_microcores_only_total_data),
+            gpu_microcores_only_per_node_data: wrap.call(@gpu_microcores_only_per_node_data),
+            edition_dates: @edition_dates_component || [],
+            edition_start: ed_from,
+            edition_end: ed_to,
+            rank_start: rk_from,
+            rank_end: rk_to
+          }
+
+        when "fr_comp_stats"
+          # Edition-only range for newest component statistics
+          max_edition =
+            if defined?(@edition_dates_freshest_quantity) && @edition_dates_freshest_quantity
+              @edition_dates_freshest_quantity.length
+            else
+              1
+            end
+          ed_from = parse_i.call(params[:edition_start], 1)
+          ed_to   = parse_i.call(params[:edition_end], max_edition)
+          ed_from, ed_to = ed_to, ed_from if ed_from > ed_to
+
+          wrap_ed = ->(arr) { filter_by_editions.call(arr, ed_from, ed_to) }
+
+          render json: {
+            freshest_cpu_quantity_data: wrap_ed.call(@freshest_cpu_quantity_data),
+            freshest_gpu_quantity_data: wrap_ed.call(@freshest_gpu_quantity_data),
+            announce_to_mention_cpu_data: wrap_ed.call(@announce_to_mention_cpu_data),
+            announce_to_mention_gpu_data: wrap_ed.call(@announce_to_mention_gpu_data),
+            edition_dates: @edition_dates_freshest_quantity || [],
+            edition_start: ed_from,
+            edition_end: ed_to
+          }
+
+        when "new_upg"
+          render json: {
+            ratings_chart_data:          @ratings_chart_data,
+            ratings_rpeak_pct_chart_data: @ratings_rpeak_pct_chart_data,
+            ratings_rmax_pct_chart_data:  @ratings_rmax_pct_chart_data
+          }
+
+        when "list_upg"
+          # Matrix of rank changes; filter by edition string and rank
+          ed_from = params[:edition_start]
+          ed_to   = params[:edition_end]
+          rk_from = parse_i.call(params[:rank_start], 1)
+          rk_to   = parse_i.call(params[:rank_end], @max_rank || TOP50_MAX_RANK)
+          rk_from, rk_to = rk_to, rk_from if rk_from > rk_to
+
+          all_editions = (@new_upd_data || []).map { |e| e[:edition] }.uniq.sort
+          if ed_from.present? && ed_to.present?
+            from_idx = all_editions.index(ed_from) || 0
+            to_idx   = all_editions.index(ed_to)   || all_editions.length - 1
+            from_idx, to_idx = to_idx, from_idx if from_idx > to_idx
+            allowed_editions = all_editions[from_idx..to_idx]
+          else
+            allowed_editions = all_editions
+          end
+
+          matrix_entries = (@new_upd_data || []).select do |e|
+            rk = e[:rank]
+            allowed_editions.include?(e[:edition]) && rk && rk >= rk_from && rk <= rk_to
+          end
+
+          render json: {
+            matrix_data: matrix_entries,
+            editions: allowed_editions,
+            rank_start: rk_from,
+            rank_end: rk_to
+          }
+
+        else
+          render json: { error: "JSON stats not available for section=#{section}" }, status: :bad_request
         end
       end
     end
@@ -3901,9 +4171,240 @@ class Top50MachinesController < Top50BaseController
     Top50Mailer.app_confirm_email({step1_data: @step1_data, step2_data: @step2_data, step3_data: @step3_data, step4_data: @step4_data, id: @top50_machine.id}).deliver!
   end
 
+  def show_info
+    @top50_object = Top50Object.find(params[:id])
+    @first_appearance_date = fetch_first_appearance_date(@top50_object.id)
+  end 
   
+  def get_rel_contain_id
+    @get_rel_contain_id ||= Top50RelationType.find_by(name_eng: 'Contains').id
+  end
+
+  def get_name_eng_attr_id
+    @get_name_eng_attr_id ||= Top50Attribute.find_by(name_eng: "Name(eng)").id
+  end
+
+  def get_bunch_id
+    @get_bunch_id ||= Top50Object.joins("join top50_object_types on top50_object_types.id = top50_objects.type_id and top50_object_types.name_eng = 'Bunch of benchmarks'")
+                              .joins("join top50_attribute_val_dbvals dbv on dbv.obj_id = top50_objects.id and dbv.attr_id = #{get_name_eng_attr_id} and dbv.value = 'Top50 position'")
+                              .first.id
+  end
+
+  def fetch_first_appearance_date(component_id)
+    machine_id = Top50Machine.where("exists(select 1 from top50_relations a join top50_relations b on
+                                      b.prim_obj_id = a.sec_obj_id where b.sec_obj_id = #{component_id} and
+                                      a.prim_obj_id = top50_machines.id and a.type_id = #{get_rel_contain_id} and
+                                      b.type_id = #{get_rel_contain_id})").order(:created_at).first.try(:id)
+    return nil unless machine_id
+
+    benchmark = Top50Benchmark.joins("join top50_benchmark_results ed_results on ed_results.machine_id = #{machine_id} and
+    ed_results.benchmark_id = top50_benchmarks.id").select('top50_benchmarks.*')
+                 .joins("join top50_relations on top50_benchmarks.id = top50_relations.sec_obj_id")
+                 .where("top50_relations.prim_obj_id = (?) and top50_relations.type_id = ?", get_bunch_id, get_rel_contain_id)
+                 .order(:created_at).first
+    benchmark.created_at if benchmark
+  end
+
   private
-  
+
+  def load_stats_base_context!(ext:)
+    list_num_attrs = Top50AttributeDbval.all.joins(:top50_attribute).merge(Top50Attribute.where(name_eng: "Edition number"))
+    @num_vals = Top50AttributeValDbval.all.joins(:top50_attribute_dbval).merge(list_num_attrs)
+    list_date_attrs = Top50AttributeDbval.all.joins(:top50_attribute).merge(Top50Attribute.where(name_eng: "Edition date"))
+    @date_vals = Top50AttributeValDbval.all.joins(:top50_attribute_dbval).merge(list_date_attrs)
+    rel_contain_id = get_rel_contain_id
+    top50_benchmarks = Top50Relation.where(prim_obj_id: get_avail_bunches, type_id: rel_contain_id).pluck(:sec_obj_id)
+    @mach_approved = Top50BenchmarkResult.where(benchmark_id: top50_benchmarks).pluck(:machine_id)
+    if ext.to_i == 1
+      @mach_approved = Top50BenchmarkResult.where(benchmark_id: @list_id).pluck(:machine_id)
+    end
+    @top50_lists = get_top50_lists
+    @top50_slists = get_top50_lists_sorted
+    last_list = @top50_slists.first
+    @max_rank = last_list ? Top50BenchmarkResult.where(benchmark_id: last_list.id).count : nil
+    @max_rank = TOP50_MAX_RANK if @max_rank.to_i < 1
+  end
+
+  def dispatch_stats_section(section_key)
+    return false if section_key.blank?
+
+    @stats_section_dispatcher ||= Stats::Sections::Dispatcher.new(context: self)
+    @stats_section_dispatcher.call(section_key)
+  end
+
+  # Heatmap area bucketing: only selected categories keep distinct colors; others => "Не указано/Прочие".
+  # Color palette stays aligned with stats/area (d3.schemePaired order).
+  # Returns { machine_id => { area_name:, area_color: } } for tooltip + hover stroke on heatmaps.
+  def application_area_color_by_machine_id(machine_ids)
+    ids = Array(machine_ids).compact.uniq
+    return {} if ids.empty? || @mach_approved.blank?
+
+    fallback_name = "Не указано/Прочие"
+    scheme = D3_SCHEME_PAIRED
+
+    app_area_attrid = Top50Attribute.where(name_eng: "Application area").first&.id
+    area_dict = Top50Dictionary.find_by(name_eng: "Application areas")
+    return ids.index_with { { area_name: fallback_name, area_color: scheme[0] } } if app_area_attrid.nil? || area_dict.nil?
+
+    area_name_aliases = {
+      "it servecies" => "IT Services"
+    }
+    normalize_area = lambda do |name|
+      n = name.to_s.strip
+      return n if n.blank?
+      key = n.downcase
+      area_name_aliases[key] || n
+    end
+
+    area_name_to_index = {}
+    HEATMAP_TARGET_APP_AREAS.each_with_index { |name, i| area_name_to_index[name] = i }
+    fallback_index = area_name_to_index.size # last series = "Не указано/Прочие"
+
+    pairs = Top50AttributeValDict.where(attr_id: app_area_attrid, obj_id: ids).order(:id).pluck(:obj_id, :dict_elem_id)
+    dict_elem_by_mid = pairs.each_with_object({}) { |(mid, de), h| h[mid] ||= de }
+
+    elem_ids = dict_elem_by_mid.values.compact.uniq
+    elem_to_name = elem_ids.empty? ? {} : Top50DictionaryElem.where(id: elem_ids).pluck(:id, :name).to_h
+
+    ids.each_with_object({}) do |mid, h|
+      elem_id = dict_elem_by_mid[mid]
+      source_name = elem_id ? (elem_to_name[elem_id] || fallback_name) : fallback_name
+      normalized_name = normalize_area.call(source_name)
+      idx = if elem_id && area_name_to_index.key?(normalized_name)
+              area_name_to_index[normalized_name]
+            else
+              fallback_index
+            end
+      area_name_for_tooltip = (idx == fallback_index) ? fallback_name : normalized_name
+      h[mid] = { area_name: area_name_for_tooltip, area_color: scheme[idx % scheme.length] }
+    end
+  end
+
+  def merge_application_area_into_heatmap_rows!(rows)
+    return if rows.blank?
+
+    rows = rows.reject(&:nil?)
+    return if rows.empty?
+
+    meta = application_area_color_by_machine_id(rows.map { |r| r[:machine_id] || r["machine_id"] }.compact.uniq)
+    rows.each do |row|
+      mid = row[:machine_id] || row["machine_id"]
+      next unless mid && meta[mid]
+
+      row[:area_name] = meta[mid][:area_name]
+      row[:area_color] = meta[mid][:area_color]
+    end
+  end
+
+  def merge_application_area_into_many_heatmap_rows!(*rows_collections)
+    groups = rows_collections.compact
+    return if groups.empty?
+
+    machine_ids = groups.flat_map do |rows|
+      if rows.is_a?(Array)
+        rows.map { |r| r.is_a?(Hash) ? (r[:machine_id] || r["machine_id"]) : nil }
+      elsif rows.is_a?(Hash)
+        [rows[:machine_id] || rows["machine_id"]]
+      else
+        []
+      end
+    end.compact.uniq
+    return if machine_ids.empty?
+
+    meta = application_area_color_by_machine_id(machine_ids)
+    groups.each do |rows|
+      row_list = rows.is_a?(Array) ? rows : [rows]
+      row_list.each do |row|
+        next unless row.is_a?(Hash)
+
+        mid = row[:machine_id] || row["machine_id"]
+        next unless mid && meta[mid]
+
+        row[:area_name] = meta[mid][:area_name]
+        row[:area_color] = meta[mid][:area_color]
+      end
+    end
+  end
+
+  def preload_machine_component_graph(machine_ids, rel_contain_id:)
+    mids = Array(machine_ids).compact.uniq
+    empty_hash = Hash.new { |h, k| h[k] = [] }
+    return {
+      node_rels_by_machine: empty_hash,
+      comp_rels_by_node: empty_hash,
+      component_type_by_id: {},
+      component_info_by_id: {}
+    } if mids.empty?
+
+    node_rels = Top50Relation.where(prim_obj_id: mids, type_id: rel_contain_id).to_a
+    node_rels_by_machine = Hash.new { |h, k| h[k] = [] }
+    node_rels.each { |rel| node_rels_by_machine[rel.prim_obj_id] << rel }
+
+    node_ids = node_rels.map(&:sec_obj_id).compact.uniq
+    comp_rels = if node_ids.empty?
+      []
+    else
+      Top50Relation.where(prim_obj_id: node_ids, type_id: rel_contain_id).to_a
+    end
+    comp_rels_by_node = Hash.new { |h, k| h[k] = [] }
+    comp_rels.each { |rel| comp_rels_by_node[rel.prim_obj_id] << rel }
+
+    component_ids = comp_rels.map(&:sec_obj_id).compact.uniq
+    component_type_by_id = component_ids.empty? ? {} : Top50Object.where(id: component_ids).pluck(:id, :type_id).to_h
+    component_info_by_id = component_ids.empty? ? {} : ComponentInfo.where(component_id: component_ids).index_by(&:component_id)
+
+    {
+      node_rels_by_machine: node_rels_by_machine,
+      comp_rels_by_node: comp_rels_by_node,
+      component_type_by_id: component_type_by_id,
+      component_info_by_id: component_info_by_id
+    }
+  end
+
+  # Upgradability heatmaps only: stable Precedes map (valid relations; first edge per successor).
+  def precedes_child_to_parent_map_for_lineage
+    @precedes_child_to_parent_map_for_lineage ||= Stats::Lineage.precedes_child_to_parent_map
+  end
+
+  # Hover key: do not merge sibling upgrade branches that share one root ancestor.
+  def lineage_branch_key_machine_id(machine_id, map = nil)
+    Stats::Lineage.branch_key_machine_id(machine_id, map)
+  end
+
+  # One rank row per machine after CSV duplicates: keep best list position (min Linpack result) per machine.
+  def ranked_machine_ids_for_list(benchmark_id, limit = 50)
+    @ranked_machine_ids_cache ||= {}
+    cache_key = [benchmark_id.to_i, limit.to_i]
+    cached = @ranked_machine_ids_cache[cache_key]
+    return cached if cached.present?
+
+    best = {}
+    Top50BenchmarkResult.where(benchmark_id: benchmark_id).each do |r|
+      cur = best[r.machine_id]
+      best[r.machine_id] = r if cur.nil? || r.result.to_f < cur.result.to_f
+    end
+    @ranked_machine_ids_cache[cache_key] = best.values.sort_by { |r| r.result.to_f }.first(limit).map(&:machine_id)
+  end
+
+  # Display name for heatmap tooltips: system name, else organization, else "н/д" (same as archive/lists).
+  def machine_display_name_map_for_ids(machine_ids)
+    ids = Array(machine_ids).compact.uniq
+    return {} if ids.empty?
+
+    @machine_display_name_cache ||= {}
+    missing_ids = ids - @machine_display_name_cache.keys
+    if missing_ids.any?
+      Top50Machine.where(id: missing_ids).includes(:top50_organization).each do |m|
+        @machine_display_name_cache[m.id] = m.name.presence || m.top50_organization&.name.presence || "н/д"
+      end
+      missing_ids.each { |mid| @machine_display_name_cache[mid] ||= "н/д" }
+    end
+
+    ids.each_with_object({}) do |mid, h|
+      h[mid] = @machine_display_name_cache[mid] || "н/д"
+    end
+  end
+
   def top50machine_params
     params.require(:top50_machine).permit(:name, :name_eng, :website, :type_id, :org_id, :vendor_id, :vendor_ids, :contact_id, :installation_date, :start_date, :end_date, :is_valid, :comment)
   end
