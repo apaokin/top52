@@ -1,8 +1,16 @@
 source "https://rubygems.org"
 
 gem "rake"
-gem "rails", "~> 4.1.2"
-gem "activerecord-jdbcpostgresql-adapter", "~> 1.3"
+gem "rails", "~> 4.2"
+gem 'responders', '~> 2.0'
+gem 'sass-rails'
+platforms :jruby do
+  gem "activerecord-jdbcpostgresql-adapter", "~> 1.3.21"
+end
+gem "pg", "~> 0.18", platform: :ruby
+# gem "pg", "~> 1.0",  platform: :ruby
+# gem "pg",  platform: :ruby
+
 gem "uglifier", ">= 1.3.0"
 gem "chartkick"
 
@@ -46,6 +54,7 @@ gem "ckeditor"
 
 group :production do
   gem "whenever"
+  gem "honeybadger"
 end
 
 group :test do
@@ -56,6 +65,6 @@ group :test do
   gem "factory_girl-seeds"
   gem "capybara"
   gem "poltergeist"
-  gem "phantomjs", github: "colszowka/phantomjs-gem"
+  # gem "phantomjs", github: "colszowka/phantomjs-gem"
   gem "codeclimate-test-reporter", require: false
 end

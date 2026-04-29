@@ -1,0 +1,77 @@
+.container-fluid
+  .menu-container
+    table.mb-3 style="border: none;"
+      tr style="border: none; vertical-align: middle;"
+        td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Метрика:
+        td style="border: none; padding-right: 16px;"
+          select#components-by-area-metric.form-control style="width: 240px;"
+            option value="lag_avg" selected="selected" Новизна компонент
+            option value="new_components_qty" Количество новых компонент
+            option value="systems_with_new" Количество систем с новыми компонентами
+            option value="new_systems" Количество новых систем
+            option value="upgraded_systems" Количество обновлённых систем
+        td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;"
+        td style="border: none; padding-right: 8px; vertical-align: middle;"
+          svg id="components-by-area-prev" width="24" height="24" style="cursor: pointer;"
+            polygon points="16,4 6,12 16,20" fill="#6699CC"
+        td style="border: none; min-width: 135px;"
+          span#components-by-area-edition-label style="font-weight: 600;"
+        td style="border: none; padding-left: 8px; padding-right: 16px; vertical-align: middle;"
+          svg id="components-by-area-next" width="24" height="24" style="cursor: pointer;"
+            polygon points="8,4 18,12 8,20" fill="#6699CC"
+        td#components-by-area-lag-unit-label style="border: none; padding-left: 18px; white-space: nowrap; font-weight: bold;" Единица измерения:
+        td#components-by-area-lag-unit-wrap style="border: none; padding-left: 8px;"
+          select#components-by-area-lag-unit.form-control style="width: 120px;"
+            option value="days" selected="selected" Дни
+            option value="quarters" Кварталы
+
+div.freshest-chart-wrapper style="max-width: 1100px; margin-top: 1em;"
+  div.new-upg-chart-header id="area_upg_chart_header" style="text-align: center; width: 100%; box-sizing: border-box; min-height: 70px;"
+  div.freshest-charts-scroll style="max-width: 1100px; width: 100%; overflow-x: auto; overflow-y: visible; display: flex; box-sizing: border-box;"
+    div id="area_upg_chart" style="min-width: 900px;"
+
+div style="clear: both;"
+div style="margin: 10px 0 6px 0; display: flex; justify-content: flex-end;"
+  a class="button" style="background: #6699CC; display: inline-block; line-height: 1.2; white-space: nowrap;" target="_blank" download="area_upg.csv" id="download_area_upg_csv"
+    = "Скачать CSV"
+div style="margin: 0 0 8px 0; display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; white-space: nowrap;"
+  a.button style="background: #6699CC; display: inline-block; line-height: 1.2;" href="#" id="cba-table-btn-lag"
+    = "Средний возраст самых новых компонент"
+  a.button style="background: #6699CC; display: inline-block; line-height: 1.2;" href="#" id="cba-table-btn-new-components"
+    = "Новые компоненты"
+  a.button style="background: #6699CC; display: inline-block; line-height: 1.2;" href="#" id="cba-table-btn-systems-new-comp"
+    = "Системы с новыми компонентами"
+  a.button style="background: #6699CC; display: inline-block; line-height: 1.2;" href="#" id="cba-table-btn-new-systems"
+    = "Новые системы"
+  a.button style="background: #6699CC; display: inline-block; line-height: 1.2;" href="#" id="cba-table-btn-upgraded-systems"
+    = "Обновлённые системы"
+  a.button style="background: gray; display: inline-block; line-height: 1.2;" href="#" id="cba-table-btn-share"
+    = "%"
+table class="table table-hover" id="area_upg_table" style="margin: 0 auto;"
+  thead id="area_upg_table_head"
+  tbody id="area_upg_table_body"
+
+- cba_edition_meta = {}
+- cba_total = (@top50_slists || []).size
+- (@top50_slists || []).each_with_index do |top50_list, reverse_idx|
+  - list_num = @num_vals.find_by(obj_id: top50_list.id)
+  - date_val = @date_vals.find_by(obj_id: top50_list.id)
+  - next unless date_val.present?
+  - list_year = date_val.value.split(".")[2]
+  - list_month = date_val.value.split(".")[1]
+  - edition_no = cba_total - reverse_idx
+  - edition_label = list_num.present? ? "#{list_num.value}#{8209.chr}я (#{date_val.value})" : date_val.value
+  - cba_edition_meta[edition_no] = {label: edition_label, url: get_archive_path(list_year, list_month)}
+
+script
+  | window.areaUpgPayloadUrl = "#{request.path}.json";
+  | window.areaUpgDataByKey = {
+  |   area_upg_lag_by_edition: #{raw (@area_upg_lag_by_edition || []).to_json},
+  |   area_upg_edition_labels: #{raw (@area_upg_edition_labels || []).to_json}
+  | };
+  | window.componentsByAreaLagByEdition = window.areaUpgDataByKey.area_upg_lag_by_edition;
+  | window.componentsByAreaNewQtyByEdition = [];
+  | window.componentsByAreaSystemsWithNewByEdition = [];
+  | window.componentsByAreaNewUpgradedByEdition = [];
+  | window.componentsByAreaEditionLabels = window.areaUpgDataByKey.area_upg_edition_labels;
+  | window.componentsByAreaEditionMeta = #{raw (cba_edition_meta || {}).to_json};

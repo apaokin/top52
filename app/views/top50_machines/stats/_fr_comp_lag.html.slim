@@ -1,0 +1,84 @@
+head
+  title Тепловые карты новизны компонент
+  style
+    | .cell-fill { stroke-width: 0.5; }
+    | .tooltip { position: absolute; visibility: hidden; background: #fff; border: 1px solid #ccc; padding: 5px; border-radius: 5px; }
+    | .heatmap-wrapper { position: relative; display: inline-block; }
+    | .heatmap-footer { position: absolute; bottom: 15px; right: 20px; }
+
+body
+  .container-fluid
+    .menu-container
+      table.mb-3 style="border: none;"
+        tr style="border: none; vertical-align: middle;"
+          td style="border: none; padding-right: 24px; vertical-align: top;"
+            table style="border: none;"
+              tr style="border: none; vertical-align: middle;"
+                td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Метрика:
+                td style="border: none;"
+                  select#lag-graph-selector.form-control style="width: 230px;"
+                    option value="cpu" selected="selected" Новизна CPU
+                    option value="gpu" Новизна GPU
+                    option value="combined" Общая новизна min(CPU, GPU)
+              tr style="border: none; vertical-align: middle;"
+                td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold; padding-top: 6px;" Шкала:
+                td style="border: none; padding-top: 6px;"
+                  select#scale-selector.form-control style="width: 230px;"
+                    option value="linear" selected="selected" Градиент (lin)
+                    option value="log" Градиент (log)
+                    option value="sqrt" Градиент (sqrt)
+                    option value="quantile" По квантилям
+                    option value="quarters" Значения в кварталах
+          td colspan="3" style="border: none; vertical-align: top;"
+            table style="border: none;"
+              tr style="border: none; vertical-align: middle;"
+                td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold;" Редакции:
+                td style="border: none; padding-right: 4px;"
+                  select#lag-edition-start.form-control style="width: 120px;"
+                    - (@edition_dates_lag || []).each_with_index do |label, i|
+                      option value=(i + 1) selected=(i == 0) = label
+                td style="border: none;"
+                  select#lag-edition-end.form-control style="width: 120px;"
+                    - (@edition_dates_lag || []).each_with_index do |label, i|
+                      option value=(i + 1) selected=(i == (@edition_dates_lag.size - 1)) = label
+              tr style="border: none; vertical-align: middle;"
+                td style="border: none; padding-right: 8px; white-space: nowrap; font-weight: bold; padding-top: 6px;" Позиции:
+                td style="border: none; padding-right: 4px; padding-top: 6px;"
+                  select#lag-rank-start.form-control style="width: 120px;"
+                    - (1..(@max_rank || 50)).each do |i|
+                      option value=i selected=(i == 1) = i
+                td style="border: none; padding-top: 6px;"
+                  select#lag-rank-end.form-control style="width: 120px;"
+                    - (1..(@max_rank || 50)).each do |i|
+                      option value=i selected=(i == (@max_rank || 50)) = i
+
+  / Контейнеры для тепловых карт
+  div.heatmap-section#lag-graph-cpu
+    h2 Тепловая карта возраста самого нового CPU
+    div.heatmap-wrapper
+      #cpu_heatmap
+      div.heatmap-footer
+        a.button style="background: #6699CC;" id="download_cpu_lag" download="CPU_lag.csv" Скачать CSV
+
+  div.heatmap-section#lag-graph-gpu
+    h2 Тепловая карта возраста самого нового GPU
+    div.heatmap-wrapper
+      #gpu_heatmap
+      div.heatmap-footer
+        a.button style="background: #6699CC;" id="download_gpu_lag" download="GPU_lag.csv" Скачать CSV
+
+  div.heatmap-section#lag-graph-combined
+    h2 Общая тепловая карта возраста min(CPU, GPU)
+    div.heatmap-wrapper
+      #combined_heatmap
+      div.heatmap-footer
+        a.button style="background: #6699CC;" id="download_combined_lag" download="Combined_lag.csv" Скачать CSV
+
+  / Передача данных в JavaScript (только linear; остальные шкалы вычисляются на клиенте)
+  script
+    | window.frCompLagPayloadUrl = "#{request.path}.json";
+    | window.frCompLagDataByKey = { cpu_data: #{raw @cpu_data.to_json} };
+    | const cpuDataLinear = window.frCompLagDataByKey.cpu_data;
+    | const gpuDataLinear = [];
+    | const combinedDataLinear = [];
+    | const editionDatesLag = #{raw (@edition_dates_lag || []).to_json};

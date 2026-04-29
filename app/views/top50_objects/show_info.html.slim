@@ -13,3 +13,20 @@ div class="panel panel-default"
         tr
           td class="col-xs-5" = top50_attribute_val.top50_attribute_dict.top50_attribute.name
           td class="col-xs-5" = top50_attribute_val.top50_dictionary_elem.name
+      - component_info = ComponentInfo.find_by(component_id: @top50_object.id)
+      - if component_info.present? && component_info.date_announced.present?
+        tr
+          td class="col-xs-5" Дата анонса
+          td class="col-xs-5" = component_info ? component_info.date_announced.strftime("%d-%m-%Y") : "Дата не найдена"
+        tr
+          td class="col-xs-5" Дата первого появления в рейтинге
+          td class="col-xs-5"
+            - if component_info.present? && component_info.date_mentioned.present?
+              = component_info.date_mentioned.strftime("%d-%m-%Y")
+            - elsif @first_appearance_date
+              = @first_appearance_date.strftime("%d-%m-%Y")
+            - else
+              = "Не входила в системы рейтинга"
+- if current_user && User.superadmins.include?(current_user) && %w[CPU GPU Coprocessor].include?(@top50_object.top50_object_type.name_eng)
+  p
+    = link_to "Изменить даты (анонс / первое появление)", edit_component_info_path(@top50_object), class: "btn btn-default btn-sm"

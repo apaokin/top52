@@ -12,6 +12,8 @@ div class="panel panel-default"
         th = "Type"
         th Status
         th = "CPU Model"
+        - if @show_component_dates_link
+          th Даты
         th
       - @top50_objects.each do |top50_object|
         tr
@@ -31,6 +33,9 @@ div class="panel panel-default"
               = link_to cpu_model.top50_dictionary_elem.name, top50_dictionary_elem_path(cpu_model.dict_elem_id)
             - if gpu_model.present?
               = link_to gpu_model.top50_dictionary_elem.name, top50_dictionary_elem_path(gpu_model.dict_elem_id)
+          - if @show_component_dates_link
+            td
+              = link_to "Изменить даты", edit_component_info_path(top50_object), class: "btn btn-default btn-sm"
           td class="btn-group"
             = link_to t("actions.edit"), [:edit, top50_object], class: "btn btn-default btn-sm"
             button type="button" class="btn btn-default btn-sm dropdown-toggle" data-toggle="dropdown"

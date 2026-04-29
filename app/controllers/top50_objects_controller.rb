@@ -31,6 +31,7 @@ class Top50ObjectsController < Top50BaseController
     @cpu_model_attr_vals = Top50AttributeValDict.all.joins(:top50_attribute_dict).merge(cpu_model_attrs)
     gpu_model_attrs = Top50AttributeDict.all.joins(:top50_attribute).merge(Top50Attribute.where(name_eng: "GPU model"))
     @gpu_model_attr_vals = Top50AttributeValDict.all.joins(:top50_attribute_dict).merge(gpu_model_attrs)
+    @show_component_dates_link = %w[CPU GPU Coprocessor].include?(Top50ObjectType.find_by(id: params[:tid])&.name_eng)
   end
 
   def attribute_vals
@@ -43,7 +44,58 @@ class Top50ObjectsController < Top50BaseController
   
   def show_info
     @top50_object = Top50Object.find(params[:id])
-  end 
+    @first_appearance_date = fetch_first_appearance_date(@top50_object.id)
+  end
+
+  def component_dates
+    @component_types = Top50ObjectType.where(name_eng: %w[CPU GPU Coprocessor]).order(:name_eng)
+  end
+
+  def edit_component_info
+    @top50_object = Top50Object.find(params[:id])
+    @component_info = ComponentInfo.find_or_initialize_by(component_id: @top50_object.id)
+  end
+
+  def update_component_info
+    @top50_object = Top50Object.find(params[:id])
+    @component_info = ComponentInfo.find_or_initialize_by(component_id: @top50_object.id)
+    @component_info.assign_attributes(component_info_params)
+    @component_info.component_id = @top50_object.id if @component_info.new_record?
+    if @component_info.save
+      redirect_to top50_objects_show_info_path(@top50_object), notice: t("messages.updated", default: "Updated successfully")
+    else
+      render :edit_component_info
+    end
+  end
+  
+  def get_rel_contain_id
+    Top50RelationType.find_by(name_eng: 'Contains').id
+  end
+
+  def get_name_eng_attr_id
+    Top50Attribute.find_by(name_eng: "Name(eng)").id
+  end
+
+  def get_bunch_id
+    Top50Object.joins("join top50_object_types on top50_object_types.id = top50_objects.type_id and top50_object_types.name_eng = 'Bunch of benchmarks'")
+               .joins("join top50_attribute_val_dbvals dbv on dbv.obj_id = top50_objects.id and dbv.attr_id = #{get_name_eng_attr_id} and dbv.value = 'Top50 position'")
+               .first.id
+  end
+
+  def fetch_first_appearance_date(component_id)
+    machine_id = Top50Machine.where("exists(select 1 from top50_relations a join top50_relations b on
+                                      b.prim_obj_id = a.sec_obj_id where b.sec_obj_id = #{component_id} and
+                                      a.prim_obj_id = top50_machines.id and a.type_id = #{get_rel_contain_id} and
+                                      b.type_id = #{get_rel_contain_id})").order(:created_at).first.try(:id)
+    return nil unless machine_id
+
+    benchmark = Top50Benchmark.joins("join top50_benchmark_results ed_results on ed_results.machine_id = #{machine_id} and
+    ed_results.benchmark_id = top50_benchmarks.id").select('top50_benchmarks.*')
+                 .joins("join top50_relations on top50_benchmarks.id = top50_relations.sec_obj_id")
+                 .where("top50_relations.prim_obj_id = (?) and top50_relations.type_id = ?", get_bunch_id, get_rel_contain_id)
+                 .order(:created_at).first
+    benchmark.created_at if benchmark
+  end
 
   def new_attribute_val_dbval
     @top50_object = Top50Object.find(params[:id])
@@ -105,6 +157,28 @@ class Top50ObjectsController < Top50BaseController
     else
       render :new_relation
     end
+  end
+
+  def edit_relation
+    @top50_object = Top50Object.find(params[:id])
+    @top50_relation = Top50Relation.find(params[:relid])
+  end
+
+  def save_relation
+    @top50_object = Top50Object.find(params[:id])
+    @top50_relation = Top50Relation.find(params[:relid])
+    @top50_relation.update(top50_relation_params)
+    @top50_relation.save!
+    redirect_to @top50_object
+  end
+
+  def destroy_relation
+    @top50_object = Top50Object.find(params[:id])
+    @top50_relation = Top50Relation.find(params[:relid])
+    if @top50_relation.prim_obj_id == @top50_object.id
+      @top50_relation.destroy!
+    end
+    redirect_to @top50_object
   end
 
   def new_attribute_val_dict_set_attr
@@ -211,6 +285,14 @@ class Top50ObjectsController < Top50BaseController
 
   def top50_nested_object_params
     params.require(:top50_relation).permit(:top50_relation => [:type_id, :sec_obj_qty, :is_valid], :top50_object => [:id, :type_id, :is_valid])
+  end
+
+  def top50_relation_params
+    params.require(:top50_relation).permit(:type_id, :sec_obj_qty, :is_valid, :sec_obj_id)
+  end
+
+  def component_info_params
+    params.require(:component_info).permit(:date_announced, :date_mentioned)
   end
 
 end

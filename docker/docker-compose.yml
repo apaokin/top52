@@ -1,0 +1,31 @@
+version: '3.4'
+
+services:
+  top:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    depends_on:
+      - top_database
+      - top_redis
+    ports:
+      - "4000:3000"
+    volumes:
+      - ..:/app
+      - top_gem_cache:/usr/local/bundle/gems
+      - top_node_modules:/app/node_modules
+    env_file: .env
+    environment:
+      RAILS_ENV: development
+    entrypoint: ./docker/entrypoints/docker-entrypoint.sh
+  top_database:
+    image: postgres:12.1
+    volumes:
+      - top_db_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+  top_redis:
+    image: redis:5.0.7
+volumes:
+  top_gem_cache:
+  top_db_data:
+  top_node_modules:
