@@ -20,59 +20,10 @@ class ExtratingsEntriesController < Top50BaseController
   end
 
   def create
-
-    errors = []
-    
-    if params[:extratings_list_id].blank?
-      errors << "Не выбран лист рейтинга"
-    end
-    
-    if params[:edition_number].blank?
-      errors << "Не указан номер редакции"
-    end
-    
-    if params[:publication_date].blank?
-      errors << "Не указана дата публикации"
-    end
-    
-    if params[:extratings_entry].blank? || params[:extratings_entry][:position].blank?
-      errors << "Не указана позиция"
-    end
-    
-    if params[:extratings_entry].blank? || params[:extratings_entry][:system_id].blank?
-      errors << "Не выбрана система"
-    end
-    
-    scores_params = params[:scores] || {}
-    selected_units = params[:selected_units] || {}
-    
-    if scores_params.empty?
-      errors << "Не указаны показатели производительности"
-    else
-      scores_params.each do |key, score_value|
-        if score_value.blank?
-          errors << "Не указано значение для показателя '#{key}'"
-        end
-        
-        unit_id = selected_units[key]
-        if unit_id.blank?
-          errors << "Не выбрана единица измерения для показателя '#{key}'"
-        end
-      end
-    end
-    
-    if errors.any?
-      flash.now[:alert] = "Ошибки валидации: #{errors.join(', ')}"
-      new
-      respond_to do |format|
-        format.html { render :new }
-        format.js { render :new }
-      end
-      return
-    end
+    submission = build_submission
+    return render_create_validation_error(submission) unless submission.valid?(:create)
 
     ActiveRecord::Base.transaction do
-      # Создаём редакцию рейтинга с датой публикации
       edition = ExtratingsEditions.find_or_create_by!(
         extratings_list_id: params[:extratings_list_id],
         edition_number: params[:edition_number],
@@ -81,32 +32,17 @@ class ExtratingsEntriesController < Top50BaseController
         e.publication_date = params[:publication_date]
       end
   
-      # Остальной код остаётся без изменений
-      relation = Top50Relation.find(params[:extratings_entry][:system_id])
-      machine_id = relation.prim_obj_id
-
       @extratings_entry = ExtratingsEntry.new(
-        system_id: machine_id,  # Используем machine_id вместо relation_id
+        system_id: submission.machine_id,
         extratings_edition: edition,
         position: params[:extratings_entry][:position]
       )
       @extratings_entry.save!
-      scores_params.each do |key, score_value|
-        next if score_value.blank?
-
-        unit_id_str = selected_units[key]
-        next if unit_id_str.blank?
-
-        unit_id = unit_id_str.to_i
-        next if unit_id.zero?
-
-        unit = ExtratingsListUnit.find_by(id: unit_id)
-        next unless unit
-
+      submission.normalized_scores.each do |score_data|
         ExtratingsScore.create!(
           extratings_entry: @extratings_entry,
-          extratings_list_unit_id: unit_id,
-          score: score_value.to_f
+          extratings_list_unit_id: score_data[:extratings_list_unit_id],
+          score: score_data[:score]
         )
       end
     end
@@ -179,9 +115,10 @@ class ExtratingsEntriesController < Top50BaseController
 
   def update
     @extratings_entry = ExtratingsEntry.find(params[:id])
+    submission = build_submission(require_system: false)
+    return render_update_validation_error(submission) unless submission.valid?
     
     ActiveRecord::Base.transaction do
-    
       edition = ExtratingsEditions.find_or_create_by!(
         extratings_list_id: params[:extratings_list_id],
         edition_number: params[:edition_number],
@@ -190,7 +127,6 @@ class ExtratingsEntriesController < Top50BaseController
         e.publication_date = params[:publication_date]
       end
       
-      # Обновляем дату публикации если редакция уже существовала
       if edition.persisted? && edition.publication_date != params[:publication_date]
         edition.update!(publication_date: params[:publication_date])
       end
@@ -201,35 +137,11 @@ class ExtratingsEntriesController < Top50BaseController
       )
       
       @extratings_entry.extratings_scores.destroy_all
-      
-      scores_params = params[:scores] || {}
-      selected_units = params[:selected_units] || {}
-
-      scores_params.each do |key, score_value|
-        next if score_value.blank?
-
-        unit_id_str = selected_units[key]
-        if unit_id_str.blank?
-          Rails.logger.warn "No selected unit for score key=#{key}, params:selected_units=#{selected_units.inspect}"
-          next
-        end
-
-        unit_id = unit_id_str.to_i
-        if unit_id.zero?
-          Rails.logger.warn "Invalid unit id (0) for key=#{key}, raw=#{unit_id_str.inspect}"
-          next
-        end
-
-        unit = ExtratingsListUnit.find_by(id: unit_id)
-        unless unit
-          Rails.logger.warn "ExtratingsListUnit not found for id=#{unit_id} (key=#{key})"
-          next
-        end
-
+      submission.normalized_scores.each do |score_data|
         ExtratingsScore.create!(
           extratings_entry: @extratings_entry,
-          extratings_list_unit_id: unit_id,
-          score: score_value.to_f
+          extratings_list_unit_id: score_data[:extratings_list_unit_id],
+          score: score_data[:score]
         )
       end
     end
@@ -267,6 +179,41 @@ class ExtratingsEntriesController < Top50BaseController
         measure_unit: unit.measure_unit
       }
     }
+  end
+
+  private
+
+  def build_submission(require_system: true)
+    entry_params = params[:extratings_entry] || {}
+
+    ExtratingsEntrySubmission.new(
+      extratings_list_id: params[:extratings_list_id],
+      edition_number: params[:edition_number],
+      publication_date: params[:publication_date],
+      position: entry_params[:position],
+      system_relation_id: require_system ? entry_params[:system_id] : @extratings_entry.system_id,
+      scores: params[:scores],
+      selected_units: params[:selected_units]
+    )
+  end
+
+  def render_create_validation_error(submission)
+    flash.now[:alert] = "Ошибки валидации: #{submission.errors.full_messages.join(', ')}"
+    @extratings_entry = ExtratingsEntry.new(
+      system_id: submission.machine_id,
+      position: submission.position
+    )
+    new
+    respond_to do |format|
+      format.html { render :new }
+      format.js { render :new }
+    end
+  end
+
+  def render_update_validation_error(submission)
+    respond_to do |format|
+      format.js { render 'update', locals: { error: submission.errors.full_messages.join(', ') } }
+    end
   end
   
 end

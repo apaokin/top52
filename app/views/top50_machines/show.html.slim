@@ -318,11 +318,12 @@ br
   
   - if @histogram_data.any?
     h3 Доля производительности системы от общей производительности TOP50 по редакциям
-    canvas#histogramChart width="800" height="400"
+    .histogram-chart-wrapper style="width: min(1100px, calc(100vw - 40px)); margin-left: 50%; transform: translateX(-50%);"
+      canvas#histogramChart width="800" height="400"
     br
     br
     br
-  strong Позиции в мировых суперкомпьютерных рейтинах
+  strong Позиции в мировых рейтингах суперкомпьютеров
   = " "
   = link_to "Скачать таблицы (CSV)", export_extratings_csv_top50_machine_path(@top50_machine), class: "btn btn-success btn-sm", style: "margin-left: 10px;"
   br
@@ -338,17 +339,17 @@ br
         th.fit Позиция
         th.fit Редакция
         th.fit Месяц публикации редакции
-        th.fit Показатели производительности
+        th.fit Метрики производительности
         - if current_user and current_user.may_edit_top50?
           th.fit
       - entries.each do |entry|
         tr id="entry-#{entry.id}"
           td.fit align="left"
             = link_to entry.extratings_edition.extratings_list.name_ru, entry.extratings_edition.extratings_list.url, title: entry.extratings_edition.extratings_list.description_ru, target: "_blank", rel: "noopener"
-          td.fit align="right" title=(@scores_by_entry_id[entry.id] || "Нет оценки") = entry.position
+          td.fit align="right" title=(@scores_by_entry_id[entry.id] || "Нет рейтинга") = entry.position
           td.fit align="right" = entry.extratings_edition.edition_number
           td.fit align="right" = entry.extratings_edition.publication_date
-          td.fit align="left" = @scores_by_entry_id[entry.id] || "Нет оценки"
+          td.fit align="left" = @scores_by_entry_id[entry.id] || "Нет рейтинга"
           - if current_user and current_user.may_edit_top50?
             td.fit align="center"
               = link_to "Редактировать", edit_extratings_entry_path(entry, format: :js), class: "btn btn-default btn-sm", remote: true, data: { turbo: false, target: "#entryEditModal", toggle: "modal" }
@@ -470,7 +471,6 @@ br
 
     function buildHistogram(ctxId, data) {
       const ctx = document.getElementById(ctxId).getContext('2d');
-      
       const labels = data.map(item => `TOP50 #${item.edition_number} (${item.date})`);
       const rmaxFromRmaxPercentages = data.map(item => item.rmax_from_rmax_percentage);
       const rpeakFromRpeakPercentages = data.map(item => item.rpeak_from_rpeak_percentage);
@@ -480,7 +480,7 @@ br
         data: {
           labels: labels,
           datasets: [{
-            label: 'Доля достигнутой производительности (Rmax) от достигнутой TOP50 (%)',
+            label: 'Доля достигнутой производительности системы (Rmax) от общей достигнутой производительности TOP50 (%)',
             data: rmaxFromRmaxPercentages,
             backgroundColor: 'rgba(54, 162, 235, 0.6)',
             borderColor: 'rgba(54, 162, 235, 1)',
@@ -488,7 +488,7 @@ br
             barThickness: 25,
             maxBarThickness: 35
           }, {
-            label: 'Доля пиковой производительности (Rpeak) от пиковой TOP50 (%)',
+            label: 'Доля пиковой производительности системы (Rpeak) от общей пиковой производительности TOP50 (%)',
             data: rpeakFromRpeakPercentages,
             backgroundColor: 'rgba(255, 99, 132, 0.6)',
             borderColor: 'rgba(255, 99, 132, 1)',
@@ -515,13 +515,13 @@ br
                     return [
                       `Доля Rmax: ${item.rmax_from_rmax_percentage}%`,
                       `Rmax системы: ${(item.our_rmax / 1000000).toFixed(2)} TFlop/s`,
-                      `Общий Rmax TOP50: ${(item.total_rmax / 1000000).toFixed(2)} TFlop/s`
+                      `Суммарный Rmax TOP50: ${(item.total_rmax / 1000000).toFixed(2)} TFlop/s`
                     ];
                   } else {
                     return [
                       `Доля Rpeak: ${item.rpeak_from_rpeak_percentage}%`,
                       `Rpeak системы: ${(item.our_rpeak / 1000000).toFixed(2)} TFlop/s`,
-                      `Общий Rpeak TOP50: ${(item.total_rpeak / 1000000).toFixed(2)} TFlop/s`
+                      `Суммарный Rpeak TOP50: ${(item.total_rpeak / 1000000).toFixed(2)} TFlop/s`
                     ];
                   }
                 }
