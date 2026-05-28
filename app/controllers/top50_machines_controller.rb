@@ -157,7 +157,7 @@ class Top50MachinesController < Top50BaseController
         unit_name = score.extratings_list_unit.extratings_unit.name_ru
         measure_unit = score.extratings_list_unit.extratings_unit.measure_unit
         priority = score.extratings_list_unit.priority
-        "#{unit_name}: #{score.score} #{measure_unit}, приоритет: #{priority}"
+        "#{unit_name}: #{score.score} #{measure_unit}, priority: #{priority}"
       end.join(",\n")
     end
 
@@ -170,7 +170,7 @@ class Top50MachinesController < Top50BaseController
         x: entry.extratings_edition.publication_date.to_time.to_i * 1000,
         y: entry.position,
         value: score&.score || 0,
-        tooltip: "Позиция: #{entry.position}, Дата: #{entry.extratings_edition.publication_date.strftime('%d.%m.%Y')}"
+        tooltip: "Позиция: #{entry.position}, дата: #{entry.extratings_edition.publication_date.strftime('%d.%m.%Y')}"
       }
     end.compact
 
@@ -182,7 +182,7 @@ class Top50MachinesController < Top50BaseController
       x: score.score,
       y: entry.position,
       value: score.score,
-      tooltip: "#{score.extratings_list_unit.extratings_unit.name_ru}: #{score.score} #{score.extratings_list_unit.extratings_unit.measure_unit}, Приоритет: #{score.extratings_list_unit.priority}"
+      tooltip: "#{score.extratings_list_unit.extratings_unit.name_ru}: #{score.score} #{score.extratings_list_unit.extratings_unit.measure_unit}, приоритет: #{score.extratings_list_unit.priority}"
     }
     end.compact
 
@@ -200,7 +200,7 @@ class Top50MachinesController < Top50BaseController
             x: entry.extratings_edition.publication_date.to_time.to_i * 1000,
             y: entry.position,
             value: score&.score || 0,
-            tooltip: "Позиция: #{entry.position}, Дата: #{entry.extratings_edition.publication_date.strftime('%d.%m.%Y')}"
+            tooltip: "Позиция: #{entry.position}, дата: #{entry.extratings_edition.publication_date.strftime('%d.%m.%Y')}"
           }
         end.compact
       }
@@ -219,7 +219,7 @@ class Top50MachinesController < Top50BaseController
         {
           x: score.score,
           y: entry.position,
-          tooltip: "#{score.extratings_list_unit.extratings_unit.name_ru}: #{score.score} #{score.extratings_list_unit.extratings_unit.measure_unit}, Приоритет: #{score.extratings_list_unit.priority}"
+          tooltip: "#{score.extratings_list_unit.extratings_unit.name_ru}: #{score.score} #{score.extratings_list_unit.extratings_unit.measure_unit}, приоритет: #{score.extratings_list_unit.priority}"
         }
       end.compact
     }
@@ -1527,7 +1527,7 @@ class Top50MachinesController < Top50BaseController
         unit_name = score.extratings_list_unit.extratings_unit.name_ru
         measure_unit = score.extratings_list_unit.extratings_unit.measure_unit
         priority = score.extratings_list_unit.priority
-        "#{unit_name}: #{score.score} #{measure_unit}, приоритет: #{priority}"
+        "#{unit_name}: #{score.score} #{measure_unit}, priority: #{priority}"
       end.join(",\n")
     end
     
@@ -4174,7 +4174,7 @@ class Top50MachinesController < Top50BaseController
 
       descendants = descendants_cache[entry.system_id] ||= get_machine_and_predecessors(entry.system_id)
 
-      system_key = machine.name.presence || machine.name_eng.presence || "System #{entry.system_id}"
+      system_key = machine.english_name
       existing = top500_systems_data[system_key]
       if existing.nil? || descendants.size > existing[:descendants_count]
         existing = {
@@ -4425,7 +4425,7 @@ class Top50MachinesController < Top50BaseController
         best_rank = system[:machine_ids].map { |id| slot_positions[id] }.compact.min
         if best_rank
           top50_y_values << best_rank.to_f
-          top50_hover << "#{system[:name]}<br>#{entry[:slot_label]} • позиция Top50 #{best_rank}"
+          top50_hover << "#{system[:name]}<br>#{entry[:slot_label]} • позиция в Top50 #{best_rank}"
         else
           top50_y_values << nil
           top50_hover << "#{system[:name]}<br>#{entry[:slot_label]} • нет в Top50"
@@ -4633,7 +4633,7 @@ class Top50MachinesController < Top50BaseController
       close_position = last_positions.max || all_positions.max
       
       candlestick_data << {
-        x: "#{year} (год)",
+        x: "#{year} (year)",
         open: open_position,
         close: close_position,
         high: all_positions.min,
@@ -4963,7 +4963,7 @@ class Top50MachinesController < Top50BaseController
             y: top50_position ? top50_position.to_f : nil,
             z: top500_position.to_f,
             system_name: system[:name],
-            tooltip: "#{system[:name]}<br>Период: #{slot_label}<br>Позиция в Top50: #{top50_position || 'не в Top50'}<br>Позиция в Top500: #{top500_position}"
+            tooltip: "#{system[:name]}<br>Период: #{slot_label}<br>Позиция в Top50: #{top50_position || 'не входит в Top50'}<br>Позиция в Top500: #{top500_position}"
           }
           
           system_points << point

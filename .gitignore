@@ -38,3 +38,6 @@ public/cert_create/records
 # Ignore backups and loga from shared dir
 /shared/db_backups
 /shared/log
+/docker/dump.sql.gz
+/docker/VIdump.sql
+/dump_11_03_24
