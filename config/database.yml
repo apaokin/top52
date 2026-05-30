@@ -19,3 +19,4 @@ production:
   username: <%= ENV['APP_DB_USER'] %>
   password: <%= ENV['APP_DB_PASSWORD'] %>
   pool: 10
+  min_messages: warning
