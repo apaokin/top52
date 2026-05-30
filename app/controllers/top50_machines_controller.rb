@@ -4368,9 +4368,7 @@ class Top50MachinesController < Top50BaseController
       top50_presence_by_slot[slot_info[:key]] |= machine_ids
     end
 
-    histogram_labels = []
-    histogram_updated = []
-    histogram_top500 = []
+    histogram_points = []
 
     @edition_labels.each_with_index do |label, idx|
       slot_info = slot_info_from_label(label)
@@ -4383,18 +4381,22 @@ class Top50MachinesController < Top50BaseController
       next if total.zero?
 
       upgrade_count = valid_indices.count { |i| statuses[i] == 'upgrade' }
-      histogram_labels << slot_info[:label]
-      histogram_updated << ((upgrade_count.to_f / total) * 100).round(2)
-
       top500_ids = (@top500_presence_by_slot[slot_info[:key]] || [])
       intersection = valid_indices.count { |i| top500_ids.include?(ids[i]) }
-      histogram_top500 << ((intersection.to_f / total) * 100).round(2)
+      histogram_points << {
+        slot_numeric: slot_info[:numeric],
+        label: slot_info[:label],
+        updated_percentage: ((upgrade_count.to_f / total) * 100).round(2),
+        top500_percentage: ((intersection.to_f / total) * 100).round(2)
+      }
     end
 
+    histogram_points.sort_by! { |point| point[:slot_numeric] }
+
     @top50_top500_histogram = {
-      labels: histogram_labels,
-      updated_percentages: histogram_updated,
-      top500_percentages: histogram_top500
+      labels: histogram_points.map { |point| point[:label] },
+      updated_percentages: histogram_points.map { |point| point[:updated_percentage] },
+      top500_percentages: histogram_points.map { |point| point[:top500_percentage] }
     }
 
     drop_series = []
