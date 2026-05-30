@@ -3,9 +3,6 @@ require "admin_constraint"
 
 Octoshell::Application.routes.draw do
 
-  # Игнорируем запросы от Chrome DevTools
-  get "/.well-known/*path", to: proc { [404, {}, ['']] }
-
   get "certificates/page1" => "certificates#page1"
   post "certificates/page2" => "certificates#page2"
   post "certificates/scr" => "certificates#scr"
