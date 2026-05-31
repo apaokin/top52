@@ -108,6 +108,7 @@ class ExtratingsListsController < ApplicationController
     params.require(:extratings_list).permit(
       :name_ru, :name_eng, :description_ru, :description_eng, :url,
       extratings_list_units_attributes: [
+        :id,
         :priority,
         :extratings_unit_id,
         extratings_unit_attributes: [:name_ru, :name_eng, :measure_unit, :base_multiplier]

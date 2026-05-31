@@ -1,7 +1,10 @@
 .container.mt-4
+  - is_persisted = @extratings_unit.persisted?
+  - page_title = is_persisted ? "Управление единицей измерения" : "Новая единица измерения"
+  - submit_label = is_persisted ? "Сохранить изменения" : "Создать"
   .card
     .card-header.bg-secondary.text-white
-      h5.mb-0 Новая единица измерения
+      h5.mb-0 = page_title
 
     .card-body
       - if @extratings_unit.errors.any?
@@ -10,6 +13,14 @@
           ul.mb-0
             - @extratings_unit.errors.full_messages.each do |message|
               li = message
+
+      - if is_persisted && @unit_usage_counts.present?
+        .alert.alert-warning
+          strong Важно:
+          = " "
+          = "эта единица используется в рейтингах: #{@unit_usage_counts[:lists]}, связей со списками: #{@unit_usage_counts[:list_links]}, значений в системах: #{@unit_usage_counts[:scores]}."
+          br
+          | Удаление единицы измерения уберет ее из всех рейтингов и удалит все связанные значения в системах.
 
       = form_for @extratings_unit, html: { class: 'needs-validation', novalidate: true } do |f|
         .mb-3
@@ -29,8 +40,22 @@
           = f.number_field :base_multiplier, class: 'form-control', step: 0.0001
 
         .mt-4
-          = f.submit "Создать", class: 'btn btn-primary'
+          = f.submit submit_label, class: 'btn btn-primary'
           = link_to "Отмена", new_extratings_list_path, class: "btn btn-outline-secondary ms-2"
+
+      - if is_persisted
+        .card.border-danger.mt-4
+          .card-header.bg-danger.text-white
+            h5.mb-0 Опасная зона
+          .card-body
+            p.mb-3
+              strong Удаление единицы измерения необратимо.
+              = " "
+              | Она будет удалена из всех рейтингов, где использовалась, а все связанные значения в системах пропадут из таблиц и карточек систем.
+            - if @unit_usage_counts.present?
+              p.mb-3
+                = "Будет затронуто рейтингов: #{@unit_usage_counts[:lists]}, связей со списками: #{@unit_usage_counts[:list_links]}, значений в системах: #{@unit_usage_counts[:scores]}."
+            = link_to "Удалить единицу измерения", extratings_unit_path(@extratings_unit), method: :delete, class: "btn btn-danger", data: { confirm: "Удалить единицу измерения \"#{@extratings_unit.name_ru.presence || @extratings_unit.name_eng || @extratings_unit.measure_unit}\"? Она будет удалена из всех рейтингов, где использовалась, а все связанные значения в системах пропадут." }
 
 javascript:
   document.addEventListener("DOMContentLoaded", function() {

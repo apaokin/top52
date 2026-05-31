@@ -51,10 +51,14 @@
             - list_unit_name = list_unit.extratings_unit&.name_ru.presence || list_unit.extratings_unit&.name_eng.presence || "Эта единица измерения"
             - linked_scores = @scores_count_by_list_unit_id ? @scores_count_by_list_unit_id[list_unit.id].to_i : 0
             .unit-row.border.rounded.p-3.mb-3
+              = list_unit_form.hidden_field :id if list_unit.persisted?
               .row
                 .col-md-8.mb-3.mb-md-0
                   = list_unit_form.label :extratings_unit_id, "Выбрать существующую единицу", class: 'form-label'
                   = list_unit_form.collection_select :extratings_unit_id, @existing_units, :id, ->(unit) { "#{unit.name_ru} (#{unit.measure_unit})" }, { include_blank: "Выберите единицу..." }, class: 'form-select unit-select'
+                  - if list_unit.extratings_unit_id.present?
+                    .mt-2
+                      = link_to "Редактировать единицу", edit_extratings_unit_path(list_unit.extratings_unit_id), class: "btn btn-outline-secondary btn-sm"
 
                 .col-md-4
                   = list_unit_form.label :priority, "Приоритет", class: 'form-label'
@@ -100,6 +104,8 @@
                 option value="" Выберите единицу...
                 - @existing_units.each do |unit|
                   option value=unit.id = "#{unit.name_ru} (#{unit.measure_unit})"
+              .mt-2
+                a.btn.btn-outline-secondary.btn-sm.edit-unit-link.disabled href="#" aria-disabled="true" Редактировать единицу
 
             .col-md-4
               label.form-label for="extratings_list_extratings_list_units_attributes_NEW_RECORD_priority" Приоритет
@@ -133,7 +139,29 @@ javascript:
       const uniqueId = Date.now().toString() + Math.floor(Math.random() * 1000).toString();
       const html = unitRowTemplate.innerHTML.replace(/NEW_RECORD/g, uniqueId);
       unitsContainer.insertAdjacentHTML('beforeend', html);
+      updateUnitEditLinks();
       updateRemoveButtons();
+    }
+
+    function updateUnitEditLinks() {
+      const unitRows = unitsContainer.querySelectorAll('.unit-row');
+      unitRows.forEach(row => {
+        const select = row.querySelector('.unit-select');
+        const editLink = row.querySelector('.edit-unit-link');
+        if (!select || !editLink) {
+          return;
+        }
+
+        if (select.value && select.value.trim() !== '') {
+          editLink.href = `/extratings_units/${select.value}/edit`;
+          editLink.classList.remove('disabled');
+          editLink.setAttribute('aria-disabled', 'false');
+        } else {
+          editLink.href = '#';
+          editLink.classList.add('disabled');
+          editLink.setAttribute('aria-disabled', 'true');
+        }
+      });
     }
 
     addUnitButton.addEventListener('click', function() {
@@ -154,10 +182,18 @@ javascript:
       const rows = unitsContainer.querySelectorAll('.unit-row');
       if (rows.length > 1) {
         row.remove();
+        updateUnitEditLinks();
         updateRemoveButtons();
       }
     });
 
+    unitsContainer.addEventListener('change', function(event) {
+      if (event.target.closest('.unit-select')) {
+        updateUnitEditLinks();
+      }
+    });
+
+    updateUnitEditLinks();
     updateRemoveButtons();
 
     form.addEventListener('submit', function(event) {

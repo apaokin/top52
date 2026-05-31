@@ -104,7 +104,7 @@ Octoshell::Application.routes.draw do
       delete 'units/:unit_link_id', to: 'extratings_lists#destroy_unit', as: :unit
     end
   end
-  resources :extratings_units, only: [:new, :create]
+  resources :extratings_units, only: [:new, :create, :edit, :update, :destroy]
 
   get 'list', to: 'top50_machines#list', as:'top50_machines_list'
   get 'archive/:eid', to: 'top50_machines#archive', as:'top50_machines_archive'
