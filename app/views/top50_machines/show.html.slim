@@ -305,180 +305,282 @@ table class="table fit"
         
   tr
     = line_chart l_chart_data, adapter: "highcharts", :curve => false, :colors => ["orange"], :library => {yAxis: {reversed: true, minTickInterval: 1},     xAxis: {type: "datetime", tickPositions: l_dates, labels: {format: "{value:%b '%y}"}}}, :min => 1
+  br
+br
+br
+br
+- if @extratings_entries.any?
+  h3 Позиция vs Дата публикации
+  canvas#heatmapDate width="800" height="400"
+  br
+  br
+  br
+  
+  - if @histogram_data.any?
+    h3 Доля производительности системы от общей производительности TOP50 по редакциям
+    canvas#histogramChart width="800" height="400"
     br
-    //5 BEGIN: my code (Линия жизни на странице расширенной статистики)
     br
-    strong = "3D-график производительности с линией жизни:"
     br
+  strong Позиции в мировых рейтингах суперкомпьютеров
+  = " "
+  = link_to "Скачать таблицы (CSV)", export_extratings_csv_top50_machine_path(@top50_machine), class: "btn btn-success btn-sm", style: "margin-left: 10px;"
+  br
+  br
 
-    .container-fluid
-    #plotly-3d-life style="height: 700px; width: 800px; margin-bottom: 40px;"
+  - grouped_by_list = @extratings_entries.group_by { |e| e.extratings_edition.extratings_list }
 
-javascript:
-  document.addEventListener("DOMContentLoaded", function () {
-    var z = #{raw @z_data.to_json};
-    var editions = #{raw @edition_labels.to_json};
-    var ranks = Array.from({ length: 50 }, (_, i) => i + 1);
-    var machines = #{raw @machine_names.to_json};
-    var lifeLineSegments = #{raw @life_line_segments.to_json};
+  - grouped_by_list.each do |list, entries|
+    h4 = list.name_ru
+    table.table.fit
+      tr
+        th.fit Рейтинг
+        th.fit Позиция
+        th.fit Редакция
+        th.fit Месяц публикации редакции
+        th.fit Метрики производительности
+        - if current_user and current_user.may_edit_top50?
+          th.fit
+      - entries.each do |entry|
+        tr id="entry-#{entry.id}"
+          td.fit align="left"
+            = link_to entry.extratings_edition.extratings_list.name_ru, entry.extratings_edition.extratings_list.url, title: entry.extratings_edition.extratings_list.description_ru, target: "_blank", rel: "noopener"
+          td.fit align="right" title=(@scores_by_entry_id[entry.id] || "Нет рейтинга") = entry.position
+          td.fit align="right" = entry.extratings_edition.edition_number
+          td.fit align="right" = entry.extratings_edition.publication_date
+          td.fit align="left" = @scores_by_entry_id[entry.id] || "Нет рейтинга"
+          - if current_user and current_user.may_edit_top50?
+            td.fit align="center"
+              = link_to "Редактировать", edit_extratings_entry_path(entry, format: :js), class: "btn btn-default btn-sm", remote: true, data: { turbo: false, target: "#entryEditModal", toggle: "modal" }
+              = " "
+              = link_to "Удалить", extratings_entry_path(entry), method: :delete, class: "btn btn-danger btn-sm", remote: true, data: { turbo: false, confirm: "Вы уверены, что хотите удалить эту запись?" }
 
-    var flatZ = z.flat().filter(v => v > 0);
-    var logZMin = Math.log10(Math.min(...flatZ));
-    var logZMax = Math.log10(Math.max(...flatZ));
-    var tickVals = Array.from({ length: 8 }, (_, i) => logZMin + i * (logZMax - logZMin) / 7);
-    var tickText = tickVals.map(v => (Math.pow(10, v)).toExponential(1));
+  br
 
-    var surface = {
-      z: z,
-      x: ranks,
-      y: editions,
-      text: machines,
-      type: 'surface',
-      colorscale: 'Viridis',
-      cmin: logZMin,
-      cmax: logZMax,
-      showscale: true,
-      opacity: 0.7,
-      colorbar: {
-        title: { text: 'Производительность Rmax (ТФлопс)', side: 'right', font: { size: 20 } },
-        tickvals: tickVals,
-        ticktext: tickText,
-        tickfont: { size: 16 },
-        len: 0.9,
-        thickness: 15
-      },
-      hoverinfo: 'skip'
-    };
+- if @extratings_entries.any?
+  javascript:
+    const heatmapScoreGroups = #{raw @grouped_heatmap_score_points.to_json};
+    const heatmapDateGroups = #{raw @grouped_heatmap_date_points.to_json};
+    const histogramData = #{raw @histogram_data.to_json};
 
-    const isFirefox = navigator.userAgent.toLowerCase().includes('firefox');
-    const pointSize_red = isFirefox ? 2 : 4;
-    const pointSize_orange = isFirefox ? 4 : 6;
+    function buildHeatmapByDate(ctxId, groups) {
+      const ctx = document.getElementById(ctxId).getContext('2d');
 
-    var lifeLineTraces = [];
+      const datasets = groups.map(group => ({
+        label: group.name,
+        data: group.data.map(d => ({x: d.x, y: d.y})),
+        backgroundColor: group.color,
+        borderColor: group.color,
+        pointRadius: 4,
+        pointHoverRadius: 8
+      }));
 
-    lifeLineSegments.forEach((segment, idx) => {
-      if (!segment || !segment.x || segment.x.length === 0) return;
-
-      const updateIndices = segment.update_flags.map((flag, i) => flag ? i : null).filter(i => i !== null);
-      const baseIndices = segment.update_flags.map((flag, i) => !flag ? i : null).filter(i => i !== null);
-
-      lifeLineTraces.push({
-        x: segment.x,
-        y: segment.y,
-        z: segment.z.map(v => v == null ? null : v * 1.1),
-        type: 'scatter3d',
-        mode: 'lines',
-        name: segment.name + ` (сегмент ${idx + 1})`,
-        line: {
-          color: 'red',
-          width: 6
-        },
-        hoverinfo: 'skip',
-        showlegend: idx === 0
-      });
-
-      lifeLineTraces.push({
-        x: baseIndices.map(i => segment.x[i]),
-        y: baseIndices.map(i => segment.y[i]),
-        z: baseIndices.map(i => segment.z[i] * 1.1),
-        customdata: baseIndices.map(i => segment.z[i]),
-        text: baseIndices.map(i => segment.ids[i]),
-        type: 'scatter3d',
-        mode: 'markers',
-        name: segment.name + ' (точки)',
-        marker: {
-          size: pointSize_red,
-          color: 'red',
-          line: {
-            color: 'black',
-            width: 0.8
+      new Chart(ctx, {
+        type: 'line',
+        data: { datasets },
+        options: {
+          parsing: false,
+          responsive: true,
+          plugins: {
+            legend: {
+              display: true,
+              labels: {
+                usePointStyle: true
+              }
+            },
+            tooltip: {
+              callbacks: {
+                label: ctx => {
+                  const point = ctx.raw;
+                  const group = groups.find(g => g.name === ctx.dataset.label);
+                  const item = group.data.find(d => d.x === point.x && d.y === point.y);
+                  return item?.tooltip || `Позиция: ${point.y}, Дата: ${new Date(point.x).toLocaleDateString()}`;
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              type: 'time',
+              time: {
+                unit: 'month',
+                displayFormats: { month: 'MMM yyyy' }
+              },
+              title: { display: true, text: 'Дата публикации' }
+            },
+            y: {
+              reverse: true,
+              beginAtZero: false,
+              title: { display: true, text: 'Позиция в рейтинге' }
+            }
           }
-        },
-        hovertemplate:
-          "<b>Система</b>: " + segment.name + "<br>" +
-          "<b>Rmax</b>: %{customdata:.2f} ТФлопс<br>" +
-          "<b>Позиция</b>: %{x}<br>" +
-          "<b>Редакция</b>: %{y}<extra></extra>",
-        showlegend: false
-      });
-
-      lifeLineTraces.push({
-        x: updateIndices.map(i => segment.x[i]),
-        y: updateIndices.map(i => segment.y[i]),
-        z: updateIndices.map(i => segment.z[i] * 1.11),
-        customdata: updateIndices.map(i => segment.z[i]),
-        text: updateIndices.map(i => segment.ids[i]),
-        type: 'scatter3d',
-        mode: 'markers',
-        name: segment.name + ' (обновления)',
-        marker: {
-          size: pointSize_orange,
-          color: 'orange',
-          line: {
-            color: 'black',
-            width: 1
-          }
-        },
-        hovertemplate:
-          "<b>Обновление</b><br>" +
-          "<b>Система</b>: " + segment.name + "<br>" +
-          "<b>Rmax</b>: %{customdata:.2f} ТФлопс<br>" +
-          "<b>Позиция</b>: %{x}<br>" +
-          "<b>Редакция</b>: %{y}<br><extra></extra>",
-        showlegend: false
-      });
-    });
-
-    var layout = {
-      scene: {
-        xaxis: {
-          title: { text: 'Позиция', font: { size: 20 } },
-          tickmode: 'linear',
-          dtick: 10
-        },
-        yaxis: {
-          title: { text: 'Дата редакции', font: { size: 18 }, standoff: 20 },
-          tickmode: 'array',
-          tickvals: editions.filter((_, i) => i % 4 === 0),
-          ticktext: editions.filter((_, i) => i % 4 === 0).map(date => {
-            const parts = date.split('.');
-            return `${parts[1]}.${parts[2]}`;
-          }),
-          tickangle: -60,
-          automargin: true
-        },
-        zaxis: {
-          title: { text: 'Rmax (ТФлопс)', font: { size: 20 } },
-          type: 'log',
-          autorange: true
-        },
-        camera: {
-          eye: { x: 2.00, y: 1.25, z: 0.5 }
         }
-      },
-      margin: { l: 0, r: 0, b: 0, t: 0 },
-      showlegend: false
-    };
+      });
+    }
+    function buildHeatmapByScore(ctxId, groups) {
+      const ctx = document.getElementById(ctxId).getContext('2d');
 
-    Plotly.newPlot('plotly-3d-life', [
-      surface,
-      ...lifeLineTraces
-    ], layout, { displayModeBar: false });
+      const datasets = groups.map(group => ({
+        label: group.name,
+        data: group.data.map(d => ({x: d.x, y: d.y})),
+        backgroundColor: group.color,
+        borderColor: group.color,
+        pointRadius: 4,
+        pointHoverRadius: 8
+      }));
 
-    var plot = document.getElementById('plotly-3d-life');
-    plot.on('plotly_click', function (eventData) {
-      var point = eventData.points?.[0];
-      var machineId = point?.text;
-      if (machineId) {
-        window.open("/systems/" + machineId, "_blank");
+      new Chart(ctx, {
+        type: 'line',
+        data: { datasets },
+        options: {
+          parsing: false,
+          responsive: true,
+          plugins: {
+            legend: {
+              display: true,
+              labels: {
+                usePointStyle: true
+              }
+            },
+            tooltip: {
+              callbacks: {
+                label: ctx => {
+                  const point = ctx.raw;
+                  const group = groups.find(g => g.name === ctx.dataset.label);
+                  const item = group.data.find(d => d.x === point.x && d.y === point.y);
+                  return item?.tooltip || `Позиция: ${point.y}, Score: ${point.x}`;
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              type: 'linear',
+              title: { display: true, text: 'Score (priority=1)' }
+            },
+            y: {
+              reverse: true,
+              beginAtZero: false,
+              title: { display: true, text: 'Позиция в рейтинге' }
+            }
+          }
+        }
+      });
+    }
+
+    function buildHistogram(ctxId, data) {
+      const ctx = document.getElementById(ctxId).getContext('2d');
+      const labels = data.map(item => `TOP50 #${item.edition_number} (${item.date})`);
+      const rmaxFromRmaxPercentages = data.map(item => item.rmax_from_rmax_percentage);
+      const rpeakFromRpeakPercentages = data.map(item => item.rpeak_from_rpeak_percentage);
+      
+      new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Доля достигнутой производительности системы (Rmax) от общей достигнутой производительности TOP50 (%)',
+            data: rmaxFromRmaxPercentages,
+            backgroundColor: 'rgba(54, 162, 235, 0.6)',
+            borderColor: 'rgba(54, 162, 235, 1)',
+            borderWidth: 1,
+            barThickness: 25,
+            maxBarThickness: 35
+          }, {
+            label: 'Доля пиковой производительности системы (Rpeak) от общей пиковой производительности TOP50 (%)',
+            data: rpeakFromRpeakPercentages,
+            backgroundColor: 'rgba(255, 99, 132, 0.6)',
+            borderColor: 'rgba(255, 99, 132, 1)',
+            borderWidth: 1,
+            barThickness: 25,
+            maxBarThickness: 35
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: {
+              display: true,
+              position: 'top'
+            },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  const dataIndex = context.dataIndex;
+                  const item = data[dataIndex];
+                  const datasetLabel = context.dataset.label;
+                  
+                  if (datasetLabel.includes('Rmax')) {
+                    return [
+                      `Доля Rmax: ${item.rmax_from_rmax_percentage}%`,
+                      `Rmax системы: ${(item.our_rmax / 1000000).toFixed(2)} TFlop/s`,
+                      `Суммарный Rmax TOP50: ${(item.total_rmax / 1000000).toFixed(2)} TFlop/s`
+                    ];
+                  } else {
+                    return [
+                      `Доля Rpeak: ${item.rpeak_from_rpeak_percentage}%`,
+                      `Rpeak системы: ${(item.our_rpeak / 1000000).toFixed(2)} TFlop/s`,
+                      `Суммарный Rpeak TOP50: ${(item.total_rpeak / 1000000).toFixed(2)} TFlop/s`
+                    ];
+                  }
+                }
+              }
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              title: {
+                display: true,
+                text: 'Процент (%)'
+              }
+            },
+            x: {
+              title: {
+                display: true,
+                text: 'Редакция рейтинга TOP50'
+              },
+              ticks: {
+                maxRotation: 45,
+                minRotation: 45
+              }
+            }
+          }
+        }
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      // Добавляем CSRF токен для AJAX запросов
+      const token = document.querySelector('meta[name="csrf-token"]');
+      if (token) {
+        $.ajaxSetup({
+          beforeSend: function(xhr) {
+            xhr.setRequestHeader('X-CSRF-Token', token.getAttribute('content'));
+          }
+        });
       }
+      
+      buildHeatmapByDate('heatmapDate', heatmapDateGroups);
+      
+      // Строим гистограмму, если есть данные
+      if (histogramData && histogramData.length > 0) {
+        buildHistogram('histogramChart', histogramData);
+      }
+      
+      $(document).on('ajax:success', 'a[data-target="#entryEditModal"]', function(event, data, status, xhr) {
+        console.log('Форма загружена, данные:', data);
+        $('#entryEditModal .modal-content').html(data);
+        $('#entryEditModal').modal('show');
+      });
+      
+      $(document).on('ajax:error', 'a[data-target="#entryEditModal"]', function(event, xhr, status, error) {
+        console.error('Ошибка загрузки формы редактирования:', error);
+        alert('Ошибка загрузки формы редактирования');
+      });
     });
-  });
-//5 END: my code
 
-
-
-
-
-
-
+/ Modal container for AJAX edit forms
+div#entryEditModal.modal.fade tabindex="-1" role="dialog"
+  .modal-dialog.modal-lg role="document"
+    .modal-content

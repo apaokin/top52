@@ -94,6 +94,17 @@ Octoshell::Application.routes.draw do
   resources :top50_benchmarks
   resources :top50_attribute_dbvals
   resources :top50_attribute_dicts
+  resources :extratings_entries do
+    collection do
+      get :list_units
+    end
+  end
+  resources :extratings_lists, only: [:new, :create, :edit, :update, :destroy] do
+    member do
+      delete 'units/:unit_link_id', to: 'extratings_lists#destroy_unit', as: :unit
+    end
+  end
+  resources :extratings_units, only: [:new, :create, :edit, :update, :destroy]
 
   get 'list', to: 'top50_machines#list', as:'top50_machines_list'
   get 'archive/:eid', to: 'top50_machines#archive', as:'top50_machines_archive'
@@ -119,6 +130,7 @@ Octoshell::Application.routes.draw do
   get 'archive', to: 'top50_machines#archive_lists', as:'top50_machines_archive_lists'
   get 'objects/:id/attribute_vals', to: 'top50_objects#attribute_vals', as:'top50_object_top50_attribute_vals'
   get 'systems/:id', to: 'top50_machines#show', as:'top50_machines_show'
+  get 'systems/:id/export_extratings_csv', to: 'top50_machines#export_extratings_csv', as: 'export_extratings_csv_top50_machine'
   get 'vendor_stats/:thres', to: 'top50_vendors#stats', as:'top50_vendors_stats'
   get 'stats', to: 'top50_machines#stats', as:'top50_stats_def'
   get 'stats/:section', to: 'top50_machines#stats', as:'top50_stats'

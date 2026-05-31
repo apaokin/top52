@@ -1,0 +1,248 @@
+.container.mt-4
+  - is_persisted = @extratings_list.persisted?
+  - page_title = is_persisted ? "Управление рейтингом" : "Новый рейтинг"
+  - submit_label = is_persisted ? "Сохранить изменения" : "Создать"
+  .card
+    .card-header.bg-secondary.text-white
+      h5.mb-0 = page_title
+
+    .card-body
+      - if @extratings_list.errors.any?
+        .alert.alert-danger
+          h6 Ошибки валидации:
+          ul.mb-0
+            - @extratings_list.errors.full_messages.each do |message|
+              li = message
+
+      - if is_persisted && @rating_usage_counts.present?
+        .alert.alert-warning
+          strong Важно:
+          = " "
+          = "у этого рейтинга уже есть редакции: #{@rating_usage_counts[:editions]}, вхождения систем: #{@rating_usage_counts[:entries]}, значения метрик: #{@rating_usage_counts[:scores]}."
+          br
+          | Удаление рейтинга или его единиц измерения приведет к удалению связанных данных в системах.
+
+      = form_for @extratings_list, html: { class: 'needs-validation', novalidate: true } do |f|
+        .mb-3
+          = f.label :name_ru, "Название (RU)", class: 'form-label'
+          = f.text_field :name_ru, class: 'form-control', required: true
+
+        .mb-3
+          = f.label :name_eng, "Название (EN)", class: 'form-label'
+          = f.text_field :name_eng, class: 'form-control'
+
+        .mb-3
+          = f.label :description_ru, "Описание (RU)", class: 'form-label'
+          = f.text_area :description_ru, class: 'form-control'
+
+        .mb-3
+          = f.label :description_eng, "Описание (EN)", class: 'form-label'
+          = f.text_area :description_eng, class: 'form-control'
+
+        .mb-3
+          = f.label :url, "Ссылка", class: 'form-label'
+          = f.text_field :url, class: 'form-control'
+
+        h5.mt-4.mb-3 Единицы измерения
+
+        #units-container
+          = f.fields_for :extratings_list_units do |list_unit_form|
+            - list_unit = list_unit_form.object
+            - list_unit_name = list_unit.extratings_unit&.name_ru.presence || list_unit.extratings_unit&.name_eng.presence || "Эта единица измерения"
+            - linked_scores = @scores_count_by_list_unit_id ? @scores_count_by_list_unit_id[list_unit.id].to_i : 0
+            .unit-row.border.rounded.p-3.mb-3
+              = list_unit_form.hidden_field :id if list_unit.persisted?
+              .row
+                .col-md-8.mb-3.mb-md-0
+                  = list_unit_form.label :extratings_unit_id, "Выбрать существующую единицу", class: 'form-label'
+                  = list_unit_form.collection_select :extratings_unit_id, @existing_units, :id, ->(unit) { "#{unit.name_ru} (#{unit.measure_unit})" }, { include_blank: "Выберите единицу..." }, class: 'form-select unit-select'
+                  - if list_unit.extratings_unit_id.present?
+                    .mt-2
+                      = link_to "Редактировать единицу", edit_extratings_unit_path(list_unit.extratings_unit_id), class: "btn btn-outline-secondary btn-sm"
+
+                .col-md-4
+                  = list_unit_form.label :priority, "Приоритет", class: 'form-label'
+                  = list_unit_form.number_field :priority, class: 'form-control unit-priority-input'
+
+              .mt-3
+                - if list_unit.persisted? && is_persisted
+                  = link_to "Удалить", unit_extratings_list_path(@extratings_list, unit_link_id: list_unit.id), method: :delete, class: "btn btn-danger btn-sm", data: { confirm: "Удалить единицу измерения \"#{list_unit_name}\" из рейтинга? Все значения этой единицы во всех системах данного рейтинга будут удалены. Количество удаляемых значений: #{linked_scores}." }
+                - else
+                  button.btn.btn-outline-danger.btn-sm.remove-unit-row type="button" Удалить
+
+        .mb-4
+          button#add-unit-row.btn.btn-outline-primary type="button" Добавить единицу измерения
+
+        - if current_user and current_user.may_edit_top50?
+          .mb-3
+            = link_to "Создать новую единицу измерения", new_extratings_unit_path, class: "btn btn-outline-primary"
+
+        .mt-4
+          = f.submit submit_label, class: 'btn btn-primary'
+          = link_to "Отмена", new_extratings_entry_path, class: "btn btn-outline-secondary ms-2"
+
+      - if is_persisted
+        .card.border-danger.mt-4
+          .card-header.bg-danger.text-white
+            h5.mb-0 Опасная зона
+          .card-body
+            p.mb-3
+              strong Удаление рейтинга необратимо.
+              = " "
+              | Будут удалены все редакции рейтинга, все вхождения систем и все сохраненные значения метрик для этого рейтинга.
+            - if @rating_usage_counts.present?
+              p.mb-3
+                = "Будет удалено редакций: #{@rating_usage_counts[:editions]}, вхождений систем: #{@rating_usage_counts[:entries]}, значений метрик: #{@rating_usage_counts[:scores]}."
+            = link_to "Удалить рейтинг целиком", extratings_list_path(@extratings_list), method: :delete, class: "btn btn-danger", data: { confirm: "Удалить рейтинг \"#{@extratings_list.name_ru.presence || @extratings_list.name_eng}\"? Будут удалены все связанные редакции, вхождения и значения метрик во всех системах." }
+
+      template#unit-row-template
+        .unit-row.border.rounded.p-3.mb-3
+          .row
+            .col-md-8.mb-3.mb-md-0
+              label.form-label for="extratings_list_extratings_list_units_attributes_NEW_RECORD_extratings_unit_id" Выбрать существующую единицу
+              select.form-select.unit-select name="extratings_list[extratings_list_units_attributes][NEW_RECORD][extratings_unit_id]" id="extratings_list_extratings_list_units_attributes_NEW_RECORD_extratings_unit_id"
+                option value="" Выберите единицу...
+                - @existing_units.each do |unit|
+                  option value=unit.id = "#{unit.name_ru} (#{unit.measure_unit})"
+              .mt-2
+                a.btn.btn-outline-secondary.btn-sm.edit-unit-link.disabled href="#" aria-disabled="true" Редактировать единицу
+
+            .col-md-4
+              label.form-label for="extratings_list_extratings_list_units_attributes_NEW_RECORD_priority" Приоритет
+              input.form-control.unit-priority-input type="number" name="extratings_list[extratings_list_units_attributes][NEW_RECORD][priority]" id="extratings_list_extratings_list_units_attributes_NEW_RECORD_priority"
+
+          .mt-3
+            button.btn.btn-outline-danger.btn-sm.remove-unit-row type="button" Удалить
+
+javascript:
+  document.addEventListener("DOMContentLoaded", function() {
+    const form = document.querySelector('.needs-validation');
+    const unitsContainer = document.getElementById('units-container');
+    const addUnitButton = document.getElementById('add-unit-row');
+    const unitRowTemplate = document.getElementById('unit-row-template');
+
+    if (!form || !unitsContainer || !addUnitButton || !unitRowTemplate) {
+      return;
+    }
+
+    function updateRemoveButtons() {
+      const rows = unitsContainer.querySelectorAll('.unit-row');
+      rows.forEach(row => {
+        const button = row.querySelector('.remove-unit-row');
+        if (button) {
+          button.disabled = rows.length === 1;
+        }
+      });
+    }
+
+    function addUnitRow() {
+      const uniqueId = Date.now().toString() + Math.floor(Math.random() * 1000).toString();
+      const html = unitRowTemplate.innerHTML.replace(/NEW_RECORD/g, uniqueId);
+      unitsContainer.insertAdjacentHTML('beforeend', html);
+      updateUnitEditLinks();
+      updateRemoveButtons();
+    }
+
+    function updateUnitEditLinks() {
+      const unitRows = unitsContainer.querySelectorAll('.unit-row');
+      unitRows.forEach(row => {
+        const select = row.querySelector('.unit-select');
+        const editLink = row.querySelector('.edit-unit-link');
+        if (!select || !editLink) {
+          return;
+        }
+
+        if (select.value && select.value.trim() !== '') {
+          editLink.href = `/extratings_units/${select.value}/edit`;
+          editLink.classList.remove('disabled');
+          editLink.setAttribute('aria-disabled', 'false');
+        } else {
+          editLink.href = '#';
+          editLink.classList.add('disabled');
+          editLink.setAttribute('aria-disabled', 'true');
+        }
+      });
+    }
+
+    addUnitButton.addEventListener('click', function() {
+      addUnitRow();
+    });
+
+    unitsContainer.addEventListener('click', function(event) {
+      const removeButton = event.target.closest('.remove-unit-row');
+      if (!removeButton) {
+        return;
+      }
+
+      const row = removeButton.closest('.unit-row');
+      if (!row) {
+        return;
+      }
+
+      const rows = unitsContainer.querySelectorAll('.unit-row');
+      if (rows.length > 1) {
+        row.remove();
+        updateUnitEditLinks();
+        updateRemoveButtons();
+      }
+    });
+
+    unitsContainer.addEventListener('change', function(event) {
+      if (event.target.closest('.unit-select')) {
+        updateUnitEditLinks();
+      }
+    });
+
+    updateUnitEditLinks();
+    updateRemoveButtons();
+
+    form.addEventListener('submit', function(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      
+      let isValid = true;
+      
+      const nameRu = document.querySelector('input[name="extratings_list[name_ru]"]');
+      const nameEng = document.querySelector('input[name="extratings_list[name_eng]"]');
+      
+      if (nameRu.value.trim() === '') {
+        nameRu.classList.add('is-invalid');
+        isValid = false;
+      } else {
+        nameRu.classList.remove('is-invalid');
+      }
+      
+      if (nameEng.value.trim() === '') {
+        nameEng.classList.add('is-invalid');
+        isValid = false;
+      } else {
+        nameEng.classList.remove('is-invalid');
+      }
+
+      const unitRows = unitsContainer.querySelectorAll('.unit-row');
+      let hasValidUnit = false;
+
+      unitRows.forEach(row => {
+        const unitSelect = row.querySelector('.unit-select');
+        if (unitSelect && unitSelect.value.trim() !== '') {
+          hasValidUnit = true;
+          unitSelect.classList.remove('is-invalid');
+        } else if (unitSelect) {
+          unitSelect.classList.add('is-invalid');
+        }
+      });
+
+      if (!hasValidUnit || unitRows.length === 0) {
+        alert('Необходимо выбрать хотя бы одну единицу измерения');
+        isValid = false;
+      }
+      
+      if (isValid) {
+        form.submit();
+      } else {
+        alert('Пожалуйста, заполните все обязательные поля');
+      }
+      
+      form.classList.add('was-validated');
+    });
+  });

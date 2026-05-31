@@ -2379,4 +2379,2549 @@ br
         draw_performance(data, "chart_2", "Средняя производительность, медиана и производительность 1, 10, 20, 30, 40 и 50 систем рейтинга (ПФлоп/с)", "Дата (ММ.ГГ)", "Производительность (ПФлоп/с)", COLORS, true)
       /= line_chart @achart_data, :title => "Максимальная, средняя и минимальная производительности систем (ПФлоп/с) в редакциях Top50", height: "800px", max: global_max
       br
+          
+- if @stat_section.present? and @stat_section[0..6] == "vendors"
+  table
+    tr
+      td 
+        h5 = @vendors_header_text
+      td 
+        div class="btn-group"
+          button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown"
+            span class="caret"
+          ul class="dropdown-menu" role="menu"
+            - @vendors_headers.each do |section, header|
+              li = link_to header, top50_stats_path(section)
 
+br
+              
+- if @stat_section == "hybrid_intra"
+  - hlist_chart_data = {}
+  - hlist_dates = {}
+  - hlist_nums = {}
+  - chart_data_by_tp = {}
+  div id="chart_1"
+  table class="table table-hover"
+    tr
+      th = "Редакция"
+      th = "Гибридные"
+      th = "Прочие"
+      - chart_data_by_tp["Гибридные"] = []
+      - chart_data_by_tp["Прочие"] = []
+    - @top50_slists.each do |top50_list|
+      - c_chart_data = []
+      - sum_cnt = Top50BenchmarkResult.where(benchmark_id: top50_list.id).count
+      tr
+        td class="fit"
+          - list_num = @num_vals.find_by(obj_id: top50_list.id)
+          - date_val = @date_vals.find_by(obj_id: top50_list.id)
+          - list_year = date_val.value.split(".")[2]
+          - list_month = date_val.value.split(".")[1]
+          - if list_num.present?
+            = link_to "#{list_num.value}#{8209.chr}я (#{date_val.value})", get_archive_path(list_year, list_month)
+        td align="right" 
+          - c_cnt = Top50BenchmarkResult.where("benchmark_id = #{top50_list.id} AND machine_id IN (?)", @hybrid_mach).count
+          = c_cnt
+          = " (#{100 * c_cnt / sum_cnt}%)"
+          - c_chart_data << ["Гибридные", c_cnt]
+          - chart_data_by_tp["Гибридные"].unshift([date_val.value, c_cnt])
+        td align="right" 
+          - c_cnt = sum_cnt - c_cnt
+          = c_cnt
+          = " (#{100 * c_cnt / sum_cnt}%)"
+          - c_chart_data << ["Прочие", c_cnt]
+          - chart_data_by_tp["Прочие"].unshift([date_val.value, c_cnt])
+      - hlist_chart_data[top50_list.id] = c_chart_data
+      - hlist_dates[top50_list.id] = date_val.value
+      - hlist_nums[top50_list.id] = list_num.value
+    tr
+      - @achart_data = []
+
+      - chart_data_by_tp.each_key do |key|
+        - @achart_data << {name: key, data: chart_data_by_tp[key]}
+      javascript:
+        var data = JSON.parse("#{@achart_data.to_json}".replace(/&quot;/g, '"'));
+      coffee:
+        draw_type(data, "chart_1", "Количество гибридных систем (по наличию ускорителей) в редакциях Top50", "Дата (MM.YY)", "Количество систем")
+      /= area_chart achart_data, max: 50, stacked: true, height: "500px"
+      br
+
+- elsif @stat_section == "hybrid_inter"
+  - chart_data_by_tp = {}
+  div id="chart_1"
+  table class="table table-hover"
+    tr
+      th = "Редакция"
+      - @hybrid_mach.each do |key, value|
+        th = key
+        - chart_data_by_tp[key] = []
+    - @top50_slists.each do |top50_list|
+      - c_chart_data = []
+      - sum_cnt = Top50BenchmarkResult.where(benchmark_id: top50_list.id).count
+      tr
+        td class="fit"
+          - list_num = @num_vals.find_by(obj_id: top50_list.id)
+          - date_val = @date_vals.find_by(obj_id: top50_list.id)
+          - list_year = date_val.value.split(".")[2]
+          - list_month = date_val.value.split(".")[1]
+          - if list_num.present?
+            = link_to "#{list_num.value}#{8209.chr}я (#{date_val.value})", get_archive_path(list_year, list_month)
+        - @hybrid_mach.each do |key, value|
+          td align="right" 
+            - c_cnt = Top50BenchmarkResult.where("benchmark_id = #{top50_list.id} AND machine_id IN (?)", value).count
+            = c_cnt
+            = " (#{100 * c_cnt / sum_cnt}%)"
+            - c_chart_data << [key, c_cnt]
+            - chart_data_by_tp[key].unshift([date_val.value, c_cnt])
+    tr
+      - @achart_data = []
+
+      - chart_data_by_tp.each_key do |key|
+        - @achart_data << {name: key, data: chart_data_by_tp[key]}
+      javascript:
+        var data = JSON.parse("#{@achart_data.to_json}".replace(/&quot;/g, '"'));
+        var COLORS = [], name = "";
+        for (var i = 0; i < data.length; i++) {
+          COLORS.push(d3.interpolatePlasma(i * 1. / (data.length - 1)));
+        }
+      coffee:
+        draw_type(data, "chart_1", "Количество гибридных систем (по числу типов узлов) в редакциях Top50", "Дата (MM.YY)", "Количество систем", COLORS)
+      br
+
+//3 BEGIN: my code (Реализация методов представления HTML.SLIM)
+- elsif @stat_section == "performance_3d"
+  .container-fluid
+    .menu-container
+      .row.mb-3
+        .col-md-2
+          label Редакции:
+          .d-flex.align-items-center
+            select#edition-start.form-control(style="width: 120px;")
+              - @edition_labels_for_select.each_with_index do |ed, i|
+                option value=i = ed
+            select#edition-end.form-control(style="width: 120px;")
+              - @edition_labels_for_select.each_with_index do |ed, i|
+                option selected=(i == @edition_labels_for_select.size - 1) value=i = ed
+
+        .col-md-3
+          label Позиции:
+          .d-flex.align-items-center
+            select#rank-start.form-control(style="width: 80px")
+              - (1..50).each do |i|
+                option selected=(i == 1) value=(i - 1) = i
+            select#rank-end.form-control(style="width: 80px;")
+              - (1..50).each do |i|
+                option selected=(i == 50) value=(i - 1) = i
+
+    div#plotly-3d style="height: 700px; width: 900px; margin-bottom: 40px;"
+
+    javascript:
+      document.addEventListener("DOMContentLoaded", function () {
+        var z = #{raw @z_data.to_json};  
+        var editions = #{raw @edition_labels.to_json};  
+        var ranks = Array.from({length: 50}, (_, i) => i + 1); 
+        var machines = #{raw @machine_names.to_json};
+        console.log("machines", machines);
+
+        var flatZ = z.flat().filter(v => v > 0);
+        var logZMin = Math.log10(Math.min(...flatZ));
+        var logZMax = Math.log10(Math.max(...flatZ));
+        var tickVals = Array.from({length: 8}, (_, i) => logZMin + i * (logZMax - logZMin) / 7);
+        var tickText = tickVals.map(v => (Math.pow(10, v)).toExponential(1));
+
+        function reverseIndex(i, size) {
+          return size - 1 - i;
+        }
+
+        const editionStart = document.getElementById("edition-start");
+        const editionEnd = document.getElementById("edition-end");
+        const rankStart = document.getElementById("rank-start");
+        const rankEnd = document.getElementById("rank-end");
+
+        function updateEditionEndOptions() {
+          const startIdx = parseInt(editionStart.value);
+          for (let i = 0; i < editionEnd.options.length; i++) {
+            editionEnd.options[i].hidden = i < startIdx;
+          }
+          if (parseInt(editionEnd.value) < startIdx) {
+            editionEnd.value = startIdx;
+          }
+        }
+
+        function updateEditionStartOptions() {
+          const endIdx = parseInt(editionEnd.value);
+          for (let i = 0; i < editionStart.options.length; i++) {
+            editionStart.options[i].hidden = i > endIdx;
+          }
+          if (parseInt(editionStart.value) > endIdx) {
+            editionStart.value = endIdx;
+          }
+        }
+
+        function updateRankEndOptions() {
+          const startIdx = parseInt(rankStart.value);
+          for (let i = 0; i < rankEnd.options.length; i++) {
+            rankEnd.options[i].hidden = i < startIdx;
+          }
+          if (parseInt(rankEnd.value) < startIdx) {
+            rankEnd.value = startIdx;
+          }
+        }
+
+        function updateRankStartOptions() {
+          const endIdx = parseInt(rankEnd.value);
+          for (let i = 0; i < rankStart.options.length; i++) {
+            rankStart.options[i].hidden = i > endIdx;
+          }
+          if (parseInt(rankStart.value) > endIdx) {
+            rankStart.value = endIdx;
+          }
+        }
+
+        function updatePlot() {
+
+          updateEditionEndOptions();
+          updateEditionStartOptions();
+          updateRankEndOptions();
+          updateRankStartOptions();
+
+          const es_menu = parseInt(editionStart.value);
+          const ee_menu = parseInt(editionEnd.value);
+          const rs = parseInt(rankStart.value);
+          const re = parseInt(rankEnd.value);
+
+          const size = editions.length;
+
+          const es = reverseIndex(es_menu, size);
+          const ee = reverseIndex(ee_menu, size);
+
+          const start = Math.min(es, ee);
+          const end = Math.max(es, ee);
+
+          const newZ = z.slice(start, end + 1).map(row => row.slice(rs, re + 1));
+          const newMachines = machines.map(row => row.slice(start, end + 1)).slice(rs, re + 1);
+          const newEditions = editions.slice(start, end + 1);
+          const newRanks = ranks.slice(rs, re + 1);
+
+          Plotly.react('plotly-3d', [{
+            z: newZ,
+            x: newRanks,
+            y: newEditions,
+            text: newMachines,
+            type: 'surface',
+            colorscale: 'Viridis',
+            cmin: logZMin,
+            cmax: logZMax,
+            colorbar: {
+              title: {
+                text: 'Производительность Rmax (ТФлопс)',
+                side: 'right',
+                font: { size: 18 }
+              },
+              tickvals: tickVals,
+              ticktext: tickText,
+              tickfont: { size: 16 },
+              len: 0.9,
+              thickness: 15
+            },
+            hovertemplate:
+              "<b>Система</b>: %{text}<br>" +
+              "<b>Rmax</b>: %{z:.2f} ТФлопс<br>" +
+              "<b>Позиция</b>: %{x}<br>" +
+              "<b>Редакция</b>: %{y}<extra></extra>"
+          }], {
+            scene: {
+              xaxis: {
+                title: { text: 'Позиция', font: { size: 20 } },
+                tickmode: 'linear',
+                dtick: 10
+              },
+              yaxis: {
+                title: { text: 'Дата редакции', font: { size: 18 } },
+                tickmode: 'array',
+                tickvals: newEditions.filter((_, i) => i % 4 === 0),
+                ticktext: newEditions.filter((_, i) => i % 4 === 0).map(date => {
+                  const parts = date.split('.');
+                  return `${parts[1]}.${parts[2]}`;
+                }),
+                tickangle: -60,
+                automargin: true,
+              },
+              zaxis: {
+                title: { text: 'Rmax (ТФлопс)', font: { size: 20 } },
+                type: 'log',
+                autorange: true
+              },
+              camera: {
+                eye: { x: 2.00, y: 1.25, z: 0.5 }
+              }
+            },
+            margin: { l: 0, r: 0, b: 0, t: 0 }
+          }, { displayModeBar: false });
+        }
+
+        ["rank-start", "rank-end", "edition-start", "edition-end"].forEach(id => {
+          document.getElementById(id).addEventListener("change", updatePlot);
+        });
+
+        updatePlot();
+      });
+- elsif @stat_section == "cpu_vendor_3d"
+  .container-fluid
+    .menu-container
+      .row.mb-3
+        .col-md-2
+          label Редакции:
+          .d-flex.align-items-center
+            select#edition-start.form-control(style="width: 120px;")
+              - @edition_labels_for_select.each_with_index do |ed, i|
+                option value=i = ed
+            select#edition-end.form-control(style="width: 120px;")
+              - @edition_labels_for_select.each_with_index do |ed, i|
+                option selected=(i == @edition_labels_for_select.size - 1) value=i = ed
+
+        .col-md-3
+          label Позиции:
+          .d-flex.align-items-center
+            select#rank-start.form-control(style="width: 80px")
+              - (1..50).each do |i|
+                option selected=(i == 1) value=(i - 1) = i
+            select#rank-end.form-control(style="width: 80px;")
+              - (1..50).each do |i|
+                option selected=(i == 50) value=(i - 1) = i
+
+  div#plotly-3d-vendor style="height: 700px; width: 900px; margin-bottom: 40px;"
+
+  javascript:
+    document.addEventListener("DOMContentLoaded", function () {
+      var z = #{raw @z_data.to_json};
+      var vendorSurface = #{raw @vendor_data.to_json};
+      var machines = #{raw @machine_names.to_json};
+      var machineIds = #{raw @machine_ids.to_json};
+      var editions = #{raw @edition_labels.to_json};
+      var vendorMap = #{raw @vendor_labels.to_json};
+      var ranks = Array.from({ length: 50 }, (_, i) => i + 1);
+
+      const editionStart = document.getElementById("edition-start");
+      const editionEnd = document.getElementById("edition-end");
+      const rankStart = document.getElementById("rank-start");
+      const rankEnd = document.getElementById("rank-end");
+
+      function reverseIndex(i, size) {
+        return size - 1 - i;
+      }
+
+      function updateEditionEndOptions() {
+        const startIdx = parseInt(editionStart.value);
+        for (let i = 0; i < editionEnd.options.length; i++) {
+          editionEnd.options[i].hidden = i < startIdx;
+        }
+        if (parseInt(editionEnd.value) < startIdx) {
+          editionEnd.value = startIdx;
+        }
+      }
+
+      function updateEditionStartOptions() {
+        const endIdx = parseInt(editionEnd.value);
+        for (let i = 0; i < editionStart.options.length; i++) {
+          editionStart.options[i].hidden = i > endIdx;
+        }
+        if (parseInt(editionStart.value) > endIdx) {
+          editionStart.value = endIdx;
+        }
+      }
+
+      function updateRankEndOptions() {
+        const startIdx = parseInt(rankStart.value);
+        for (let i = 0; i < rankEnd.options.length; i++) {
+          rankEnd.options[i].hidden = i < startIdx;
+        }
+        if (parseInt(rankEnd.value) < startIdx) {
+          rankEnd.value = startIdx;
+        }
+      }
+
+      function updateRankStartOptions() {
+        const endIdx = parseInt(rankEnd.value);
+        for (let i = 0; i < rankStart.options.length; i++) {
+          rankStart.options[i].hidden = i > endIdx;
+        }
+        if (parseInt(rankStart.value) > endIdx) {
+          rankStart.value = endIdx;
+        }
+      }
+
+      function updatePlot() {
+        updateEditionEndOptions();
+        updateEditionStartOptions();
+        updateRankEndOptions();
+        updateRankStartOptions();
+
+        const es_menu = parseInt(editionStart.value);
+        const ee_menu = parseInt(editionEnd.value);
+        const rs = parseInt(rankStart.value);
+        const re = parseInt(rankEnd.value);
+
+        const size = editions.length;
+        const es = reverseIndex(es_menu, size);
+        const ee = reverseIndex(ee_menu, size);
+        const start = Math.min(es, ee);
+        const end = Math.max(es, ee);
+
+        const newZ = z.slice(start, end + 1).map(row => row.slice(rs, re + 1));
+        const newVendor = vendorSurface.slice(start, end + 1).map(row => row.slice(rs, re + 1));
+        const newMachines = machines.slice(start, end + 1).map(row => row.slice(rs, re + 1));
+        const newIds = machineIds.slice(start, end + 1).map(row => row.slice(rs, re + 1));
+        const newEditions = editions.slice(start, end + 1);
+        const newRanks = ranks.slice(rs, re + 1);
+
+        const surface = {
+          z: newZ,
+          x: newRanks,
+          y: newEditions,
+          type: 'surface',
+          colorscale: [[0, 'lightgray'], [1, 'lightgray']],
+          opacity: 0.5,
+          showscale: false,
+          hoverinfo: 'skip'
+        };
+
+        const data = [surface];
+        const vendorColorMap = {
+          "AMD": "#e41a1c", "Intel": "#377eb8", "Hybrid": "#4daf4a",
+          "Unknown": "#984ea3", "IBM": "#ff7f00", "HP": "#a65628"
+        };
+
+        const vendorPoints = {};
+        for (let i = 0; i < newVendor.length; i++) {
+          for (let j = 0; j < newVendor[i].length; j++) {
+            const vendorId = newVendor[i][j];
+            const vendorName = vendorMap[vendorId] || "Unknown";
+            if (!vendorPoints[vendorName]) {
+              vendorPoints[vendorName] = { x: [], y: [], z: [], text: [], ids: [] };
+            }
+            vendorPoints[vendorName].x.push(newRanks[j]);
+            vendorPoints[vendorName].y.push(newEditions[i]);
+            vendorPoints[vendorName].z.push(newZ[i][j]);
+            vendorPoints[vendorName].text.push(newMachines[i][j]);
+            vendorPoints[vendorName].ids.push(newIds[i][j]);
+          }
+        }
+
+        const isFirefox = navigator.userAgent.toLowerCase().includes('firefox');
+        const pointSize = isFirefox ? 4 : 6;
+
+        Object.entries(vendorPoints).forEach(([vendorName, coords]) => {
+          const color = vendorColorMap[vendorName] || "#999999";
+          data.push({
+            x: coords.x,
+            y: coords.y,
+            z: coords.z,
+            text: coords.text,
+            customdata: coords.ids,
+            type: 'scatter3d',
+            mode: 'markers',
+            marker: {
+              color: color, size: pointSize, opacity: 0.95,
+              symbol: 'circle', line: { width: 1, color: '#000000' }
+            },
+            name: vendorName, legendgroup: vendorName, showlegend: false,
+            hovertemplate:
+              "<b>Система</b>: %{text}<br>" +
+              "<b>Rmax</b>: %{z:.2f} ТФлопс<br>" +
+              "<b>Позиция</b>: %{x}<br>" +
+              "<b>Редакция</b>: %{y}<extra></extra>"
+          });
+        });
+
+        Object.keys(vendorPoints).forEach((vendorName) => {
+          const color = vendorColorMap[vendorName] || "#999999";
+          data.push({
+            x: [null], y: [null], z: [null],
+            type: 'scatter3d', mode: 'markers',
+            marker: {
+              color: color, size: 10, symbol: 'circle',
+              opacity: 1, line: { width: 1, color: '#000000' }
+            },
+            name: vendorName, legendgroup: vendorName, showlegend: true
+          });
+        });
+
+        Plotly.react('plotly-3d-vendor', data, {
+          scene: {
+            xaxis: {
+              title: { text: 'Позиция', font: { size: 20 } },
+              tickmode: 'linear', dtick: 10
+            },
+            yaxis: {
+              title: { text: 'Дата редакции', font: { size: 18 } },
+              tickmode: 'array',
+              tickvals: newEditions.filter((_, i) => i % 4 === 0),
+              ticktext: newEditions.filter((_, i) => i % 4 === 0).map(date => {
+                const parts = date.split('.');
+                return `${parts[1]}.${parts[2]}`;
+              }),
+              tickangle: -60, automargin: true
+            },
+            zaxis: {
+              title: { text: 'Rmax (ТФлопс)', font: { size: 20 } },
+              type: 'log', autorange: true
+            },
+            camera: { eye: { x: 1.25, y: 1.25, z: 1.25 } }
+          },
+          margin: { l: 0, r: 0, b: 0, t: 0 },
+          legend: {
+            x: 1, y: 1, traceorder: "normal",
+            font: { size: 14 },
+            bgcolor: 'rgba(255,255,255,0.6)',
+            bordercolor: '#444', borderwidth: 1
+          }
+        }, { displayModeBar: false });
+      }
+
+      ["rank-start", "rank-end", "edition-start", "edition-end"].forEach(id => {
+        document.getElementById(id).addEventListener("change", updatePlot);
+      });
+
+      updatePlot();
+
+      document.getElementById('plotly-3d-vendor')
+        .on('plotly_click', function(eventData) {
+          const machineId = eventData?.points?.[0]?.customdata;
+          if (machineId) {
+            window.open("/systems/" + machineId, "_blank");
+          }
+        });
+    });
+- elsif @stat_section == "acc_vendor_3d"
+  .container-fluid
+    .menu-container
+      .row.mb-3
+        .col-md-2
+          label Редакции:
+          .d-flex.align-items-center
+            select#edition-start.form-control(style="width: 120px;")
+              - @edition_labels_for_select.each_with_index do |ed, i|
+                option value=i = ed
+            select#edition-end.form-control(style="width: 120px;")
+              - @edition_labels_for_select.each_with_index do |ed, i|
+                option selected=(i == @edition_labels_for_select.size - 1) value=i = ed
+
+        .col-md-3
+          label Позиции:
+          .d-flex.align-items-center
+            select#rank-start.form-control(style="width: 80px")
+              - (1..50).each do |i|
+                option selected=(i == 1) value=(i - 1) = i
+            select#rank-end.form-control(style="width: 80px;")
+              - (1..50).each do |i|
+                option selected=(i == 50) value=(i - 1) = i
+
+  div#plotly-3d-acc style="height: 700px; width: 900px; margin-bottom: 40px;"
+
+  javascript:
+    document.addEventListener("DOMContentLoaded", function () {
+      var z = #{raw @z_data.to_json};
+      var vendorSurface = #{raw @vendor_data.to_json};
+      var machines = #{raw @machine_names.to_json};
+      var machineIds = #{raw @machine_ids.to_json};
+      var editions = #{raw @edition_labels.to_json};
+      var vendorMap = #{raw @vendor_labels.to_json};
+      var ranks = Array.from({ length: 50 }, (_, i) => i + 1);
+
+      const editionStart = document.getElementById("edition-start");
+      const editionEnd = document.getElementById("edition-end");
+      const rankStart = document.getElementById("rank-start");
+      const rankEnd = document.getElementById("rank-end");
+
+      function reverseIndex(i, size) {
+        return size - 1 - i;
+      }
+
+      function updateEditionEndOptions() {
+        const startIdx = parseInt(editionStart.value);
+        for (let i = 0; i < editionEnd.options.length; i++) {
+          editionEnd.options[i].hidden = i < startIdx;
+        }
+        if (parseInt(editionEnd.value) < startIdx) {
+          editionEnd.value = startIdx;
+        }
+      }
+
+      function updateEditionStartOptions() {
+        const endIdx = parseInt(editionEnd.value);
+        for (let i = 0; i < editionStart.options.length; i++) {
+          editionStart.options[i].hidden = i > endIdx;
+        }
+        if (parseInt(editionStart.value) > endIdx) {
+          editionStart.value = endIdx;
+        }
+      }
+
+      function updateRankEndOptions() {
+        const startIdx = parseInt(rankStart.value);
+        for (let i = 0; i < rankEnd.options.length; i++) {
+          rankEnd.options[i].hidden = i < startIdx;
+        }
+        if (parseInt(rankEnd.value) < startIdx) {
+          rankEnd.value = startIdx;
+        }
+      }
+
+      function updateRankStartOptions() {
+        const endIdx = parseInt(rankEnd.value);
+        for (let i = 0; i < rankStart.options.length; i++) {
+          rankStart.options[i].hidden = i > endIdx;
+        }
+        if (parseInt(rankStart.value) > endIdx) {
+          rankStart.value = endIdx;
+        }
+      }
+      function updatePlot() {
+        updateEditionEndOptions();
+        updateEditionStartOptions();
+        updateRankEndOptions();
+        updateRankStartOptions();
+
+        const es_menu = parseInt(editionStart.value);
+        const ee_menu = parseInt(editionEnd.value);
+        const rs = parseInt(rankStart.value);
+        const re = parseInt(rankEnd.value);
+
+        const size = editions.length;
+        const es = reverseIndex(es_menu, size);
+        const ee = reverseIndex(ee_menu, size);
+        const start = Math.min(es, ee);
+        const end = Math.max(es, ee);
+
+        const newZ = z.slice(start, end + 1).map(row => row.slice(rs, re + 1));
+        const newVendor = vendorSurface.slice(start, end + 1).map(row => row.slice(rs, re + 1));
+        const newMachines = machines.slice(start, end + 1).map(row => row.slice(rs, re + 1));
+        const newIds = machineIds.slice(start, end + 1).map(row => row.slice(rs, re + 1));
+        const newEditions = editions.slice(start, end + 1);
+        const newRanks = ranks.slice(rs, re + 1);
+
+        var vendorColorMap = {
+          "NVIDIA": "#4daf4a",
+          "Intel": "#377eb8",
+          "AMD": "#e41a1c"
+        };
+
+        var surface = {
+          z: newZ,
+          x: newRanks,
+          y: newEditions,
+          type: 'surface',
+          colorscale: [[0, 'lightgray'], [1, 'lightgray']],
+          opacity: 0.5,
+          showscale: false,
+          hoverinfo: 'skip'
+        };
+
+        var data = [surface];
+        var vendorPoints = {};
+
+        for (let i = 0; i < newVendor.length; i++) {
+          for (let j = 0; j < newVendor[i].length; j++) {
+            let vendorId = newVendor[i][j];
+            let vendorName = vendorMap[vendorId] || "Unknown";
+            if (!(vendorName in vendorColorMap)) continue;
+
+            if (!vendorPoints[vendorName]) {
+              vendorPoints[vendorName] = { x: [], y: [], z: [], text: [], ids: [] };
+            }
+
+            vendorPoints[vendorName].x.push(newRanks[j]);
+            vendorPoints[vendorName].y.push(newEditions[i]);
+            vendorPoints[vendorName].z.push(newZ[i][j]);
+            vendorPoints[vendorName].text.push(newMachines[i][j]);
+            vendorPoints[vendorName].ids.push(newIds[i][j]);
+          }
+        }
+
+        const isFirefox = navigator.userAgent.toLowerCase().includes('firefox');
+        const pointSize = isFirefox ? 4 : 6;
+        Object.entries(vendorPoints).forEach(([vendorName, coords]) => {
+          let color = vendorColorMap[vendorName] || "#999999";
+          data.push({
+            x: coords.x,
+            y: coords.y,
+            z: coords.z,
+            text: coords.text,
+            customdata: coords.ids,
+            type: 'scatter3d',
+            mode: 'markers',
+            marker: {
+              color: color,
+              size: pointSize,
+              opacity: 0.95,
+              symbol: 'circle',
+              line: { width: 1, color: '#000000' }
+            },
+            name: vendorName,
+            legendgroup: vendorName,
+            showlegend: false,
+            hovertemplate:
+              "<b>Система</b>: %{text}<br>" +
+              "<b>Rmax</b>: %{z:.2f} ТФлопс<br>" +
+              "<b>Позиция</b>: %{x}<br>" +
+              "<b>Редакция</b>: %{y}<extra></extra>"
+          });
+        });
+
+        Object.keys(vendorPoints).forEach((vendorName) => {
+          let color = vendorColorMap[vendorName] || "#999999";
+          data.push({
+            x: [null], y: [null], z: [null],
+            type: 'scatter3d',
+            mode: 'markers',
+            marker: {
+              color: color,
+              size: 10,
+              symbol: 'circle',
+              opacity: 1,
+              line: { width: 1, color: '#000000' }
+            },
+            name: vendorName,
+            legendgroup: vendorName,
+            showlegend: true
+          });
+        });
+
+        var layout = {
+          scene: {
+            xaxis: {
+              title: { text: 'Позиция', font: { size: 20 } },
+              tickmode: 'linear',
+              dtick: 5
+            },
+            yaxis: {
+              title: { text: 'Дата редакции', font: { size: 18 }, standoff: 20 },
+              tickmode: 'array',
+              tickvals: newEditions.filter((_, i) => i % 4 === 0),
+              ticktext: newEditions.filter((_, i) => i % 4 === 0).map(date => {
+                const parts = date.split('.');
+                return `${parts[1]}.${parts[2]}`;
+              }),
+              tickangle: -60,
+              automargin: true
+            },
+            zaxis: {
+              title: { text: 'Rmax (TФлопс)', font: { size: 20 } },
+              type: 'log',
+              autorange: true
+            },
+            camera: {
+              eye: { x: 1.25, y: 1.25, z: 1.25 }
+            }
+          },
+          margin: { l: 0, r: 0, b: 0, t: 0 },
+          legend: {
+            x: 1,
+            y: 1,
+            traceorder: "normal",
+            font: { size: 14 },
+            bgcolor: 'rgba(255,255,255,0.6)',
+            bordercolor: '#444',
+            borderwidth: 1
+          }
+        };
+
+        Plotly.react('plotly-3d-acc', data, layout, { displayModeBar: false });
+      }
+
+      ["rank-start", "rank-end", "edition-start", "edition-end"].forEach(id => {
+        document.getElementById(id).addEventListener("change", updatePlot);
+      });
+
+      updatePlot();
+
+      var plot = document.getElementById('plotly-3d-acc');
+      plot.on('plotly_click', function(eventData) {
+        var point = eventData.points?.[0];
+        var machineId = point?.customdata;
+        if (machineId) {
+          window.open("/systems/" + machineId, "_blank");
+        }
+      });
+    });
+
+- elsif @stat_section == 'heatmap_streaks'
+  .container-fluid
+
+    #heatmap-streaks-chart(style="height: 800px; width: 100%;")
+
+    javascript:
+      document.addEventListener("DOMContentLoaded", function () {
+        var z = #{raw @z_data.to_json};
+        var xLabels = #{raw @x_labels.to_json};
+        var yLabels = #{raw @y_labels.to_json};
+
+        var flippedZ = z[0].map((_, colIndex) => z.map(row => row[colIndex]));
+
+        var data = [{
+          z: flippedZ,
+          x: xLabels,
+          y: yLabels.map(String),
+          type: 'heatmap',
+          colorscale: [
+            [0.0, 'rgb(211,211,211)'],
+            [0.01, 'rgb(0,255,255)'],
+            [0.2, 'rgb(0,255,0)'],
+            [0.4, 'rgb(255,255,0)'],
+            [0.6, 'rgb(255,165,0)'],
+            [0.8, 'rgb(255,0,0)'],
+            [1.0, 'rgb(139,0,0)']
+          ],
+          colorbar: {
+            title: {
+              text: 'Количество систем',
+              side: 'right',
+              font: {
+                size: 20
+              }
+            },
+            tickfont: {
+              size: 18
+            }
+          },
+          hovertemplate:
+            'Дата редакции: %{x}<br>' +
+            'Лет в рейтинге: %{y}<br>' +
+            'Систем: %{z}<extra></extra>'
+        }];
+
+        var layout = {
+          width: 1000,
+          xaxis: {
+            title: {
+              text: 'Дата редакции',
+              font: { size: 18 }
+            },
+            tickangle: -45,
+            tickfont: {
+              size: 16
+            },
+            type: 'category'
+          },
+          yaxis: {
+            title: {
+              text: 'Лет в рейтинге',
+              font: { size: 18 }
+            },
+            tickfont: {
+              size: 16
+            },
+            tickmode: 'linear',
+            dtick: 1,
+            type: 'category'
+          },
+          margin: {
+            l: 50,
+            r: 0,
+            b: 140,
+            t: 0
+          }
+        };
+
+        Plotly.newPlot('heatmap-streaks-chart', data, layout, { displayModeBar: false });
+      });
+
+- elsif @stat_section == 'heatmap_rank_vs_years'
+  .container-fluid
+    #heatmap-rank-years-chart style="height: 800px; width: 100%;"
+    div#rank-years-details style="margin-top: 40px;"
+
+    javascript:
+      document.addEventListener("DOMContentLoaded", function () {
+        var z = #{raw @z_data.to_json};
+        var xLabels = #{raw @x_labels.to_json};
+        var yLabels = #{raw @y_labels.to_json};
+        var seriesByCell = #{raw @series_by_cell_js.to_json};
+
+        var data = [{
+          z: z,
+          x: xLabels,
+          y: yLabels.map(String),
+          type: 'heatmap',
+          colorscale: [
+            [0.0, 'rgb(211,211,211)'],
+            [0.01, 'rgb(0,255,255)'],
+            [0.2, 'rgb(0,255,0)'],
+            [0.4, 'rgb(255,255,0)'],
+            [0.6, 'rgb(255,165,0)'],
+            [0.8, 'rgb(255,0,0)'],
+            [1.0, 'rgb(139,0,0)']
+          ],
+          colorbar: {
+            title: {
+              text: 'Количество систем',
+              side: 'right',
+              font: { size: 20 }
+            },
+            tickfont: { size: 18 }
+          },
+          hovertemplate:
+            'Начальная позиция: %{x}<br>' +
+            'Лет в рейтинге: %{y}<br>' +
+            'Систем: %{z}<extra></extra>'
+        }];
+
+        var layout = {
+          
+          xaxis: {
+            title: { text: 'Начальная позиция', font: { size: 18 } },
+            tickangle: -45,
+            tickfont: { size: 14 },
+            tickmode: 'linear',
+            dtick: 1,
+            type: 'category'
+          },
+          yaxis: {
+            title: { text: 'Лет в рейтинге', font: { size: 18 } },
+            tickfont: { size: 16 },
+            tickmode: 'linear',
+            dtick: 1,
+            type: 'category'
+          },
+          width: 1000,
+          margin: { l: 50, b: 120, r: 0, t: 0 }
+        };
+        Plotly.newPlot('heatmap-rank-years-chart', data, layout, { displayModeBar: false });
+
+        document.getElementById('heatmap-rank-years-chart').on('plotly_click', function(eventData) {
+          var rank = eventData.points[0].x;
+          var years = eventData.points[0].y;
+          var key = rank + "-" + years;
+          var series = seriesByCell[key];
+
+          var container = document.getElementById('rank-years-details');
+          if (!series || series.length === 0) {
+            container.innerHTML = `<p>Нет систем с начальной позицией <b>${rank}</b> и сроком пребывания <b>${years}</b> лет.</p>`;
+            return;
+          }
+
+          function pluralizeYears(n) {
+            if (n % 10 === 1 && n % 100 !== 11) return 'год';
+            if ([2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100)) return 'года';
+            return 'лет';
+          }
+
+          var yearsWord = pluralizeYears(years);
+          var html = `<h4>Системы с начальной позицией <b>${rank}</b> и сроком пребывания <b>${years}</b> ${yearsWord}:</h4>`;
+          html += `<table class="table table-bordered table-sm">
+            <thead>
+              <tr>
+                <th>Система</th>
+                <th>Первая редакция</th>
+                <th>Последняя редакция</th>
+              </tr>
+            </thead>
+            <tbody>`;
+
+          series.forEach(function(sys) {
+            var name = sys.name || 'н/д';
+            var url = sys.machine_id ? `/systems/${sys.machine_id}` : '#';
+            html += `<tr>
+              <td><a href="${url}" target="_blank">${name}</a></td>
+              <td>${sys.start}</td>
+              <td>${sys.end}</td>
+            </tr>`;
+          });
+
+          html += "</tbody></table>";
+          container.innerHTML = html;
+        });
+
+      });
+
+
+- elsif @stat_section == "performance_3d_with_machine_status"
+  .container-fluid
+    .menu-container
+      .row.mb-3
+        .col-md-2
+          label Редакции:
+          .d-flex.align-items-center
+            select#edition-start.form-control(style="width: 120px;")
+              - @edition_labels_for_select.each_with_index do |ed, i|
+                option value=i = ed
+            select#edition-end.form-control(style="width: 120px;")
+              - @edition_labels_for_select.each_with_index do |ed, i|
+                option selected=(i == @edition_labels_for_select.size - 1) value=i = ed
+
+        .col-md-3
+          label Позиции:
+          .d-flex.align-items-center
+            select#rank-start.form-control(style="width: 80px")
+              - (1..50).each do |i|
+                option selected=(i == 1) value=(i - 1) = i
+            select#rank-end.form-control(style="width: 80px;")
+              - (1..50).each do |i|
+                option selected=(i == 50) value=(i - 1) = i
+
+  #plotly-3d style="height: 700px; width: 900px; margin-bottom: 40px;"
+
+  javascript:
+    document.addEventListener("DOMContentLoaded", function () {
+      var z = #{raw @z_data.to_json};
+      var editions = #{raw @edition_labels.to_json};
+      var machines = #{raw @machine_names.to_json};
+      var statuses = #{raw @machine_status.to_json};
+      var machineIds = #{raw @machine_ids.to_json};
+      var ranks = Array.from({length: 50}, (_, i) => i + 1);
+
+      const editionStart = document.getElementById("edition-start");
+      const editionEnd = document.getElementById("edition-end");
+      const rankStart = document.getElementById("rank-start");
+      const rankEnd = document.getElementById("rank-end");
+
+      function reverseIndex(i, size) {
+        return size - 1 - i;
+      }
+
+      function updateEditionEndOptions() {
+        const startIdx = parseInt(editionStart.value);
+        for (let i = 0; i < editionEnd.options.length; i++) {
+          editionEnd.options[i].hidden = i < startIdx;
+        }
+        if (parseInt(editionEnd.value) < startIdx) {
+          editionEnd.value = startIdx;
+        }
+      }
+
+      function updateEditionStartOptions() {
+        const endIdx = parseInt(editionEnd.value);
+        for (let i = 0; i < editionStart.options.length; i++) {
+          editionStart.options[i].hidden = i > endIdx;
+        }
+        if (parseInt(editionStart.value) > endIdx) {
+          editionStart.value = endIdx;
+        }
+      }
+
+      function updateRankEndOptions() {
+        const startIdx = parseInt(rankStart.value);
+        for (let i = 0; i < rankEnd.options.length; i++) {
+          rankEnd.options[i].hidden = i < startIdx;
+        }
+        if (parseInt(rankEnd.value) < startIdx) {
+          rankEnd.value = startIdx;
+        }
+      }
+
+      function updateRankStartOptions() {
+        const endIdx = parseInt(rankEnd.value);
+        for (let i = 0; i < rankStart.options.length; i++) {
+          rankStart.options[i].hidden = i > endIdx;
+        }
+        if (parseInt(rankStart.value) > endIdx) {
+          rankStart.value = endIdx;
+        }
+      }
+
+      function updatePlot() {
+        updateEditionEndOptions();
+        updateEditionStartOptions();
+        updateRankEndOptions();
+        updateRankStartOptions();
+
+        const es_menu = parseInt(editionStart.value);
+        const ee_menu = parseInt(editionEnd.value);
+        const rs = parseInt(rankStart.value);
+        const re = parseInt(rankEnd.value);
+
+        const size = editions.length;
+        const es = reverseIndex(es_menu, size);
+        const ee = reverseIndex(ee_menu, size);
+        const start = Math.min(es, ee);
+        const end = Math.max(es, ee);
+
+        const newZ = z.slice(start, end + 1).map(row => row.slice(rs, re + 1));
+        const newMachines = machines.slice(start, end + 1).map(row => row.slice(rs, re + 1));
+        const newStatuses = statuses.slice(start, end + 1).map(row => row.slice(rs, re + 1));
+        const newIds = machineIds.slice(start, end + 1).map(row => row.slice(rs, re + 1));
+        const newEditions = editions.slice(start, end + 1);
+        const newRanks = ranks.slice(rs, re + 1);
+
+        var surface = {
+          z: newZ,
+          x: newRanks,
+          y: newEditions,
+          type: 'surface',
+          colorscale: [[0, 'lightgray'], [1, 'lightgray']],
+          opacity: 0.5,
+          showscale: false,
+          hoverinfo: 'skip'
+        };
+
+        var scatterTraces = {
+          new:     { x: [], y: [], z: [], text: [], ids: [], color: 'green',  name: 'Новые' },
+          upgrade: { x: [], y: [], z: [], text: [], ids: [], color: 'orange', name: 'Обновленные' }
+        };
+
+        for (let i = 0; i < newZ.length; i++) {
+          for (let j = 0; j < newZ[i].length; j++) {
+            let status = (newStatuses[i][j] || "existing").toLowerCase();
+            if (newMachines[i][j] !== "н/д" && scatterTraces[status]) {
+              let trace = scatterTraces[status];
+              trace.x.push(newRanks[j]);
+              trace.y.push(newEditions[i]);
+              trace.z.push(newZ[i][j]);
+              trace.text.push(newMachines[i][j]);
+              trace.ids.push(newIds[i][j]);
+            }
+          }
+        }
+
+        var data = [surface];
+        const isFirefox = navigator.userAgent.toLowerCase().includes('firefox');
+        const pointSize = isFirefox ? 4 : 6;
+
+        Object.entries(scatterTraces).forEach(([_, trace]) => {
+          data.push({
+            x: trace.x,
+            y: trace.y,
+            z: trace.z,
+            text: trace.text,
+            customdata: trace.ids,
+            mode: 'markers',
+            type: 'scatter3d',
+            name: trace.name,
+            legendgroup: trace.name,
+            showlegend: false,
+            marker: {
+              size: pointSize,
+              color: trace.color,
+              opacity: 0.95,
+              symbol: 'circle',
+              line: { width: 1, color: '#000' }
+            },
+            hovertemplate:
+              "<b>Система</b>: %{text}<br>" +
+              "<b>Rmax</b>: %{z:.2f} ТФлопс<br>" +
+              "<b>Позиция</b>: %{x}<br>" +
+              "<b>Редакция</b>: %{y}<extra></extra>"
+          });
+        });
+
+        Object.entries(scatterTraces).forEach(([_, trace]) => {
+          data.push({
+            x: [null], y: [null], z: [null],
+            type: 'scatter3d',
+            mode: 'markers',
+            marker: {
+              color: trace.color,
+              size: 10,
+              symbol: 'circle',
+              opacity: 1,
+              line: { width: 1, color: '#000000' }
+            },
+            name: trace.name,
+            legendgroup: trace.name,
+            showlegend: true
+          });
+        });
+
+        var layout = {
+          scene: {
+            xaxis: {
+              title: { text: 'Позиция', font: { size: 20 } },
+              tickmode: 'linear',
+              dtick: 10
+            },
+            yaxis: {
+              title: { text: 'Дата редакции', font: { size: 18 }, standoff: 20 },
+              tickmode: 'array',
+              tickvals: newEditions.filter((_, i) => i % 4 === 0),
+              ticktext: newEditions.filter((_, i) => i % 4 === 0).map(date => {
+                const parts = date.split('.');
+                return `${parts[1]}.${parts[2]}`;
+              }),
+              tickangle: -60,
+              automargin: true
+            },
+            zaxis: {
+              title: { text: 'Rmax (ТФлопс)', font: { size: 20 } },
+              type: 'log',
+              autorange: true
+            },
+            camera: { eye: { x: 1.25, y: 1.25, z: 1.25 } },
+            hovermode: 'closest',
+            hoverdistance: 20
+          },
+          margin: { l: 0, r: 0, b: 0, t: 0 },
+          legend: {
+            x: 0.85,
+            y: 0.95,
+            traceorder: "normal",
+            font: { size: 14 },
+            bgcolor: 'rgba(255,255,255,0.6)',
+            bordercolor: '#444',
+            borderwidth: 1
+          }
+        };
+
+        Plotly.react('plotly-3d', data, layout, { displayModeBar: false });
+      }
+
+      ["rank-start", "rank-end", "edition-start", "edition-end"].forEach(id => {
+        document.getElementById(id).addEventListener("change", updatePlot);
+      });
+
+      updatePlot();
+
+      var plot = document.getElementById('plotly-3d');
+      plot.on('plotly_click', function(eventData) {
+        var point = eventData.points?.[0];
+        var machineId = point?.customdata;
+        if (machineId) {
+          window.open("/systems/" + machineId, "_blank");
+        }
+      });
+    });
+
+  = render 'top50_machines/top500_lifeline_charts'
+
+- elsif @stat_section == "top50intop500"
+  = render 'top50_machines/top500_lifeline_charts'
+
+- elsif @stat_section == "cpu_vendor"
+  - hlist_chart_data = {}
+  - hlist_dates = {}
+  - hlist_nums = {}
+  - chart_data_by_tp = {}
+  - chart_data_by_per = {}
+  - @csv_arr = [""]
+  - @csv_arr_per = [""]
+  div id="chart"
+  g id="table_control_chart"
+    div class="button" style="background: #6699CC; float: left" id=0
+      = "Системы"
+    div class="button" style="background: gray; float: left" id=1
+      = "ПФлоп/с"
+    div class="button" style="background: gray; float: left" id=2
+      = "%"
+  a class="button" style="background: #6699CC; float: right" target="_blank" download="CPU_vendors_performance.csv" id="download2"
+    = "Таблица производительности"
+  a class="button" style="background: #6699CC; float: right" target="_blank" download="CPU_vendors_systems.csv" id="download1"
+    = "Таблица систем"
+  table class="table table-hover" id="table_chart"
+    - sel_mtype_ids = []
+    - oth_cnt = 0
+    - sum_cnt = 0
+    tr
+      th = "Редакция"
+      / adding headers of csv
+      - @csv_arr[0] += "Редакция,"
+      - @csv_arr_per[0] += "Редакция,"
+      - @top50_cpuvendors.each do |top50_cpuvendor|
+        th = top50_cpuvendor.name
+        / adding headers of csv
+        - @csv_arr[0] += top50_cpuvendor.name + ","
+        - @csv_arr_per[0] += top50_cpuvendor.name + ","
+        - chart_data_by_tp[top50_cpuvendor.name] = []
+        - chart_data_by_per[top50_cpuvendor.name] = []
+    - @top50_slists.each do |top50_list|
+      / adding csv row
+      - csv_srting = ""
+      - csv_srting_per = ""
+      - c_chart_data = []
+      - sum_cnt = Top50Machine.all.joins(:top50_benchmark_results).merge(Top50BenchmarkResult.all.joins(:top50_benchmark).merge(Top50Benchmark.where(id: top50_list.id))).count
+      - sum_cnt_per = (Top50Machine.all.joins(:top50_benchmark_results).merge(Top50BenchmarkResult.all.joins(:top50_benchmark).merge(Top50Benchmark.where(id: top50_list.id))).joins("join top50_benchmark_results br on br.machine_id = top50_benchmark_results.machine_id").where("br.benchmark_id = 27").sum("br.result") / 1000000.0).round(2)
+      tr
+        td class="fit"
+          - list_num = @num_vals.find_by(obj_id: top50_list.id)
+          - date_val = @date_vals.find_by(obj_id: top50_list.id)
+          - list_year = date_val.value.split(".")[2]
+          - list_month = date_val.value.split(".")[1]
+          / adding csv row
+          - csv_srting += "#{list_num.value}#{8209.chr}я (#{date_val.value}),"
+          - csv_srting_per += "#{list_num.value}#{8209.chr}я (#{date_val.value}),"
+          = link_to "#{list_num.value}#{8209.chr}я (#{date_val.value})", get_archive_path(list_year, list_month)
+        - @top50_cpuvendors.each_with_index do |top50_cpuvendor, j|
+          td align="right" i=list_num.value j=j
+            - c_cnt = Top50BenchmarkResult.where("benchmark_id = #{top50_list.id} AND machine_id IN (?)", @cpuvendor_id_hash[top50_cpuvendor.id]).count
+            - by_per = (Top50BenchmarkResult.where("top50_benchmark_results.benchmark_id = #{top50_list.id} AND top50_benchmark_results.machine_id IN (?)", @cpuvendor_id_hash[top50_cpuvendor.id]).joins("join top50_benchmark_results br on br.machine_id = top50_benchmark_results.machine_id").where("br.benchmark_id = 27").sum("br.result") / 1000000.0).round(2)
+            = c_cnt
+            - oth_cnt = oth_cnt - c_cnt
+          - c_chart_data << [top50_cpuvendor.name, c_cnt]
+          - chart_data_by_tp[top50_cpuvendor.name].unshift([date_val.value, c_cnt])
+          - chart_data_by_per[top50_cpuvendor.name].unshift([date_val.value, by_per])
+          / adding csv row
+          - csv_srting += c_cnt.to_s + ","
+          - csv_srting_per += by_per.to_s + ","
+      - hlist_chart_data[top50_list.id] = c_chart_data
+      - hlist_dates[top50_list.id] = date_val.value
+      - hlist_nums[top50_list.id] = list_num.value
+      / adding csv row
+      - @csv_arr.push(csv_srting)
+      - @csv_arr_per.push(csv_srting_per)
+
+    tr
+      - @achart_data = []
+      - chart_data_by_tp.each_key do |key|
+        - @achart_data << {name: key, data: chart_data_by_tp[key]}
+      - @achart_data_per = []
+      - chart_data_by_tp.each_key do |key|
+        - @achart_data_per << {name: key, data: chart_data_by_per[key]}
+      javascript:
+        var data = JSON.parse("#{@achart_data.to_json}".replace(/&quot;/g, '"'));
+        var data_per = JSON.parse("#{@achart_data_per.to_json}".replace(/&quot;/g, '"'));
+        var csv = JSON.parse("#{@csv_arr}".replace(/&quot;/g, '"')).join("\n");
+        var csv_per = JSON.parse("#{@csv_arr_per}".replace(/&quot;/g, '"')).join("\n");
+
+      coffee:
+        d3.selectAll("a").filter(() -> d3.select(this).attr("id") == "download1").attr("href", "data:attachment/csv," + csv)
+        d3.selectAll("a").filter(() -> d3.select(this).attr("id") == "download2").attr("href", "data:attachment/csv," + csv_per)
+        # COLORS:
+        #   Intel
+        #   AMD
+        #   IBM
+        #   HP
+        #   Sun
+        COLORS = ["#5489D1", "#EB002B", "#335FBD", "#00BD86", "#5B83A1"]
+        draw_area(data, data_per, "chart", "Производители процессоров", "Редакция (ММ.ГГ)", "Доля систем", COLORS)
+      /= area_chart @achart_data, max: 50, stacked: true, height: "500px"
+      br
+
+- elsif @stat_section == "area"
+  - chart_data_by_tp = {}
+  - chart_data_per = {}
+  - @csv_arr = [""]
+  - @csv_arr_per = [""]
+
+  div id="chart"
+  g id="table_control_chart"
+    div class="button" style="background: #6699CC; float: left" id=0
+      = "Системы"
+    div class="button" style="background: gray; float: left" id=1
+      = "ПФлоп/с"
+    div class="button" style="background: gray; float: left" id=2
+      = "%"
+  a class="button" style="background: #6699CC; float: right" target="_blank" download="Area_performance.csv" id="download2"
+    = "Таблица производительности"
+  a class="button" style="background: #6699CC; float: right" target="_blank" download="Area_systems.csv" id="download1"
+    = "Таблица систем"
+  table class="table table-hover" id="table_chart"
+    tr
+      th = "Редакция"
+      / adding headers of csv
+      - @csv_arr[0] += "Редакция,"
+      - @csv_arr_per[0] += "Редакция,"
+      - sel_top50_areas = []
+      - @top50_areas.each do |top50_area|
+        - @area_id_hash[top50_area.area_id] = @area_id_hash[top50_area.area_id].uniq
+        - if @area_id_hash[top50_area.area_id].count > 3
+          th = top50_area.area_name
+          / adding headers of csv
+          - @csv_arr[0] += top50_area.area_name + ","
+          - @csv_arr_per[0] += top50_area.area_name + ","
+          - chart_data_by_tp[top50_area.area_name] = []
+          - chart_data_per[top50_area.area_name] = []
+          - sel_top50_areas << top50_area
+      th = "Не указано/Прочие"
+      / adding headers of csv
+      - @csv_arr[0] += "Не указано/Прочие"
+      - @csv_arr_per[0] += "Не указано/Прочие"
+      - chart_data_by_tp["Не указано/Прочие"] = []
+      - chart_data_per["Не указано/Прочие"] = []
+    - @top50_slists.each do |top50_list|
+      / adding csv row
+      - csv_srting = ""
+      - csv_srting_per = ""
+      - c_chart_data = []
+      - oth_cnt = Top50BenchmarkResult.where("benchmark_id = #{top50_list.id}").count
+      - all_per = (Top50BenchmarkResult.where("top50_benchmark_results.benchmark_id = #{top50_list.id}").joins("join top50_benchmark_results br on br.machine_id = top50_benchmark_results.machine_id").where("br.benchmark_id = 27").sum("br.result") / 1000000.0).round(2)
+      tr
+        td class="fit"
+          - list_num = @num_vals.find_by(obj_id: top50_list.id)
+          - date_val = @date_vals.find_by(obj_id: top50_list.id)
+          - list_year = date_val.value.split(".")[2]
+          - list_month = date_val.value.split(".")[1]
+          - if list_num.present?
+            / adding csv row
+            - csv_srting += "#{list_num.value}#{8209.chr}я (#{date_val.value}),"
+            - csv_srting_per += "#{list_num.value}#{8209.chr}я (#{date_val.value}),"
+            = link_to "#{list_num.value}#{8209.chr}я (#{date_val.value})", get_archive_path(list_year, list_month)
+        - sel_top50_areas.each_with_index do |top50_area, j|
+          td align="right" i=list_num.value j=j
+            - c_cnt = Top50BenchmarkResult.where("benchmark_id = #{top50_list.id} AND machine_id IN (?)", @area_id_hash[top50_area.area_id]).count
+            - by_per = (Top50BenchmarkResult.where("top50_benchmark_results.benchmark_id = #{top50_list.id} AND top50_benchmark_results.machine_id IN (?)", @area_id_hash[top50_area.area_id]).joins("join top50_benchmark_results br on br.machine_id = top50_benchmark_results.machine_id").where("br.benchmark_id = 27").sum("br.result") / 1000000.0).round(2)
+            = c_cnt
+            - oth_cnt = oth_cnt - c_cnt
+            - all_per = (all_per - by_per).round(2)
+            - chart_data_by_tp[top50_area.area_name].unshift([date_val.value, c_cnt])
+            - chart_data_per[top50_area.area_name].unshift([date_val.value, by_per])
+            / adding csv row
+            - csv_srting += c_cnt.to_s + ","
+            - csv_srting_per += by_per.to_s + ","
+        td align="right" i=list_num.value j=sel_top50_areas.length
+          - chart_data_by_tp["Не указано/Прочие"].unshift([date_val.value, oth_cnt])
+          - chart_data_per["Не указано/Прочие"].unshift([date_val.value, all_per])
+          = oth_cnt
+          / adding csv row
+          - csv_srting += oth_cnt.to_s
+          - csv_srting_per += all_per.to_s
+          - @csv_arr.push(csv_srting)
+          - @csv_arr_per.push(csv_srting_per)
+    tr
+
+      - @achart_data = []
+      - chart_data_by_tp.each_key do |key|
+        - @achart_data << {name: key, data: chart_data_by_tp[key]}
+      - @achart_data_per = []
+      - chart_data_by_tp.each_key do |key|
+        - @achart_data_per << {name: key, data: chart_data_per[key]}
+      javascript:
+        var data = JSON.parse("#{@achart_data.to_json}".replace(/&quot;/g, '"'));
+        var data_per = JSON.parse("#{@achart_data_per.to_json}".replace(/&quot;/g, '"'));
+        var csv = JSON.parse("#{@csv_arr}".replace(/&quot;/g, '"')).join("\n");
+        var csv_per = JSON.parse("#{@csv_arr_per}".replace(/&quot;/g, '"')).join("\n");
+
+      coffee:
+        d3.selectAll("a").filter(() -> d3.select(this).attr("id") == "download1").attr("href", "data:attachment/csv," + csv)
+        d3.selectAll("a").filter(() -> d3.select(this).attr("id") == "download2").attr("href", "data:attachment/csv," + csv_per)
+        draw_area(data, data_per, "chart", "Область применения", "Редакция (ММ.ГГ)", "Доля систем", d3.schemePaired)
+      /= area_chart @achart_data, max: 50, stacked: true, height: "750px"
+      br
+
+- elsif @stat_section == "city"
+  - chart_data_by_tp = {}
+  - chart_data_per = {}
+  - @csv_arr = [""]
+  - @csv_arr_per = [""]
+
+  div id="chart"
+  g id="table_control_chart"
+    div class="button" style="background: #6699CC; float: left" id=0
+      = "Системы"
+    div class="button" style="background: gray; float: left" id=1
+      = "ПФлоп/с"
+    div class="button" style="background: gray; float: left" id=2
+      = "%"
+  a class="button" style="background: #6699CC; float: right" target="_blank" download="Area_performance.csv" id="download2"
+    = "Таблица производительности"
+  a class="button" style="background: #6699CC; float: right" target="_blank" download="Area_systems.csv" id="download1"
+    = "Таблица систем"
+  table class="table table-hover" id="table_chart"
+    tr
+      th = "Редакция"
+      / adding headers of csv
+      - @csv_arr[0] += "Редакция,"
+      - @csv_arr_per[0] += "Редакция,"
+      - sel_top50_cities = []
+      - @top50_cities.each do |top50_city|
+        - @city_id_hash[top50_city.id] = @city_id_hash[top50_city.id].uniq
+        - if @city_id_hash[top50_city.id].count > 3
+          th = top50_city.name
+          / adding headers of csv
+          - @csv_arr[0] += top50_city.name + ","
+          - @csv_arr_per[0] += top50_city.name + ","
+          - chart_data_by_tp[top50_city.name] = []
+          - chart_data_per[top50_city.name] = []
+          - sel_top50_cities << top50_city
+      th = "Не указано/Прочие"
+      / adding headers of csv
+      - @csv_arr[0] += "Не указано/Прочие"
+      - @csv_arr_per[0] += "Не указано/Прочие"
+      - chart_data_by_tp["Не указано/Прочие"] = []
+      - chart_data_per["Не указано/Прочие"] = []
+    - @top50_slists.each do |top50_list|
+      / adding csv row
+      - csv_srting = ""
+      - csv_srting_per = ""
+      - c_chart_data = []
+      - oth_cnt = Top50BenchmarkResult.where("benchmark_id = #{top50_list.id}").count
+      - all_per = (Top50BenchmarkResult.where("top50_benchmark_results.benchmark_id = #{top50_list.id}").joins("join top50_benchmark_results br on br.machine_id = top50_benchmark_results.machine_id").where("br.benchmark_id = 27").sum("br.result") / 1000000.0).round(2)
+      tr
+        td class="fit"
+          - list_num = @num_vals.find_by(obj_id: top50_list.id)
+          - date_val = @date_vals.find_by(obj_id: top50_list.id)
+          - list_year = date_val.value.split(".")[2]
+          - list_month = date_val.value.split(".")[1]
+          - if list_num.present?
+            / adding csv row
+            - csv_srting += "#{list_num.value}#{8209.chr}я (#{date_val.value}),"
+            - csv_srting_per += "#{list_num.value}#{8209.chr}я (#{date_val.value}),"
+            = link_to "#{list_num.value}#{8209.chr}я (#{date_val.value})", get_archive_path(list_year, list_month)
+        - sel_top50_cities.each_with_index do |top50_city, j|
+          td align="right" i=list_num.value j=j
+            - c_cnt = Top50BenchmarkResult.where("benchmark_id = #{top50_list.id} AND machine_id IN (?)", @city_id_hash[top50_city.id]).count
+            - by_per = (Top50BenchmarkResult.where("top50_benchmark_results.benchmark_id = #{top50_list.id} AND top50_benchmark_results.machine_id IN (?)", @city_id_hash[top50_city.id]).joins("join top50_benchmark_results br on br.machine_id = top50_benchmark_results.machine_id").where("br.benchmark_id = 27").sum("br.result") / 1000000.0).round(2)
+            = c_cnt
+            - oth_cnt = oth_cnt - c_cnt
+            - all_per = (all_per - by_per).round(2)
+            - chart_data_by_tp[top50_city.name].unshift([date_val.value, c_cnt])
+            - chart_data_per[top50_city.name].unshift([date_val.value, by_per])
+            / adding csv row
+            - csv_srting += c_cnt.to_s + ","
+            - csv_srting_per += by_per.to_s + ","
+        td align="right" i=list_num.value j=sel_top50_cities.length
+          - chart_data_by_tp["Не указано/Прочие"].unshift([date_val.value, oth_cnt])
+          - chart_data_per["Не указано/Прочие"].unshift([date_val.value, all_per])
+          = oth_cnt
+          / adding csv row
+          - csv_srting += oth_cnt.to_s
+          - csv_srting_per += all_per.to_s
+          - @csv_arr.push(csv_srting)
+          - @csv_arr_per.push(csv_srting_per)
+    tr
+
+      - @achart_data = []
+      - chart_data_by_tp.each_key do |key|
+        - @achart_data << {name: key, data: chart_data_by_tp[key]}
+      - @achart_data_per = []
+      - chart_data_by_tp.each_key do |key|
+        - @achart_data_per << {name: key, data: chart_data_per[key]}
+      javascript:
+        var data = JSON.parse("#{@achart_data.to_json}".replace(/&quot;/g, '"'));
+        var data_per = JSON.parse("#{@achart_data_per.to_json}".replace(/&quot;/g, '"'));
+        var csv = JSON.parse("#{@csv_arr}".replace(/&quot;/g, '"')).join("\n");
+        var csv_per = JSON.parse("#{@csv_arr_per}".replace(/&quot;/g, '"')).join("\n");
+
+      coffee:
+        d3.selectAll("a").filter(() -> d3.select(this).attr("id") == "download1").attr("href", "data:attachment/csv," + csv)
+        d3.selectAll("a").filter(() -> d3.select(this).attr("id") == "download2").attr("href", "data:attachment/csv," + csv_per)
+        draw_area(data, data_per, "chart", "Город", "Редакция (ММ.ГГ)", "Доля систем", d3.schemePaired)
+      /= area_chart @achart_data, max: 50, stacked: true, height: "750px"
+      br
+
+- elsif @stat_section == "cpu_cnt" or @stat_section == "core_cnt"
+  - chart_data_by_tp = {}
+  div id="chart"
+  table class="table table-hover"
+    tr
+      th = "Редакция"
+      - @top50_ccnts.each do |top50_ccnt|
+        th = top50_ccnt
+        - chart_data_by_tp[top50_ccnt] = []
+    - @top50_slists.each do |top50_list|
+      - c_chart_data = []
+      tr
+        td class="fit"
+          - list_num = @num_vals.find_by(obj_id: top50_list.id)
+          - date_val = @date_vals.find_by(obj_id: top50_list.id)
+          - list_year = date_val.value.split(".")[2]
+          - list_month = date_val.value.split(".")[1]
+          - if list_num.present?
+            = link_to "#{list_num.value}#{8209.chr}я (#{date_val.value})", get_archive_path(list_year, list_month)
+        - @top50_ccnts.each do |top50_ccnt|
+          td align="right" 
+            - c_cnt = Top50BenchmarkResult.where("benchmark_id = #{top50_list.id} AND machine_id IN (?)", @ccnt_id_hash[top50_ccnt]).count
+            = c_cnt
+            - chart_data_by_tp[top50_ccnt].unshift([date_val.value, c_cnt])
+    tr
+      - @achart_data = []
+      - chart_data_by_tp.each_key do |key|
+        - @achart_data << {name: key, data: chart_data_by_tp[key]}
+      javascript:
+        var data = JSON.parse("#{@achart_data.to_json}".replace(/&quot;/g, '"'));
+        var COLORS = [], name = "";
+        for (var i = 0; i < data.length; i++) {
+          COLORS.push(d3.interpolateViridis(i * 1. / (data.length - 1)));
+        }
+        if ("#{@stat_section}" == "cpu_cnt") {
+          name = "Процессоры";
+        } else {
+          name = "Ядра";
+        }
+
+      coffee:
+        draw_type(data, "chart", name, "Редакция (ММ.ГГ)", "Количество систем", COLORS)
+      /= area_chart @achart_data, max: 50, stacked: true, height: "750px"
+      br
+- elsif @stat_section == "comm_net" || @stat_section == "comm_net_sep"
+  - chart_data_by_tp = {}
+  - chart_data_by_per = {}
+  - @csv_arr = [""]
+  - @csv_arr_per = [""]
+  div id="chart"
+  g id="table_control_chart"
+    div class="button" style="background: #6699CC; float: left" id=0
+      = "Системы"
+    div class="button" style="background: gray; float: left" id=1
+      = "ПФлоп/с"
+    div class="button" style="background: gray; float: left" id=2
+      = "%"
+  a class="button" style="background: #6699CC; float: right" target="_blank" download="Comm_performance.csv" id="download2"
+    = "Таблица производительности"
+  a class="button" style="background: #6699CC; float: right" target="_blank" download="Comm_systems.csv" id="download1"
+    = "Таблица систем"
+  table class="table table-hover" id="table_chart"
+    tr
+      th = "Редакция"
+      / adding headers of csv
+      - @csv_arr[0] += "Редакция,"
+      - @csv_arr_per[0] += "Редакция,"
+      - @top50_cnets.each do |top50_cnet|
+        th = top50_cnet.cnet_name
+        / adding headers of csv
+        - @csv_arr[0] += top50_cnet.cnet_name.gsub(/"/, "") + ","
+        - @csv_arr_per[0] += top50_cnet.cnet_name.gsub(/"/, "") + ","
+        - chart_data_by_tp[top50_cnet.cnet_name] = []
+        - chart_data_by_per[top50_cnet.cnet_name] = []
+      th = "Прочие"
+      / adding headers of csv
+      - @csv_arr[0] += "Не указано/Прочие"
+      - @csv_arr_per[0] += "Не указано/Прочие"
+      - chart_data_by_tp["Прочие"] = []
+      - chart_data_by_per["Прочие"] = []
+    - @top50_slists.each do |top50_list|
+      / adding csv row
+      - csv_srting = ""
+      - csv_srting_per = ""
+      - c_chart_data = []
+      - oth_cnt = Top50BenchmarkResult.where("benchmark_id = #{top50_list.id}").count
+      - oth_per = (Top50BenchmarkResult.where("top50_benchmark_results.benchmark_id = #{top50_list.id}").joins("join top50_benchmark_results br on br.machine_id = top50_benchmark_results.machine_id").where("br.benchmark_id = 27").sum("br.result") / 1000000.0).round(2)
+      tr
+        td class="fit"
+          - list_num = @num_vals.find_by(obj_id: top50_list.id)
+          - date_val = @date_vals.find_by(obj_id: top50_list.id)
+          - list_year = date_val.value.split(".")[2]
+          - list_month = date_val.value.split(".")[1]
+          - if list_num.present?
+            / adding csv row
+            - csv_srting += "#{list_num.value}#{8209.chr}я (#{date_val.value}),"
+            - csv_srting_per += "#{list_num.value}#{8209.chr}я (#{date_val.value}),"
+            = link_to "#{list_num.value}#{8209.chr}я (#{date_val.value})", get_archive_path(list_year, list_month)
+        - @top50_cnets.each_with_index do |top50_cnet, j|
+          td align="right" i=list_num.value j=j
+            - c_cnt = Top50BenchmarkResult.where("benchmark_id = #{top50_list.id} AND machine_id IN (?)", @cnet_id_hash[top50_cnet.cnet_id]).count
+            - c_per = (Top50BenchmarkResult.where("top50_benchmark_results.benchmark_id = #{top50_list.id} AND top50_benchmark_results.machine_id IN (?)", @cnet_id_hash[top50_cnet.cnet_id]).joins("join top50_benchmark_results br on br.machine_id = top50_benchmark_results.machine_id").where("br.benchmark_id = 27").sum("br.result") / 1000000.0).round(2)
+            = c_cnt
+            - oth_cnt = oth_cnt - c_cnt  
+            - oth_per = oth_per - c_per  
+            - chart_data_by_tp[top50_cnet.cnet_name].unshift([date_val.value, c_cnt])
+            - chart_data_by_per[top50_cnet.cnet_name].unshift([date_val.value, c_per])
+            / adding csv row
+            - csv_srting += c_cnt.to_s + ","
+            - csv_srting_per += c_per.to_s + ","
+        td align="right" i=list_num.value j=@top50_cnets.length
+          - chart_data_by_tp["Прочие"].unshift([date_val.value, oth_cnt])
+          - chart_data_by_per["Прочие"].unshift([date_val.value, oth_per])
+          = oth_cnt.to_s
+          / adding csv row
+          - csv_srting += oth_cnt.to_s
+          - csv_srting_per += oth_per.to_s
+          - @csv_arr.push(csv_srting)
+          - @csv_arr_per.push(csv_srting_per)
+    tr
+      - @achart_data = []
+      - chart_data_by_tp.each_key do |key|
+        - @achart_data << {name: key, data: chart_data_by_tp[key]}
+      - @achart_data_per = []
+      - chart_data_by_per.each_key do |key|
+        - @achart_data_per << {name: key, data: chart_data_by_per[key]}
+      javascript:
+        var data = JSON.parse("#{@achart_data.to_json}".replace(/&quot;&quot;/g, '"').replace(/&quot;/g, '"'));
+        var data_per = JSON.parse("#{@achart_data_per.to_json}".replace(/&quot;&quot;/g, '"').replace(/&quot;/g, '"'));
+        var csv = JSON.parse("#{@csv_arr}".replace(/&quot;&quot;/g, '"').replace(/&quot;/g, '"')).join("\n");
+        var csv_per = JSON.parse("#{@csv_arr_per}".replace(/&quot;&quot;/g, '"').replace(/&quot;/g, '"')).join("\n");
+        var COLORS = [], name = "";
+        for (var i = 0; i < data.length; i++) {
+          COLORS.push(d3.interpolateRainbow(i * 1. / (data.length - 1)));
+        }
+
+      coffee:
+        d3.selectAll("a").filter(() -> d3.select(this).attr("id") == "download1").attr("href", "data:attachment/csv," + csv)
+        d3.selectAll("a").filter(() -> d3.select(this).attr("id") == "download2").attr("href", "data:attachment/csv," + csv_per)
+      - if @stat_section == "comm_net"
+        coffee:
+          draw_area(data, data_per, "chart", "Семейства коммуникационных сетей", "Редакция (ММ.ГГ)", "Доля систем", d3.schemePaired)
+      - elsif @stat_section == "comm_net_sep"
+        coffee:
+          draw_area(data, data_per, "chart", "Коммуникационные сети", "Редакция (ММ.ГГ)", "Доля систем", COLORS)
+
+      /= area_chart @achart_data, max: 50, stacked: true, height: "500px"
+      br
+
+  
+- elsif @stat_section == "cpu_fam" || @stat_section == "cpu_gen"
+  - chart_data_by_tp = {}
+  div id="chart"
+  table class="table table-hover"
+    tr
+      th = "Редакция"
+      - @top50_cpufams.each do |top50_cpufam|
+        th = top50_cpufam.fam_name
+        - chart_data_by_tp[top50_cpufam.fam_name] = []
+      th = ""
+    - c_sum_max = 0
+    - @top50_slists.each do |top50_list|
+      - c_chart_data = []
+      tr
+        td class="fit"
+          - list_num = @num_vals.find_by(obj_id: top50_list.id)
+          - date_val = @date_vals.find_by(obj_id: top50_list.id)
+          - list_year = date_val.value.split(".")[2]
+          - list_month = date_val.value.split(".")[1]
+          - if list_num.present?
+            = link_to "#{list_num.value}#{8209.chr}я (#{date_val.value})", get_archive_path(list_year, list_month)
+        - c_sum = 0
+        - @top50_cpufams.each do |top50_cpufam|
+          td align="right" 
+            - c_cnt = Top50BenchmarkResult.where("benchmark_id = #{top50_list.id} AND machine_id IN (?)", @cpufam_id_hash[top50_cpufam.fam_id]).count
+            = c_cnt
+            - c_sum += c_cnt
+            - chart_data_by_tp[top50_cpufam.fam_name].unshift([date_val.value, c_cnt])
+        - if c_sum > c_sum_max
+          - c_sum_max = c_sum
+        td align="right" 
+          = link_to "Подробнее", get_stats_per_list_path(@stat_section, list_year, list_month)
+    tr
+      - @achart_data = []
+      - chart_data_by_tp.each_key do |key|
+        - @achart_data << {name: key, data: chart_data_by_tp[key]}
+      javascript:
+        // Italy replace for operton
+        var data = JSON.parse("#{@achart_data.to_json}".replace(/&quot;&quot;/g, '"').replace(/&quot;/g, '"'));
+
+      coffee:
+        draw_type(data, "chart", "Процессоры", "Редакция (ММ.ГГ)", "Количество систем", d3.schemeSpectral[10])
+      /= area_chart @achart_data, stacked: true, height: "500px", max: c_sum_max
+      br
+      
+- elsif @stat_section == "vendors"
+  - chart_data_by_tp = {}
+  - chart_data_by_per = {}
+  - @csv_arr = [""]
+  - @csv_arr_per = [""]
+
+  div id="chart"
+  g id="table_control_chart"
+    div class="button" style="background: #6699CC; float: left" id=0
+      = "Системы"
+    div class="button" style="background: gray; float: left" id=1
+      = "ПФлоп/с"
+    div class="button" style="background: gray; float: left" id=2
+      = "%"
+  a class="button" style="background: #6699CC; float: right" target="_blank" download="Vendors_performance.csv" id="download2"
+    = "Таблица производительности"
+  a class="button" style="background: #6699CC; float: right" target="_blank" download="Vendors_systems.csv" id="download1"
+    = "Таблица систем"
+  table class="table table-hover" id="table_chart"
+    - sel_vendor_ids = []
+    - oth_cnt = 0
+    - oth_per = 0
+    tr
+      th = "Редакция"
+      / adding headers of csv
+      - @csv_arr[0] += "Редакция,"
+      - @csv_arr_per[0] += "Редакция,"
+      - @top50_vendors.each do |top50_vendor|
+        th = top50_vendor.name
+        / adding headers of csv
+        - @csv_arr[0] += top50_vendor.name + ","
+        - @csv_arr_per[0] += top50_vendor.name + ","
+        - sel_vendor_ids << top50_vendor.id
+        - chart_data_by_tp[top50_vendor.name] = []
+        - chart_data_by_per[top50_vendor.name] = []
+      th = "Прочие"
+      / adding headers of csv
+      - @csv_arr[0] += "Не указано/Прочие"
+      - @csv_arr_per[0] += "Не указано/Прочие"
+      - chart_data_by_tp["Прочие"] = []
+      - chart_data_by_per["Прочие"] = []
+    - @top50_slists.each do |top50_list|
+      / adding csv row
+      - csv_srting = ""
+      - csv_srting_per = ""
+      - sum_cnt = Top50Machine.all.joins(:top50_benchmark_results).merge(Top50BenchmarkResult.all.joins(:top50_benchmark).merge(Top50Benchmark.where(id: top50_list.id))).count
+      - all_per = (Top50Machine.all.joins(:top50_benchmark_results).merge(Top50BenchmarkResult.all.joins(:top50_benchmark).merge(Top50Benchmark.where(id: top50_list.id))).joins("join top50_benchmark_results br on br.machine_id = top50_benchmark_results.machine_id").where("br.benchmark_id = 27").sum("br.result") / 1000000.0).round(2)
+      tr
+        td class="fit"
+          - list_num = @num_vals.find_by(obj_id: top50_list.id)
+          - date_val = @date_vals.find_by(obj_id: top50_list.id)
+          - list_year = date_val.value.split(".")[2]
+          - list_month = date_val.value.split(".")[1]
+          - if list_num.present?
+            / adding csv row
+            - csv_srting += "#{list_num.value}#{8209.chr}я (#{date_val.value}),"
+            - csv_srting_per += "#{list_num.value}#{8209.chr}я (#{date_val.value}),"
+            = link_to "#{list_num.value}#{8209.chr}я (#{date_val.value})", get_archive_path(list_year, list_month)
+        - @top50_vendors.each_with_index do |top50_vendor, j|
+          td align="right" i=list_num.value j=j
+            - prec_vendor = @prec_vendors.find_by(sec_obj_id: top50_vendor.id)
+            - prec_vid = 0
+            - if prec_vendor.present?
+              - prec_vid = prec_vendor.prim_obj_id
+              - sel_vendor_ids << prec_vid
+            - c_cnt = Top50Machine.all.where("#{top50_vendor.id} = ANY(vendor_ids) or #{prec_vid} = ANY(vendor_ids) ").joins(:top50_benchmark_results).merge(Top50BenchmarkResult.all.joins(:top50_benchmark).merge(Top50Benchmark.where(id: top50_list.id))).count
+            - by_per = (Top50Machine.all.where("#{top50_vendor.id} = ANY(vendor_ids) or #{prec_vid} = ANY(vendor_ids) ").joins(:top50_benchmark_results).merge(Top50BenchmarkResult.all.joins(:top50_benchmark).merge(Top50Benchmark.where(id: top50_list.id))).joins("join top50_benchmark_results br on br.machine_id = top50_benchmark_results.machine_id").where("br.benchmark_id = 27").sum("br.result") / 1000000.0).round(2)
+            = link_to c_cnt, get_archive_vendor_path(list_year, list_month, top50_vendor.id)
+            - chart_data_by_tp[top50_vendor.name].unshift([date_val.value, c_cnt])
+            - chart_data_by_per[top50_vendor.name].unshift([date_val.value, by_per])
+            / adding csv row
+            - csv_srting += c_cnt.to_s + ","
+            - csv_srting_per += by_per.to_s + ","
+        - c_oth_cnt = Top50Machine.all.joins(:top50_benchmark_results).merge(Top50BenchmarkResult.all.joins(:top50_benchmark).merge(Top50Benchmark.where(id: top50_list.id))).joins("left join top50_vendors on top50_vendors.id = ANY(vendor_ids) and top50_vendors.id in (#{sel_vendor_ids.join(',')})").where("top50_vendors.id is null").count
+        - oth_by_per = (Top50Machine.all.joins(:top50_benchmark_results).merge(Top50BenchmarkResult.all.joins(:top50_benchmark).merge(Top50Benchmark.where(id: top50_list.id))).joins("left join top50_vendors on top50_vendors.id = ANY(vendor_ids) and top50_vendors.id in (#{sel_vendor_ids.join(',')})").where("top50_vendors.id is null").joins("join top50_benchmark_results br on br.machine_id = top50_benchmark_results.machine_id").where("br.benchmark_id = 27").sum("br.result") / 1000000.0).round(2)
+        - oth_cnt += c_oth_cnt
+        - oth_per += oth_by_per
+        td align="right" i=list_num.value j=@top50_vendors.length
+          = c_oth_cnt
+          - chart_data_by_tp["Прочие"].unshift([date_val.value, c_oth_cnt])
+          - chart_data_by_per["Прочие"].unshift([date_val.value, oth_by_per])
+          / adding csv row
+          - csv_srting += oth_by_per.to_s
+          - csv_srting_per += all_per.to_s
+          - @csv_arr.push(csv_srting)
+          - @csv_arr_per.push(csv_srting_per)
+    tr
+      th = "Итого"
+      - @top50_vendors.each do |top50_vendor|
+        th = top50_vendor.cnt
+        - sel_vendor_ids << top50_vendor.id
+      th = oth_cnt
+    tr
+      - @achart_data = []
+      - chart_data_by_tp.each_key do |key|
+        - @achart_data << {name: key, data: chart_data_by_tp[key]}
+      - @achart_data_per = []
+      - chart_data_by_per.each_key do |key|
+        - @achart_data_per << {name: key, data: chart_data_by_per[key]}
+      javascript:
+        var data = JSON.parse("#{@achart_data.to_json}".replace(/&quot;/g, '"'));
+        var data_per = JSON.parse("#{@achart_data_per.to_json}".replace(/&quot;/g, '"'));
+        var csv = JSON.parse("#{@csv_arr}".replace(/&quot;/g, '"')).join("\n");
+        var csv_per = JSON.parse("#{@csv_arr_per}".replace(/&quot;/g, '"')).join("\n");
+
+      coffee:
+        d3.selectAll("a").filter(() -> d3.select(this).attr("id") == "download1").attr("href", "data:attachment/csv," + csv)
+        d3.selectAll("a").filter(() -> d3.select(this).attr("id") == "download2").attr("href", "data:attachment/csv," + csv_per)
+        # COLORS:
+        #   HP
+        #   IBM
+        #   T-Platforms
+        #   RSK
+        #   Others
+        COLORS = ["#00BD86", "#335FBD", "#283C55", "#271D7A", "#AD2FAD"]
+        draw_area(data, data_per, "chart", "Разработчики систем", "Редакция (ММ.ГГ)", "Доля систем", COLORS)
+      /= area_chart @achart_data, max: 50, stacked: true, height: "500px"
+      br
+
+ 
+- elsif @stat_section == "vendors_rmax"
+  - chart_data_by_tp = {}
+  - chart_data_by_tp2 = {}
+  div id="chart"
+  table class="table table-hover"
+    tr
+      - sel_vendor_ids = []
+      th = "Редакция"
+      - @top50_vendors.each do |top50_vendor|
+        th = top50_vendor.name
+        - sel_vendor_ids << top50_vendor.id
+        - chart_data_by_tp[top50_vendor.name] = []
+        - chart_data_by_tp2[top50_vendor.name] = []
+      th = "Прочие"
+      - chart_data_by_tp["Прочие"] = []
+      - chart_data_by_tp2["Прочие"] = []
+      th = "Всего"
+    - @top50_slists.each do |top50_list|
+      - sum_rmax = Top50Machine.all.joins(:top50_benchmark_results).merge(Top50BenchmarkResult.all.joins(:top50_benchmark).merge(Top50Benchmark.where(id: top50_list.id))).joins("join top50_benchmark_results rmax_res on rmax_res.machine_id = top50_machines.id").joins("join top50_benchmarks lb on lb.id = rmax_res.benchmark_id and lb.name_eng = 'Linpack'").sum("rmax_res.result")
+      tr
+        td class="fit"
+          - list_num = @num_vals.find_by(obj_id: top50_list.id)
+          - date_val = @date_vals.find_by(obj_id: top50_list.id)
+          - list_year = date_val.value.split(".")[2]
+          - list_month = date_val.value.split(".")[1]
+          - if list_num.present?
+            = link_to "#{list_num.value}#{8209.chr}я (#{date_val.value})", get_archive_path(list_year, list_month)
+        - @top50_vendors.each do |top50_vendor|
+          td align="right" 
+            - prec_vendor = @prec_vendors.find_by(sec_obj_id: top50_vendor.id)
+            - prec_vid = 0
+            - if prec_vendor.present?
+              - prec_vid = prec_vendor.prim_obj_id
+              - sel_vendor_ids << prec_vid
+            - c_rmax = Top50Machine.all.where("#{top50_vendor.id} = ANY(vendor_ids) or #{prec_vid} = ANY(vendor_ids)").joins(:top50_benchmark_results).merge(Top50BenchmarkResult.all.joins(:top50_benchmark).merge(Top50Benchmark.where(id: top50_list.id))).joins("join top50_benchmark_results rmax_res on rmax_res.machine_id = top50_machines.id").joins("join top50_benchmarks lb on lb.id = rmax_res.benchmark_id and lb.name_eng = 'Linpack'").sum("rmax_res.result")
+            = (c_rmax / 1000000.0).round(2)
+            = " (#{(100 * c_rmax / sum_rmax).round(0)}%)"
+            - chart_data_by_tp[top50_vendor.name].unshift([date_val.value, (c_rmax / sum_rmax).round(2)]) 
+            - chart_data_by_tp2[top50_vendor.name].unshift([date_val.value, (c_rmax / 1000000.0).round(2)])
+        td align="right" 
+          - c_oth_rmax = Top50Machine.all.joins(:top50_benchmark_results).merge(Top50BenchmarkResult.all.joins(:top50_benchmark).merge(Top50Benchmark.where(id: top50_list.id))).joins("join top50_benchmark_results rmax_res on rmax_res.machine_id = top50_machines.id").joins("join top50_benchmarks lb on lb.id = rmax_res.benchmark_id and lb.name_eng = 'Linpack'").joins("left join top50_vendors on top50_vendors.id = ANY(vendor_ids) and top50_vendors.id in (#{sel_vendor_ids.join(',')})").where("top50_vendors.id is null").sum("rmax_res.result")
+          = (c_oth_rmax / 1000000.0).round(2)
+          = " (#{(100 * c_oth_rmax / sum_rmax).round(0)}%)"
+          - chart_data_by_tp["Прочие"].unshift([date_val.value, (c_oth_rmax / sum_rmax).round(2)])
+          - chart_data_by_tp2["Прочие"].unshift([date_val.value, (c_oth_rmax / 1000000.0).round(2)])
+        td align="right"
+          = (sum_rmax / 1000000.0).round(2)
+    tr
+      - @achart_data = []
+      - chart_data_by_tp2.each_key do |key|
+        - @achart_data << {name: key, data: chart_data_by_tp2[key]}
+      javascript:
+        var data = JSON.parse("#{@achart_data.to_json}".replace(/&quot;/g, '"'));
+
+      coffee:
+        # COLORS:
+        #   IBM
+        #   HP
+        #   T-Platforms
+        #   RSK
+        #   Others
+        COLORS = ["#335FBD", "#00BD86", "#283C55", "#271D7A", "#AD2FAD"]
+        draw_performance(data, "chart", "Суммарная производительность Rmax", "Редакция (ММ.ГГ)", "ПФлоп/с", COLORS)
+      /= line_chart @achart_data, height: "500px"
+      br
+- elsif @stat_section == "vendors_rpeak"
+  - chart_data_by_tp = {}
+  - chart_data_by_tp2 = {}
+  div id="chart"
+  table class="table table-hover"
+    tr
+      - sel_vendor_ids = []
+      th = "Редакция"
+      - @top50_vendors.each do |top50_vendor|
+        th = top50_vendor.name
+        - sel_vendor_ids << top50_vendor.id
+        - chart_data_by_tp[top50_vendor.name] = []
+        - chart_data_by_tp2[top50_vendor.name] = []
+      th = "Прочие"
+      - chart_data_by_tp["Прочие"] = []
+      - chart_data_by_tp2["Прочие"] = []
+      th = "Всего"
+    - @top50_slists.each do |top50_list|
+      - sum_rpeak = Top50Machine.all.joins(:top50_benchmark_results).merge(Top50BenchmarkResult.all.joins(:top50_benchmark).merge(Top50Benchmark.where(id: top50_list.id))).joins("join top50_attribute_val_dbvals rpeak_res on rpeak_res.obj_id = top50_machines.id").joins("join top50_attributes p on p.id = rpeak_res.attr_id and p.name_eng = 'Rpeak (MFlop/s)'").sum("cast(encode(rpeak_res.value, 'escape') as numeric)")
+      tr
+        td class="fit"
+          - list_num = @num_vals.find_by(obj_id: top50_list.id)
+          - date_val = @date_vals.find_by(obj_id: top50_list.id)
+          - list_year = date_val.value.split(".")[2]
+          - list_month = date_val.value.split(".")[1]
+          - if list_num.present?
+            = link_to "#{list_num.value}#{8209.chr}я (#{date_val.value})", get_archive_path(list_year, list_month)
+        - @top50_vendors.each do |top50_vendor|
+          td align="right" 
+            - prec_vendor = @prec_vendors.find_by(sec_obj_id: top50_vendor.id)
+            - prec_vid = 0
+            - if prec_vendor.present?
+              - prec_vid = prec_vendor.prim_obj_id
+              - sel_vendor_ids << prec_vid
+            - c_rpeak = Top50Machine.all.where("#{top50_vendor.id} = ANY(vendor_ids) or #{prec_vid} = ANY(vendor_ids)").joins(:top50_benchmark_results).merge(Top50BenchmarkResult.all.joins(:top50_benchmark).merge(Top50Benchmark.where(id: top50_list.id))).joins("join top50_attribute_val_dbvals rpeak_res on rpeak_res.obj_id = top50_machines.id").joins("join top50_attributes p on p.id = rpeak_res.attr_id and p.name_eng = 'Rpeak (MFlop/s)'").sum("cast(encode(rpeak_res.value, 'escape') as numeric)")
+            = (c_rpeak / 1000000.0).round(2)
+            = " (#{(100 * c_rpeak / sum_rpeak).round(0).to_i}%)"
+            - chart_data_by_tp[top50_vendor.name].unshift([date_val.value, (c_rpeak / sum_rpeak).round(2)]) 
+            - chart_data_by_tp2[top50_vendor.name].unshift([date_val.value, (c_rpeak / 1000000.0).round(2)])
+        td align="right" 
+          - c_oth_rpeak = Top50Machine.all.joins(:top50_benchmark_results).merge(Top50BenchmarkResult.all.joins(:top50_benchmark).merge(Top50Benchmark.where(id: top50_list.id))).joins("join top50_attribute_val_dbvals rpeak_res on rpeak_res.obj_id = top50_machines.id").joins("join top50_attributes p on p.id = rpeak_res.attr_id and p.name_eng = 'Rpeak (MFlop/s)'").joins("left join top50_vendors on top50_vendors.id = ANY(vendor_ids) and top50_vendors.id in (#{sel_vendor_ids.join(',')})").where("top50_vendors.id is null").sum("cast(encode(rpeak_res.value, 'escape') as numeric)")
+          = (c_oth_rpeak / 1000000.0).round(2)
+          = " (#{(100 * c_oth_rpeak / sum_rpeak).round(0).to_i}%)"
+          - chart_data_by_tp["Прочие"].unshift([date_val.value, (c_oth_rpeak / sum_rpeak).round(2)])
+          - chart_data_by_tp2["Прочие"].unshift([date_val.value, (c_oth_rpeak / 1000000.0).round(2)])
+        td align="right"
+          = (sum_rpeak / 1000000.0).round(2)
+    tr
+      - @achart_data = []
+      - chart_data_by_tp2.each_key do |key|
+        - @achart_data << {name: key, data: chart_data_by_tp2[key]}
+      javascript:
+        var data = JSON.parse("#{@achart_data.to_json}".replace(/&quot;/g, '"'));
+
+      coffee:
+        # COLORS:
+        #   IBM
+        #   HP
+        #   T-Platforms
+        #   RSK
+        #   Others
+        COLORS = ["#335FBD", "#00BD86", "#283C55", "#271D7A", "#AD2FAD"]
+        draw_performance(data, "chart", "Суммарная производительность Rpeak", "Редакция (ММ.ГГ)", "ПФлоп/с", COLORS)
+      /= line_chart achart_data, height: "500px"
+      br
+
+- elsif @stat_section == "vendors_int"          
+  - chart_data_by_tp = {}
+  div id="chart"
+  table class="table table-hover"
+    tr
+      - sel_vendor_ids = []
+      th = "Редакция"
+      - @top50_vendors.each do |top50_vendor|
+        th = top50_vendor.name
+        - sel_vendor_ids << top50_vendor.id
+        - chart_data_by_tp[top50_vendor.name] = []
+      th = "Прочие"
+      - chart_data_by_tp["Прочие"] = []
+    - @top50_slists.each do |top50_list|
+      tr
+        td class="fit"
+          - list_num = @num_vals.find_by(obj_id: top50_list.id)
+          - date_val = @date_vals.find_by(obj_id: top50_list.id)
+          - list_year = date_val.value.split(".")[2]
+          - list_month = date_val.value.split(".")[1]
+          - if list_num.present?
+            = link_to "#{list_num.value}#{8209.chr}я (#{date_val.value})", get_archive_path(list_year, list_month)
+        - @top50_vendors.each do |top50_vendor|
+          td align="right" 
+            - prec_vendor = @prec_vendors.find_by(sec_obj_id: top50_vendor.id)
+            - prec_vid = 0
+            - if prec_vendor.present?
+              - prec_vid = prec_vendor.prim_obj_id
+              - sel_vendor_ids << prec_vid
+            - c_ven_avg = Top50Machine.all.where("#{top50_vendor.id} = ANY(vendor_ids) or #{prec_vid} = ANY(vendor_ids)").joins(:top50_benchmark_results).merge(Top50BenchmarkResult.all.joins(:top50_benchmark).merge(Top50Benchmark.where(id: top50_list.id))).average("array_length(vendor_ids, 1)").to_f
+            - c_ven = Top50Machine.all.where("#{top50_vendor.id} = ANY(vendor_ids) or #{prec_vid} = ANY(vendor_ids)").joins(:top50_benchmark_results).merge(Top50BenchmarkResult.all.joins(:top50_benchmark).merge(Top50Benchmark.where(id: top50_list.id))).sum("array_length(vendor_ids, 1)")         
+            = c_ven
+            = " (#{number_with_precision(c_ven_avg, precision: 1, strip_insignificant_zeros: true)})"
+            - chart_data_by_tp[top50_vendor.name].unshift([date_val.value, c_ven]) 
+        td align="right" 
+          - c_oth_ven_avg = Top50Machine.all.joins(:top50_benchmark_results).merge(Top50BenchmarkResult.all.joins(:top50_benchmark).merge(Top50Benchmark.where(id: top50_list.id))).joins("left join top50_vendors on top50_vendors.id = ANY(vendor_ids) and top50_vendors.id in (#{sel_vendor_ids.join(',')})").where("top50_vendors.id is null").average("array_length(vendor_ids, 1)").to_f
+          - c_oth_ven = Top50Machine.all.joins(:top50_benchmark_results).merge(Top50BenchmarkResult.all.joins(:top50_benchmark).merge(Top50Benchmark.where(id: top50_list.id))).joins("left join top50_vendors on top50_vendors.id = ANY(vendor_ids) and top50_vendors.id in (#{sel_vendor_ids.join(',')})").where("top50_vendors.id is null").sum("array_length(vendor_ids, 1)")       
+          = c_oth_ven
+          = " (#{number_with_precision(c_oth_ven_avg, precision: 1, strip_insignificant_zeros: true)})"
+          - chart_data_by_tp["Прочие"].unshift([date_val.value, c_oth_ven])
+    tr
+      - @achart_data = []
+      - chart_data_by_tp.each_key do |key|
+        - @achart_data << {name: key, data: chart_data_by_tp[key]}
+      javascript:
+        var data = JSON.parse("#{@achart_data.to_json}".replace(/&quot;/g, '"'));
+
+      coffee:
+        # COLORS:
+        #   IBM
+        #   HP
+        #   T-Platforms
+        #   RSK
+        #   Others
+        COLORS = ["#335FBD", "#00BD86", "#283C55", "#271D7A", "#AD2FAD"]
+        draw_performance(data, "chart", "Количество интеграторов", "Редакция (ММ.ГГ)", "Количество интеграторов", COLORS)
+      /= line_chart @achart_data, height: "500px"
+      br
+        
+- elsif @stat_section == "vendors_cnt_rmax"
+  table class="table table-hover"
+    tr
+      - sel_vendor_ids = []
+      th = "Редакция"
+      - @top50_vendors.each do |top50_vendor|
+        th = top50_vendor.name
+        - sel_vendor_ids << top50_vendor.id
+      th = "Прочие"
+    - @top50_slists.each do |top50_list|
+      tr
+        td class="fit"
+          - list_num = @num_vals.find_by(obj_id: top50_list.id)
+          - date_val = @date_vals.find_by(obj_id: top50_list.id)
+          - list_year = date_val.value.split(".")[2]
+          - list_month = date_val.value.split(".")[1]
+          - if list_num.present?
+            = link_to "#{list_num.value}#{8209.chr}я (#{date_val.value})", get_archive_path(list_year, list_month)
+        - @top50_vendors.each do |top50_vendor|
+          td align="right" 
+            - prec_vendor = @prec_vendors.find_by(sec_obj_id: top50_vendor.id)
+            - prec_vid = 0
+            - if prec_vendor.present?
+              - prec_vid = prec_vendor.prim_obj_id
+              - sel_vendor_ids << prec_vid
+            = link_to Top50Machine.all.where("#{top50_vendor.id} = ANY(vendor_ids) or #{prec_vid} = ANY(vendor_ids)").joins(:top50_benchmark_results).merge(Top50BenchmarkResult.all.joins(:top50_benchmark).merge(Top50Benchmark.where(id: top50_list.id))).count, get_archive_vendor_path(list_year, list_month, top50_vendor.id)
+            = " ("
+            = (Top50Machine.all.where("#{top50_vendor.id} = ANY(vendor_ids) or #{prec_vid} = ANY(vendor_ids)").joins(:top50_benchmark_results).merge(Top50BenchmarkResult.all.joins(:top50_benchmark).merge(Top50Benchmark.where(id: top50_list.id))).joins("join top50_benchmark_results rmax_res on rmax_res.machine_id = top50_machines.id").joins("join top50_benchmarks lb on lb.id = rmax_res.benchmark_id and lb.name_eng = 'Linpack'").sum("rmax_res.result") / 1000000.0).round(2)
+            = ")"
+        td align="right" 
+          = Top50Machine.all.joins(:top50_benchmark_results).merge(Top50BenchmarkResult.all.joins(:top50_benchmark).merge(Top50Benchmark.where(id: top50_list.id))).joins("left join top50_vendors on top50_vendors.id = ANY(vendor_ids) and top50_vendors.id in (#{sel_vendor_ids.join(',')})").where("top50_vendors.id is null").count
+          = " ("
+          = (Top50Machine.all.joins(:top50_benchmark_results).merge(Top50BenchmarkResult.all.joins(:top50_benchmark).merge(Top50Benchmark.where(id: top50_list.id))).joins("join top50_benchmark_results rmax_res on rmax_res.machine_id = top50_machines.id").joins("join top50_benchmarks lb on lb.id = rmax_res.benchmark_id and lb.name_eng = 'Linpack'").joins("left join top50_vendors on top50_vendors.id = ANY(vendor_ids) and top50_vendors.id in (#{sel_vendor_ids.join(',')})").where("top50_vendors.id is null").sum("rmax_res.result") / 1000000.0).round(2)
+          = ")"
+
+- elsif @stat_section == "vendors_rmax_avg"
+  - chart_data_by_tp = {}
+  div id="chart"
+  table class="table table-hover"
+    tr
+      - sel_vendor_ids = []
+      th = "Редакция"
+      - @top50_vendors.each do |top50_vendor|
+        th = top50_vendor.name
+        - sel_vendor_ids << top50_vendor.id
+        - chart_data_by_tp[top50_vendor.name] = []
+      th = "Прочие"
+      - chart_data_by_tp["Прочие"] = []
+      th = "Прочие"
+      - chart_data_by_tp["По всему списку"] = []
+    - @top50_slists.each do |top50_list|
+      tr
+        td class="fit"
+          - list_num = @num_vals.find_by(obj_id: top50_list.id)
+          - date_val = @date_vals.find_by(obj_id: top50_list.id)
+          - list_year = date_val.value.split(".")[2]
+          - list_month = date_val.value.split(".")[1]
+          - if list_num.present?
+            = link_to "#{list_num.value}#{8209.chr}я (#{date_val.value})", get_archive_path(list_year, list_month)
+        - @top50_vendors.each do |top50_vendor|
+          td align="right" 
+            - prec_vendor = @prec_vendors.find_by(sec_obj_id: top50_vendor.id)
+            - prec_vid = 0
+            - if prec_vendor.present?
+              - prec_vid = prec_vendor.prim_obj_id
+              - sel_vendor_ids << prec_vid
+            - c_cnt = Top50Machine.all.where("#{top50_vendor.id} = ANY(vendor_ids) or #{prec_vid} = ANY(vendor_ids)").joins(:top50_benchmark_results).merge(Top50BenchmarkResult.all.joins(:top50_benchmark).merge(Top50Benchmark.where(id: top50_list.id))).count
+            = link_to c_cnt, get_archive_vendor_path(list_year, list_month, top50_vendor.id)
+            = " ("
+            - c_avg = (Top50Machine.all.where("#{top50_vendor.id} = ANY(vendor_ids) or #{prec_vid} = ANY(vendor_ids)").joins(:top50_benchmark_results).merge(Top50BenchmarkResult.all.joins(:top50_benchmark).merge(Top50Benchmark.where(id: top50_list.id))).joins("join top50_benchmark_results rmax_res on rmax_res.machine_id = top50_machines.id").joins("join top50_benchmarks lb on lb.id = rmax_res.benchmark_id and lb.name_eng = 'Linpack'").average("rmax_res.result").to_f / 1000000.0).round(2)
+            = c_avg
+            = ")"
+            - chart_data_by_tp[top50_vendor.name].unshift([date_val.value, c_avg])
+        td align="right"
+          - c_oth_cnt = Top50Machine.all.joins(:top50_benchmark_results).merge(Top50BenchmarkResult.all.joins(:top50_benchmark).merge(Top50Benchmark.where(id: top50_list.id))).joins("left join top50_vendors on top50_vendors.id = ANY(vendor_ids) and top50_vendors.id in (#{sel_vendor_ids.join(',')})").where("top50_vendors.id is null").count
+          = c_oth_cnt
+          = " ("
+          - c_oth_avg = (Top50Machine.all.joins(:top50_benchmark_results).merge(Top50BenchmarkResult.all.joins(:top50_benchmark).merge(Top50Benchmark.where(id: top50_list.id))).joins("join top50_benchmark_results rmax_res on rmax_res.machine_id = top50_machines.id").joins("join top50_benchmarks lb on lb.id = rmax_res.benchmark_id and lb.name_eng = 'Linpack'").joins("left join top50_vendors on top50_vendors.id = ANY(vendor_ids) and top50_vendors.id in (#{sel_vendor_ids.join(',')})").where("top50_vendors.id is null").average("rmax_res.result").to_f / 1000000.0).round(2)
+          = c_oth_avg
+          = ")"
+          - chart_data_by_tp["Прочие"].unshift([date_val.value, c_oth_avg])
+        td align="right"
+          - c_all_cnt = Top50BenchmarkResult.where(benchmark_id: top50_list.id).count
+          = c_all_cnt
+          = " ("
+          - c_all_avg = (Top50BenchmarkResult.where(benchmark_id: top50_list.id).joins("join top50_benchmark_results rmax_res on rmax_res.machine_id = top50_benchmark_results.machine_id").joins("join top50_benchmarks lb on lb.id = rmax_res.benchmark_id and lb.name_eng = 'Linpack'").average("rmax_res.result").to_f / 1000000.0).round(2)
+          = c_all_avg
+          = ")"
+          - chart_data_by_tp["По всему списку"].unshift([date_val.value, c_all_avg])
+    tr
+      - @achart_data = []
+      - chart_data_by_tp.each_key do |key|
+        - @achart_data << {name: key, data: chart_data_by_tp[key]}
+      javascript:
+        var data = JSON.parse("#{@achart_data.to_json}".replace(/&quot;/g, '"'));
+
+      coffee:
+        # COLORS:
+        #   IBM
+        #   HP
+        #   T-Platforms
+        #   RSK
+        #   Others
+        COLORS = ["#335FBD", "#00BD86", "#283C55", "#271D7A", "#AD2FAD"]
+        draw_performance(data, "chart", "Средняя производительность Rmax", "Редакция (ММ.ГГ)", "ПФлоп/с", COLORS)
+      /= line_chart achart_data, height: "500px"
+      br
+
+- elsif @stat_section == "type"
+  div id="chart_1"
+  - hlist_chart_data = {}
+  - hlist_dates = {}
+  - hlist_nums = {}
+  - chart_data_by_tp = {}
+  table class="table table-hover"
+    - sel_mtype_ids = []
+    - oth_cnt = 0
+    tr
+      th = "Редакция"
+      - @top50_mtypes.each do |top50_mtype|
+        th = top50_mtype.name
+        - sel_mtype_ids << top50_mtype.id
+        - chart_data_by_tp[top50_mtype.name] = []
+      th = ""
+    - @top50_slists.each do |top50_list|
+      - c_chart_data = []
+      - sum_cnt = Top50Machine.all.joins(:top50_benchmark_results).merge(Top50BenchmarkResult.all.joins(:top50_benchmark).merge(Top50Benchmark.where(id: top50_list.id))).count
+      tr
+        td class="fit"
+          - list_num = @num_vals.find_by(obj_id: top50_list.id)
+          - date_val = @date_vals.find_by(obj_id: top50_list.id)
+          - list_year = date_val.value.split(".")[2]
+          - list_month = date_val.value.split(".")[1]
+          - if list_num.present?
+            = link_to "#{list_num.value}#{8209.chr}я (#{date_val.value})", get_archive_path(list_year, list_month)
+        - @top50_mtypes.each do |top50_mtype|
+          td align="right" 
+            - c_cnt = Top50Machine.all.where("#{top50_mtype.id} = type_id").joins(:top50_benchmark_results).merge(Top50BenchmarkResult.all.joins(:top50_benchmark).merge(Top50Benchmark.where(id: top50_list.id))).count
+            = c_cnt
+            = " (#{100 * c_cnt / sum_cnt}%)"
+          - c_chart_data << [top50_mtype.name, c_cnt]
+          - chart_data_by_tp[top50_mtype.name].unshift([date_val.value, c_cnt])
+        - c_oth_cnt = Top50Machine.all.joins(:top50_benchmark_results).merge(Top50BenchmarkResult.all.joins(:top50_benchmark).merge(Top50Benchmark.where(id: top50_list.id))).joins("left join top50_machine_types on top50_machine_types.id = type_id and top50_machine_types.id in (#{sel_mtype_ids.join(',')})").where("top50_machine_types.id is null").count
+        - oth_cnt += c_oth_cnt
+        td align="right" 
+          = link_to "Диаграмма", get_ext_stats_path(list_year, list_month)
+      - hlist_chart_data[top50_list.id] = c_chart_data
+      - hlist_dates[top50_list.id] = date_val.value
+      - hlist_nums[top50_list.id] = list_num.value
+      
+    tr
+
+      - @achart_data = []
+      - chart_data_by_tp.each_key do |key|
+        - @achart_data << {name: key, data: chart_data_by_tp[key]}
+      javascript:
+        var data = JSON.parse("#{@achart_data.to_json}".replace(/&quot;/g, '"'));
+
+      coffee:
+        draw_type(data, "chart_1", "Типы систем", "Дата (ММ.ГГ)", "Количество систем")
+      /= area_chart achart_data, max: 50, stacked: true, height: "500px"
+  
+- else
+  div id="chart_1"
+  - chart_data_by_tp = {}
+  - chart_data_by_tp["Linpack (1-5)"] = []
+  - chart_data_by_tp["Linpack (1-50)"] = []
+  - chart_data_by_tp["Peak (1-5)"] = []
+  - chart_data_by_tp["Peak (1-50)"] = []
+  - @csv_string = ["Edition,Linpack (1-5),Linpack (1-50),Peak (1-5),Peak (1-50)"]
+
+  g id="table_control_chart_1"
+    div class="button" style="background: #6699CC; float: left" id=0
+      = "ПФлоп/с"
+    div class="button" style="background: gray; float: left" id=1
+      = "Процент от общей производительности"
+    div class="button" style="background: gray; float: left" id=2
+      = "Подсветка"
+  a class="button" style="background: #6699CC; float: right" target="_blank" download="Total_performance.csv" id="download1"
+    = "Скачать"
+  table class="table table-hover" id="table_chart_1"
+    tr
+      th = "Редакция"
+      th = "Linpack (1-5)"
+      th = "Linpack (1-50)"
+      th = "Peak (1-5)"
+      th = "Peak (1-50)"
+    - @top50_slists.each do |top50_list|
+      - top5_rmax = (Top50BenchmarkResult.where("top50_benchmark_results.benchmark_id = #{top50_list.id} and top50_benchmark_results.result <= 5").joins("join top50_benchmark_results br on br.machine_id = top50_benchmark_results.machine_id").where("br.benchmark_id = 27").sum("br.result") / 1000000.0).round(2)
+      - top50_rmax = (Top50BenchmarkResult.where("top50_benchmark_results.benchmark_id = #{top50_list.id}").joins("join top50_benchmark_results br on br.machine_id = top50_benchmark_results.machine_id").where("br.benchmark_id = 27").sum("br.result") / 1000000.0).round(2)
+      - top5_rpeak = (Top50BenchmarkResult.where("top50_benchmark_results.benchmark_id = #{top50_list.id} and top50_benchmark_results.result <= 5").joins("join top50_attribute_val_dbvals rpeak_res on rpeak_res.obj_id = top50_benchmark_results.machine_id").joins("join top50_attributes p on p.id = rpeak_res.attr_id and p.name_eng = 'Rpeak (MFlop/s)'").sum("cast(encode(rpeak_res.value, 'escape') as numeric)") / 1000000.0).round(2)
+      - top50_rpeak = (Top50BenchmarkResult.where("top50_benchmark_results.benchmark_id = #{top50_list.id}").joins("join top50_attribute_val_dbvals rpeak_res on rpeak_res.obj_id = top50_benchmark_results.machine_id").joins("join top50_attributes p on p.id = rpeak_res.attr_id and p.name_eng = 'Rpeak (MFlop/s)'").sum("cast(encode(rpeak_res.value, 'escape') as numeric)") / 1000000.0).round(2)
+      tr
+        td class="fit" 
+          - list_num = @num_vals.find_by(obj_id: top50_list.id)
+          - date_val = @date_vals.find_by(obj_id: top50_list.id)
+          - list_year = date_val.value.split(".")[2]
+          - list_month = date_val.value.split(".")[1]
+
+          - if list_num.present?
+            - @csv_string.push("#{list_num.value}я (#{date_val.value})," + top5_rmax.to_s + "," + top50_rmax.to_s + "," + top5_rpeak.to_s + "," + top50_rpeak.to_s)
+            = link_to "#{list_num.value}#{8209.chr}я (#{date_val.value})", get_archive_path(list_year, list_month)
+        td align="right" i=list_num.value j=0 value=top5_rmax title="Суммарная производительность топ 5 суперкомпьютеров на тесте Linpack"
+          = top5_rmax
+          - chart_data_by_tp["Linpack (1-5)"].unshift([date_val.value, top5_rmax])
+        td align="right" i=list_num.value j=1 value=top50_rmax title="Суммарная производительность на тесте Linpack"
+          = top50_rmax
+          - chart_data_by_tp["Linpack (1-50)"].unshift([date_val.value, top50_rmax])
+        td align="right" i=list_num.value j=2 value=top5_rpeak title="Суммарная производительность топ 5 суперкомпьютеров на тесте Peak"
+          = top5_rpeak
+          - chart_data_by_tp["Peak (1-5)"].unshift([date_val.value, top5_rpeak])
+        td align="right" i=list_num.value j=3 value=top50_rpeak title="Суммарная производительность на тесте Peak"
+          = top50_rpeak
+          - chart_data_by_tp["Peak (1-50)"].unshift([date_val.value, top50_rpeak])
+    
+    tr
+      - @achart_data = []
+      - chart_data_by_tp.each_key do |key|
+        - @achart_data << {name: key, data: chart_data_by_tp[key]}
+      javascript:
+        var data = JSON.parse("#{@achart_data.to_json}".replace(/&quot;/g, '"'));
+        var csv = JSON.parse("#{@csv_string}".replace(/&quot;/g, '"')).join("\n");
+
+      coffee:
+        d3.selectAll("a").filter(() -> d3.select(this).attr("id") == "download1").attr("href", "data:attachment/csv," + csv)
+        draw_performance(data, "chart_1", "Суммарная производительность (ПФлоп/с) 5 и 50 лучших систем в редакциях Top50", "Дата (ММ.ГГ)", "Производительность (ПФлоп/с)", d3.schemeSet1, true)
+      /= line_chart @achart_data, :title => "Суммарная производительность (ПФлоп/с) 5 и 50 лучших систем в редакциях Top50", height: "500px"
+      br
+
+    
+
+  div id="chart_2"
+  - chart_data_by_tp = {}
+  - (0..50).step(10).each do |i|
+    - ind = i
+    - if i == 0
+      - ind = 1
+    - chart_data_by_tp["##{ind}"] = []
+  - chart_data_by_tp["Средняя"] = []
+  - chart_data_by_tp["Медиана"] = []
+  - @csv_string = ["Редакция,№1,№10,№20,№30,№40,№50,Средняя,Медиана"]
+  a class="button" style="background: #6699CC; float: right" target="_blank" download="Different_performance.csv" id="download2"
+    = "Скачать"
+  table class="table table-hover" id="table_chart_2"
+    tr
+      th = "Edition"
+      - (0..50).step(10).each do |i|
+        - ind = i
+        - if i == 0
+          - ind = 1
+        th = "##{ind}"
+      th = "Средняя"
+      th = "Медиана"
+    - @top50_slists.each do |top50_list|
+      - arr_rmax = []
+      - (0..50).step(10).each do |i|
+        - ind = i
+        - if i == 0
+          - ind = 1
+        - arr_rmax.push((Top50BenchmarkResult.where("top50_benchmark_results.benchmark_id = #{top50_list.id} and top50_benchmark_results.result = #{ind}").joins("join top50_benchmark_results br on br.machine_id = top50_benchmark_results.machine_id").where("br.benchmark_id = 27").maximum("br.result") / 1000000.0).round(2))
+      - avg_rmax = (Top50BenchmarkResult.where("top50_benchmark_results.benchmark_id = #{top50_list.id}").joins("join top50_benchmark_results br on br.machine_id = top50_benchmark_results.machine_id").where("br.benchmark_id = 27").average("br.result") / 1000000.0).round(2)
+      - rmax_med = (Top50BenchmarkResult.where("top50_benchmark_results.benchmark_id = #{top50_list.id} and top50_benchmark_results.result = 25").joins("join top50_benchmark_results br on br.machine_id = top50_benchmark_results.machine_id").where("br.benchmark_id = 27").maximum("br.result") / 1000000.0).round(2)
+      tr
+        td class="fit"
+          - list_num = @num_vals.find_by(obj_id: top50_list.id)
+          - date_val = @date_vals.find_by(obj_id: top50_list.id)
+          - list_year = date_val.value.split(".")[2]
+          - list_month = date_val.value.split(".")[1]
+          - if list_num.present?
+            - @csv_string.push("#{list_num.value}-я (#{date_val.value})," + arr_rmax.join(","))
+            = link_to "#{list_num.value}#{8209.chr}я (#{date_val.value})", get_archive_path(list_year, list_month)
+        - (0..50).step(10).each do |i|
+          - ind = i
+          - if i == 0
+            - ind = 1
+            - chart_data_by_tp["##{ind}"].unshift([date_val.value, arr_rmax[0]])
+            td align="right"
+              = arr_rmax[0]
+          - else
+            - chart_data_by_tp["##{ind}"].unshift([date_val.value, arr_rmax[i / 10]])
+            td align="right"
+              = arr_rmax[i / 10]
+        td align="right"
+          = avg_rmax
+          - chart_data_by_tp["Средняя"].unshift([date_val.value, avg_rmax])
+        td align="right"
+          = rmax_med
+          - chart_data_by_tp["Медиана"].unshift([date_val.value, rmax_med])
+
+    tr
+
+      - @achart_data = []
+      - chart_data_by_tp.each_key do |key|
+        - @achart_data << {name: key, data: chart_data_by_tp[key]}
+      javascript:
+        var data = JSON.parse("#{@achart_data.to_json}".replace(/&quot;/g, '"'));
+        var csv = JSON.parse("#{@csv_string}".replace(/&quot;/g, '"')).join("\n");
+        var COLORS = d3.schemeOrRd[8].reverse()
+        COLORS.splice(6, 2, "#5181C0", "#19C457")
+        console.log(COLORS)
+
+      coffee:
+        d3.selectAll("a").filter(() -> d3.select(this).attr("id") == "download2").attr("href", "data:attachment/csv," + csv)
+        draw_performance(data, "chart_2", "Средняя производительность, медиана и производительность 1, 10, 20, 30, 40 и 50 систем рейтинга (ПФлоп/с)", "Дата (ММ.ГГ)", "Производительность (ПФлоп/с)", COLORS, true)
+      /= line_chart @achart_data, :title => "Максимальная, средняя и минимальная производительности систем (ПФлоп/с) в редакциях Top50", height: "800px", max: global_max
+      br
+
+  - if @top500_plane.present?
+    h3.mt-5 Поверхность производительности участников TOP500
+    #top500-3d-surface style="height: 700px; width: 100%; margin-bottom: 40px;"
+  - if @top500_heatmap.present?
+    h3.mt-5 Тепловая карта участия TOP500 (Дата × Позиция)
+    #top500-heatmap style="height: 500px; width: 100%; margin-bottom: 40px;"
+
+  javascript:
+    document.addEventListener("DOMContentLoaded", function () {
+      var z = #{raw @z_data.to_json};
+      var editions = #{raw @edition_labels.to_json};
+      var machines = #{raw @machine_names.to_json};
+      var statuses = #{raw @machine_status.to_json};
+      var machineIds = #{raw @machine_ids.to_json};
+      var ranks = Array.from({length: 50}, (_, i) => i + 1);
+
+      const editionStart = document.getElementById("edition-start");
+      const editionEnd = document.getElementById("edition-end");
+      const rankStart = document.getElementById("rank-start");
+      const rankEnd = document.getElementById("rank-end");
+
+      function reverseIndex(i, size) {
+        return size - 1 - i;
+      }
+
+      function updateEditionEndOptions() {
+        const startIdx = parseInt(editionStart.value);
+        for (let i = 0; i < editionEnd.options.length; i++) {
+          editionEnd.options[i].hidden = i < startIdx;
+        }
+        if (parseInt(editionEnd.value) < startIdx) {
+          editionEnd.value = startIdx;
+        }
+      }
+
+      function updateEditionStartOptions() {
+        const endIdx = parseInt(editionEnd.value);
+        for (let i = 0; i < editionStart.options.length; i++) {
+          editionStart.options[i].hidden = i > endIdx;
+        }
+        if (parseInt(editionStart.value) > endIdx) {
+          editionStart.value = endIdx;
+        }
+      }
+
+      function updateRankEndOptions() {
+        const startIdx = parseInt(rankStart.value);
+        for (let i = 0; i < rankEnd.options.length; i++) {
+          rankEnd.options[i].hidden = i < startIdx;
+        }
+        if (parseInt(rankEnd.value) < startIdx) {
+          rankEnd.value = startIdx;
+        }
+      }
+
+      function updateRankStartOptions() {
+        const endIdx = parseInt(rankEnd.value);
+        for (let i = 0; i < rankStart.options. length; i++) {
+          rankStart.options[i].hidden = i > endIdx;
+        }
+        if (parseInt(rankStart.value) > endIdx) {
+          rankStart.value = endIdx;
+        }
+      }
+
+      function updatePlot() {
+        updateEditionEndOptions();
+        updateEditionStartOptions();
+        updateRankEndOptions();
+        updateRankStartOptions();
+
+        const es_menu = parseInt(editionStart.value);
+        const ee_menu = parseInt(editionEnd.value);
+        const rs = parseInt(rankStart.value);
+        const re = parseInt(rankEnd.value);
+
+        const size = editions.length;
+        const es = reverseIndex(es_menu, size);
+        const ee = reverseIndex(ee_menu, size);
+        const start = Math.min(es, ee);
+        const end = Math.max(es, ee);
+
+        const newZ = z.slice(start, end + 1).map(row => row.slice(rs, re + 1));
+        const newMachines = machines.slice(start, end + 1).map(row => row.slice(rs, re + 1));
+        const newStatuses = statuses.slice(start, end + 1).map(row => row.slice(rs, re + 1));
+        const newIds = machineIds.slice(start, end + 1).map(row => row.slice(rs, re + 1));
+        const newEditions = editions.slice(start, end + 1);
+        const newRanks = ranks.slice(rs, re + 1);
+
+
+        var surface = {
+          z: newZ,
+          x: newRanks,
+          y: newEditions,
+          type: 'surface',
+          colorscale: [[0, 'lightgray'], [1, 'lightgray']],
+          opacity: 0.5,
+          showscale: false,
+          hoverinfo: 'skip'
+        };
+
+        var scatterTraces = {
+          new:     { x: [], y: [], z: [], text: [], ids: [], color: 'green',  name: 'Новые' },
+          upgrade: { x: [], y: [], z: [], text: [], ids: [], color: 'orange', name: 'Обновленные' }
+        };
+
+        for (let i = 0; i < newZ.length; i++) {
+          for (let j = 0; j < newZ[i].length; j++) {
+            let status = (newStatuses[i][j] || "existing").toLowerCase();
+            if (newMachines[i][j] !== "н/д" && scatterTraces[status]) {
+              let trace = scatterTraces[status];
+              trace.x.push(newRanks[j]);
+              trace.y.push(newEditions[i]);
+              trace.z.push(newZ[i][j]);
+              trace.text.push(newMachines[i][j]);
+              trace.ids.push(newIds[i][j]);
+            }
+          }
+        }
+
+        var data = [surface];
+        const isFirefox = navigator.userAgent.toLowerCase().includes('firefox');
+        const pointSize = isFirefox ? 4 : 6;
+
+        Object.entries(scatterTraces).forEach(([_, trace]) => {
+          data.push({
+            x: trace.x,
+            y: trace.y,
+            z: trace.z,
+            text: trace.text,
+            customdata: trace.ids,
+            mode: 'markers',
+            type: 'scatter3d',
+            name: trace.name,
+            legendgroup: trace.name,
+            showlegend: false,
+            marker: {
+              size: pointSize,
+              color: trace.color,
+              opacity: 0.95,
+              symbol: 'circle',
+              line: { width: 1, color: '#000' }
+            },
+            hovertemplate:
+              "<b>Система</b>: %{text}<br>" +
+              "<b>Rmax</b>: %{z:.2f} ТФлопс<br>" +
+              "<b>Позиция</b>: %{x}<br>" +
+              "<b>Редакция</b>: %{y}<extra></extra>"
+          });
+        });
+
+        Object.entries(scatterTraces).forEach(([_, trace]) => {
+          data.push({
+            x: [null], y: [null], z: [null],
+            type: 'scatter3d',
+            mode: 'markers',
+            marker: {
+              color: trace.color,
+              size: 10,
+              symbol: 'circle',
+              opacity: 1,
+              line: { width: 1, color: '#000000' }
+            },
+            name: trace.name,
+            legendgroup: trace.name,
+            showlegend: true
+          });
+        });
+
+        var layout = {
+          scene: {
+            xaxis: {
+              title: { text: 'Позиция', font: { size: 20 } },
+              tickmode: 'linear',
+              dtick: 10
+            },
+            yaxis: {
+              title: { text: 'Дата редакции', font: { size: 18 }, standoff: 20 },
+              tickmode: 'array',
+              tickvals: newEditions.filter((_, i) => i % 4 === 0),
+              ticktext: newEditions.filter((_, i) => i % 4 === 0).map(date => {
+                const parts = date.split('.');
+                return `${parts[1]}.${parts[2]}`;
+              }),
+              tickangle: -60,
+              automargin: true
+            },
+            zaxis: {
+              title: { text: 'Rmax (ТФлопс)', font: { size: 20 } },
+              type: 'log',
+              autorange: true
+            },
+            camera: { eye: { x: 1.25, y: 1.25, z: 1.25 } },
+            hovermode: 'closest',
+            hoverdistance: 20
+          },
+          margin: { l: 0, r: 0, b: 0, t: 0 },
+          legend: {
+            x: 0.85,
+            y: 0.95,
+            traceorder: "normal",
+            font: { size: 14 },
+            bgcolor: 'rgba(255,255,255,0.6)',
+            bordercolor: '#444',
+            borderwidth: 1
+          }
+        };
+
+        Plotly.react('plotly-3d', data, layout, { displayModeBar: false });
+      }
+
+      ["rank-start", "rank-end", "edition-start", "edition-end"].forEach(id => {
+        document.getElementById(id).addEventListener("change", updatePlot);
+      });
+
+      updatePlot();
+      var plot = document.getElementById('plotly-3d');
+      plot.on('plotly_click', function(eventData) {
+        var point = eventData.points?.[0];
+        var machineId = point?.customdata;
+        if (machineId) {
+          window.open("/systems/" + machineId, "_blank");
+        }
+      });
+    });
+    });

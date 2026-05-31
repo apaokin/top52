@@ -1,0 +1,47 @@
+- entry = local_assigns[:extratings_entry] || @extratings_entry
+
+= form_for(entry, remote: true) do |f|
+  - if entry.errors.any?
+    .alert.alert-danger
+      h4 = "#{pluralize(entry.errors.count, 'ошибка')}:"
+      ul
+        - entry.errors.full_messages.each do |msg|
+          li = msg
+
+  .form-row.mb-2
+    .form-group.col-md-6
+      = label_tag :current_position, "Текущая позиция"
+      = text_field_tag :current_position, entry.position, class: "form-control", disabled: true
+
+    .form-group.col-md-6
+      = f.label :position, "Новая позиция"
+      = f.number_field :position, class: "form-control", min: 1
+
+
+  .form-row.mb-2
+    .form-group.col-md-6
+        = label_tag :current_edition_number, "Текущая редакция"
+        = text_field_tag :current_edition_number, entry.extratings_edition&.edition_number, class: "form-control", disabled: true
+
+  .form-group.col-md-6
+    = f.fields_for :extratings_edition do |edition_fields|
+      = edition_fields.hidden_field :id
+      = edition_fields.label :edition_number, "Новая редакция"
+      = edition_fields.number_field :edition_number, class: "form-control", min: 1
+
+  .form-row.mb-2
+    .form-group.col-md-6
+        = label_tag :current_publication_date, "Текущий месяц публикации редакции"
+        = text_field_tag :current_publication_date, entry.extratings_edition&.publication_date, class: "form-control", disabled: true
+
+  .form-group.col-md-6
+    = f.fields_for :extratings_edition do |edition_fields|
+      = edition_fields.label :publication_date, "Новый месяц публикации редакции"
+      = edition_fields.text_field :publication_date, class: "form-control"
+
+
+  .form-actions
+    = f.submit "Сохранить", class: "btn btn-primary"
+    = link_to "Отмена", request.referer || extratings_entries_path, class: "btn btn-default", data: { dismiss: 'modal' }
+
+

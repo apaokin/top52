@@ -1,0 +1,907 @@
+- if @top500_2d_data.present?
+  h3.mt-5 Линии жизни участников Toп50 в рейтинге TOP500
+  #top500-2d-chart style="height: 600px; width: 100%; margin-bottom: 40px;"
+
+- if @top500_3d_data.present?
+  h3.mt-5 3D-визуализация линий жизни систем
+  #top500-3d-chart style="height: 700px; width: 100%; margin-bottom: 40px;"
+
+- if @top50_top500_histogram.present? && @top50_top500_histogram[:labels].present?
+  h3.mt-5 Доля обновлённых систем Top50 и вхождений в Top500
+  #top50-top500-hist style="height: 500px; width: 100%; margin-bottom: 40px;"
+
+- if @top50_top500_drop_chart.present? && @top50_top500_drop_chart.any?
+  h3.mt-5 Агрерированные линии жизни в рейтингах Топ50 и TOP500
+  #top50-top500-drop style="height: 600px; width: 100%; margin-bottom: 40px;"
+
+- if @top50_top500_candlestick.present? && @top50_top500_candlestick.any?
+  h3.mt-5 Японские свечи динамики позиций в TOP500
+  p.text-muted Тот же полугодовой график, но все подписи показаны на русском языке.
+  #top50-top500-candlestick-halfyear-ru style="height: 600px; width: 100%; margin-bottom: 40px;"
+
+- if @top50_top500_transition_matrix.present?
+  h3.mt-5 Марковские матрицы переходов между категориями позиций
+  p.text-muted Матрицы переходов с фильтрацией по временным периодам
+  .row.mb-3
+    .col-md-12
+      ul.nav.nav-tabs role="tablist"
+        li.nav-item
+          a.nav-link.active id="tab-last5years" data-toggle="tab" href="#content-last5years" role="tab" aria-controls="content-last5years" aria-selected="true"
+            | Последние 5 лет
+        li.nav-item
+          a.nav-link id="tab-2year-intervals" data-toggle="tab" href="#content-2year-intervals" role="tab" aria-controls="content-2year-intervals" aria-selected="false"
+            | Двухлетние интервалы
+        li.nav-item
+          a.nav-link id="tab-custom-period" data-toggle="tab" href="#content-custom-period" role="tab" aria-controls="content-custom-period" aria-selected="false"
+            | Произвольный период
+      .tab-content.mt-3
+        .tab-pane.fade.show.active id="content-last5years" role="tabpanel" aria-labelledby="tab-last5years" style="display: block;"
+          .transition-matrix-controls style="min-height: 140px;"
+            p.text-muted Матрица переходов за последние 5 лет (самые свежие данные)
+            .row.mb-2
+              .col-md-12
+                label
+                  input#show-probabilities-last5 type="radio" name="matrix-type-last5" value="probability" checked="checked"
+                  |  Показать вероятности (%)
+                label.ml-3
+                  input#show-counts-last5 type="radio" name="matrix-type-last5" value="count"
+                  |  Показать количество переходов
+          #top50-top500-transition-matrix-last5 style="height: 700px; width: 100%; margin-bottom: 40px;"
+        .tab-pane.fade id="content-2year-intervals" role="tabpanel" aria-labelledby="tab-2year-intervals" style="display: none;"
+          .transition-matrix-controls style="min-height: 140px;"
+            .row.mb-2.align-items-end
+              .col-md-6
+                label Выберите интервал (2 года):
+                select.form-control id="interval-selector"
+                  option value="" Выберите интервал...
+              .col-md-6
+                label
+                  input#show-probabilities-interval type="radio" name="matrix-type-interval" value="probability" checked="checked"
+                  |  Показать вероятности (%)
+                label.ml-3
+                  input#show-counts-interval type="radio" name="matrix-type-interval" value="count"
+                  |  Показать количество переходов
+          #top50-top500-transition-matrix-interval style="height: 700px; width: 100%; margin-bottom: 40px;"
+        .tab-pane.fade id="content-custom-period" role="tabpanel" aria-labelledby="tab-custom-period" style="display: none;"
+          .transition-matrix-controls style="min-height: 140px;"
+            .row.mb-3
+              .col-md-3
+                label Начало периода (год):
+                input.form-control type="number" id="custom-start-year" placeholder="Например: 2015"
+              .col-md-3
+                label Конец периода (год):
+                input.form-control type="number" id="custom-end-year" placeholder="Например: 2020"
+              .col-md-3
+                label style="display: block;" &nbsp;
+                button.btn.btn-primary id="apply-custom-period" Применить
+            .row.mb-2
+              .col-md-12
+                label
+                  input#show-probabilities-custom type="radio" name="matrix-type-custom" value="probability" checked="checked"
+                  |  Показать вероятности (%)
+                label.ml-3
+                  input#show-counts-custom type="radio" name="matrix-type-custom" value="count"
+                  |  Показать количество переходов
+          #top50-top500-transition-matrix-custom style="height: 700px; width: 100%; margin-bottom: 40px;"
+
+  #transition-details.modal.fade tabindex="-1" role="dialog" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1050;"
+    .modal-dialog.modal-lg role="document" style="position: relative; width: 90%; max-width: 900px; margin: 50px auto;"
+      .modal-content style="background: white; border-radius: 5px; box-shadow: 0 3px 9px rgba(0,0,0,0.5);"
+        .modal-header style="padding: 15px; border-bottom: 1px solid #e5e5e5;"
+          h5.modal-title Детали переходов
+          button.close type="button" onclick="var modal = document.getElementById('transition-details'); modal.style.display='none'; document.body.style.overflow=''; var backdrop = document.getElementById('transition-details-backdrop'); if(backdrop) backdrop.remove();" aria-label="Закрыть" style="float: right; font-size: 28px; font-weight: bold; background: none; border: none; cursor: pointer;"
+            span aria-hidden="true" ×
+        .modal-body style="padding: 15px; max-height: 500px; overflow-y: auto;"
+          #transition-details-content
+        .modal-footer style="padding: 15px; border-top: 1px solid #e5e5e5; text-align: right;"
+          button.btn.btn-secondary type="button" onclick="var modal = document.getElementById('transition-details'); modal.style.display='none'; document.body.style.overflow=''; var backdrop = document.getElementById('transition-details-backdrop'); if(backdrop) backdrop.remove();" Закрыть
+
+javascript:
+  document.addEventListener("DOMContentLoaded", function () {
+    // Surface interpolation and smoothing functions (used in multiple charts)
+    function interpolateSurface(z) {
+      var interpolated = z.map(function(row) {
+        return row.slice();
+      });
+
+      // First fill gaps with interpolation
+      for (var pass = 0; pass < 3; pass++) {
+        for (var i = 0; i < interpolated.length; i++) {
+          for (var j = 0; j < interpolated[i].length; j++) {
+            if (interpolated[i][j] === null || pass > 0) {
+              // Find nearest known values for interpolation
+              var neighbors = [];
+              var searchRadius = pass === 0 ? 5 : 3;
+              
+              for (var di = -searchRadius; di <= searchRadius; di++) {
+                for (var dj = -searchRadius; dj <= searchRadius; dj++) {
+                  if (di === 0 && dj === 0) continue;
+                  var ni = i + di;
+                  var nj = j + dj;
+                  if (ni >= 0 && ni < interpolated.length && nj >= 0 && nj < interpolated[i].length) {
+                    if (interpolated[ni][nj] !== null) {
+                      var dist = Math.sqrt(di * di + dj * dj);
+                      // Gaussian kernel for smoother interpolation
+                      var sigma = searchRadius / 2;
+                      var weight = Math.exp(-(dist * dist) / (2 * sigma * sigma));
+                      neighbors.push({ value: interpolated[ni][nj], weight: weight, dist: dist });
+                    }
+                  }
+                }
+              }
+
+              if (neighbors.length > 0) {
+                // Weighted interpolation with Gaussian kernel
+                var totalWeight = 0;
+                var weightedSum = 0;
+                
+                neighbors.forEach(function(n) {
+                  weightedSum += n.value * n.weight;
+                  totalWeight += n.weight;
+                });
+                
+                var newValue = weightedSum / totalWeight;
+                if (pass === 0 || Math.abs(newValue - interpolated[i][j]) < newValue * 0.1) {
+                  interpolated[i][j] = newValue;
+                }
+              } else if (pass === 0) {
+                // If no neighbors, use average across entire matrix
+                var allValues = [];
+                for (var ri = 0; ri < interpolated.length; ri++) {
+                  for (var rj = 0; rj < interpolated[ri].length; rj++) {
+                    if (interpolated[ri][rj] !== null) {
+                      allValues.push(interpolated[ri][rj]);
+                    }
+                  }
+                }
+                interpolated[i][j] = allValues.length > 0 
+                  ? allValues.reduce(function(a, b) { return a + b; }, 0) / allValues.length 
+                  : 0;
+              }
+            }
+          }
+        }
+      }
+
+      return interpolated;
+    }
+
+    // Gaussian smoothing function to eliminate peaks
+    function gaussianSmooth(z, iterations) {
+      iterations = iterations || 2;
+      var smoothed = z.map(function(row) {
+        return row.slice();
+      });
+
+  
+      var kernel = [
+        [0.0625, 0.125, 0.0625],
+        [0.125,  0.25,  0.125],
+        [0.0625, 0.125, 0.0625]
+      ];
+
+      for (var iter = 0; iter < iterations; iter++) {
+        var temp = smoothed.map(function(row) {
+          return row.slice();
+        });
+
+        for (var i = 1; i < smoothed.length - 1; i++) {
+          for (var j = 1; j < smoothed[i].length - 1; j++) {
+            var sum = 0;
+            var totalWeight = 0;
+
+            for (var ki = -1; ki <= 1; ki++) {
+              for (var kj = -1; kj <= 1; kj++) {
+                var ni = i + ki;
+                var nj = j + kj;
+                if (ni >= 0 && ni < smoothed.length && nj >= 0 && nj < smoothed[i].length) {
+                  var weight = kernel[ki + 1][kj + 1];
+                  sum += smoothed[ni][nj] * weight;
+                  totalWeight += weight;
+                }
+              }
+            }
+
+            temp[i][j] = sum / totalWeight;
+          }
+        }
+
+        smoothed = temp;
+      }
+
+      return smoothed;
+    }
+
+    var top500_2d_data = #{raw @top500_2d_data.to_json};
+    var top500_2d_container = document.getElementById('top500-2d-chart');
+
+    if (top500_2d_container && top500_2d_data && top500_2d_data.length > 0) {
+      var tickMap2d = {};
+      top500_2d_data.forEach(function(system) {
+        system.points.forEach(function(point) {
+          tickMap2d[point.x_value] = point.x_label;
+        });
+      });
+      var tickVals2d = Object.keys(tickMap2d).map(Number).sort(function(a, b) { return a - b; });
+      var tickText2d = tickVals2d.map(function(val) { return tickMap2d[val]; });
+
+      var traces_2d = top500_2d_data.map(function(system) {
+        return {
+          x: system.points.map(function(p) { return p.x_value; }),
+          y: system.points.map(function(p) { return p.y; }),
+          mode: 'lines+markers',
+          name: system.name,
+          text: system.points.map(function(p) { return p.label; }),
+          hoverinfo: 'text+name',
+          line: { width: 2, shape: 'spline', smoothing: 1.3 },
+          marker: { size: 6 }
+        };
+      });
+
+      var layout_2d = {
+        xaxis: {
+          title: 'Период публикации',
+          tickmode: 'array',
+          tickvals: tickVals2d,
+          ticktext: tickText2d,
+          nticks: tickVals2d.length,
+          showgrid: true,
+          zeroline: false
+        },
+        yaxis: {
+          title: 'Позиция в рейтинге',
+          autorange: 'reversed',
+          dtick: 50
+        },
+        hovermode: 'closest',
+        height: 600,
+        showlegend: true,
+        legend: {
+          orientation: 'h',
+          yanchor: 'top',
+          y: -0.2,
+          xanchor: 'center',
+          x: 0.5
+        },
+        margin: { l: 80, r: 20, t: 20, b: 120 }
+      };
+
+      Plotly.newPlot(top500_2d_container, traces_2d, layout_2d, { displayModeBar: false });
+    }
+
+    var top500_3d_data = #{raw @top500_3d_data.to_json};
+    var top500_3d_container = document.getElementById('top500-3d-chart');
+
+    if (top500_3d_container && top500_3d_data && top500_3d_data.length > 0) {
+      var traces_3d = top500_3d_data.map(function(system) {
+        return {
+          x: system.points.map(function(p) { return p.x; }),
+          y: system.points.map(function(p) { return p.y; }),
+          z: system.points.map(function(p) { return p.z; }),
+          mode: 'lines+markers',
+          type: 'scatter3d',
+          name: system.name,
+          text: system.points.map(function(p) { return p.tooltip; }),
+          hoverinfo: 'text',
+          line: { width: 4 },
+          marker: { size: 4 }
+        };
+      });
+
+      var tickMap3d = {};
+      top500_3d_data.forEach(function(system) {
+        system.points.forEach(function(point) {
+          if (tickMap3d[point.x] === undefined) {
+            tickMap3d[point.x] = point.x_label;
+          }
+        });
+      });
+
+      var tickVals3d = Object.keys(tickMap3d).map(Number).sort(function(a, b) { return a - b; });
+      var tickText3d = tickVals3d.map(function(value) { return tickMap3d[value]; });
+
+      var layout_3d = {
+        scene: {
+          xaxis: {
+            title: 'Период публикации',
+            tickvals: tickVals3d,
+            ticktext: tickText3d,
+            tickmode: 'array'
+          },
+          yaxis: {
+            title: 'Позиция в рейтинге',
+            autorange: 'reversed',
+            dtick: 50
+          },
+          zaxis: { title: 'Производительность (значение)' }
+        },
+        height: 700,
+        showlegend: true,
+        legend: {
+          orientation: 'h',
+          yanchor: 'top',
+          y: -0.2,
+          xanchor: 'center',
+          x: 0.5
+        },
+        margin: { l: 0, r: 0, t: 0, b: 80 }
+      };
+
+      Plotly.newPlot(top500_3d_container, traces_3d, layout_3d, { displayModeBar: false });
+    }
+
+    var histogramData = #{raw @top50_top500_histogram.to_json};
+    var histogramContainer = document.getElementById('top50-top500-hist');
+
+    if (histogramContainer && histogramData && histogramData.labels && histogramData.labels.length > 0) {
+      var updatedTrace = {
+        x: histogramData.labels,
+        y: histogramData.updated_percentages,
+        name: '% обновлённых систем Top50',
+        type: 'bar',
+        marker: { color: '#007bff' }
+      };
+
+      var top500Trace = {
+        x: histogramData.labels,
+        y: histogramData.top500_percentages,
+        name: '% систем Top50 в Top500',
+        type: 'bar',
+        marker: { color: '#28a745' }
+      };
+
+      var histogramLayout = {
+        barmode: 'group',
+        xaxis: { title: 'Выпуск' },
+        yaxis: {
+          title: 'Доля систем, %',
+          range: [0, 100]
+        },
+        margin: { l: 70, r: 20, t: 40, b: 80 },
+        legend: {
+          orientation: 'h',
+          yanchor: 'top',
+          y: -0.2,
+          xanchor: 'center',
+          x: 0.5
+        }
+      };
+
+      Plotly.newPlot(histogramContainer, [updatedTrace, top500Trace], histogramLayout, { displayModeBar: false });
+    }
+
+    var dropData = #{raw @top50_top500_drop_chart.to_json};
+    var dropAxis = #{raw @top50_top500_drop_axis.to_json};
+    var dropContainer = document.getElementById('top50-top500-drop');
+
+    if (dropContainer && dropData && dropData.length > 0) {
+      var dropTraces = [];
+
+      dropData.forEach(function(series) {
+        dropTraces.push({
+          x: series.x,
+          y: series.y,
+          mode: 'lines+markers',
+          name: series.name,
+          text: series.hover,
+          hoverinfo: 'text',
+          line: { width: 2 },
+          marker: { size: 4 }
+        });
+
+        if (series.top50_y && series.top50_y.some(function(val) { return val !== null; })) {
+          dropTraces.push({
+            x: series.x,
+            y: series.top50_y,
+            mode: 'lines+markers',
+            name: series.name + ' (Top50)',
+            text: series.top50_hover,
+            hoverinfo: 'text',
+            line: { width: 2, dash: 'dash', color: '#ff7f0e' },
+            marker: { size: 4, symbol: 'diamond', color: '#ff7f0e' },
+            yaxis: 'y2'
+          });
+        }
+      });
+
+      var dropLayout = {
+        xaxis: {
+          title: 'Период публикации',
+          tickvals: dropAxis && dropAxis.tickvals ? dropAxis.tickvals : undefined,
+          ticktext: dropAxis && dropAxis.ticktext ? dropAxis.ticktext : undefined
+        },
+        yaxis: {
+          title: 'Позиция в Top500',
+          autorange: 'reversed'
+        },
+        yaxis2: {
+          title: 'Позиция в Top50',
+          autorange: 'reversed',
+          overlaying: 'y',
+          side: 'right',
+          range: [50, 1]
+        },
+        hovermode: 'closest',
+        height: 600,
+        showlegend: true,
+        legend: {
+          orientation: 'h',
+          yanchor: 'top',
+          y: -0.2,
+          xanchor: 'center',
+          x: 0.5
+        },
+        margin: { l: 80, r: 20, t: 40, b: 80 }
+      };
+
+      Plotly.newPlot(dropContainer, dropTraces, dropLayout, { displayModeBar: false });
+    }
+
+
+    var candlestickHalfYearRuData = #{raw @top50_top500_candlestick.to_json};
+    var candlestickHalfYearRuContainer = document.getElementById('top50-top500-candlestick-halfyear-ru');
+
+    if (candlestickHalfYearRuContainer && candlestickHalfYearRuData && candlestickHalfYearRuData.length > 0) {
+      candlestickHalfYearRuData.sort(function(a, b) {
+        return (a.period_numeric || 0) - (b.period_numeric || 0);
+      });
+
+      var halfYearRuData = candlestickHalfYearRuData.filter(function(c) { return c.period_type === 'quarter'; });
+      var halfYearRuYearData = candlestickHalfYearRuData.filter(function(c) { return c.period_type === 'year'; });
+      var halfYearRuTraces = [];
+
+      if (halfYearRuData.length > 0) {
+        var halfYearRuPeriods = halfYearRuData.map(function(c) { return c.x; });
+        var halfYearRuOpen = halfYearRuData.map(function(c) { return c.open; });
+        var halfYearRuHigh = halfYearRuData.map(function(c) { return c.high; });
+        var halfYearRuLow = halfYearRuData.map(function(c) { return c.low; });
+        var halfYearRuClose = halfYearRuData.map(function(c) { return c.close; });
+
+        var halfYearRuHoverTexts = halfYearRuData.map(function(c) {
+          var systemsList = c.systems && c.systems.length > 0
+            ? '<br>Системы: ' + c.systems.slice(0, 3).join(', ') + (c.systems.length > 3 ? '...' : '')
+            : '';
+          return '<b>' + c.x + '</b> (полугодие)' +
+                 '<br>Открытие: позиция ' + c.open +
+                 '<br>Закрытие: позиция ' + c.close +
+                 '<br>Лучшая позиция: ' + c.high +
+                 '<br>Худшая позиция: ' + c.low +
+                 '<br>Количество систем: ' + c.systems_count +
+                 systemsList;
+        });
+
+        halfYearRuTraces.push({
+          type: 'candlestick',
+          x: halfYearRuPeriods,
+          open: halfYearRuOpen,
+          high: halfYearRuHigh,
+          low: halfYearRuLow,
+          close: halfYearRuClose,
+          increasing: { line: { color: '#26a69a', width: 2 }, fillcolor: '#26a69a' },
+          decreasing: { line: { color: '#ef5350', width: 2 }, fillcolor: '#ef5350' },
+          text: halfYearRuHoverTexts,
+          hoverinfo: 'text',
+          name: 'Полугодовые позиции в Top500',
+          xaxis: 'x',
+          yaxis: 'y'
+        });
+      }
+
+      if (halfYearRuYearData.length > 0) {
+        var halfYearRuYearPeriods = halfYearRuYearData.map(function(c) { return c.x; });
+        var halfYearRuYearOpen = halfYearRuYearData.map(function(c) { return c.open; });
+        var halfYearRuYearHigh = halfYearRuYearData.map(function(c) { return c.high; });
+        var halfYearRuYearLow = halfYearRuYearData.map(function(c) { return c.low; });
+        var halfYearRuYearClose = halfYearRuYearData.map(function(c) { return c.close; });
+
+        var halfYearRuYearHoverTexts = halfYearRuYearData.map(function(c) {
+          var systemsList = c.systems && c.systems.length > 0
+            ? '<br>Системы: ' + c.systems.slice(0, 5).join(', ') + (c.systems.length > 5 ? '...' : '')
+            : '';
+          return '<b>' + c.x + '</b> (год)' +
+                 '<br>Открытие (первое полугодие): позиция ' + c.open +
+                 '<br>Закрытие (второе полугодие): позиция ' + c.close +
+                 '<br>Лучшая позиция за год: ' + c.high +
+                 '<br>Худшая позиция за год: ' + c.low +
+                 '<br>Количество систем: ' + c.systems_count +
+                 systemsList;
+        });
+
+        halfYearRuTraces.push({
+          type: 'candlestick',
+          x: halfYearRuYearPeriods,
+          open: halfYearRuYearOpen,
+          high: halfYearRuYearHigh,
+          low: halfYearRuYearLow,
+          close: halfYearRuYearClose,
+          increasing: { line: { color: '#1976d2', width: 3 }, fillcolor: '#1976d2' },
+          decreasing: { line: { color: '#d32f2f', width: 3 }, fillcolor: '#d32f2f' },
+          text: halfYearRuYearHoverTexts,
+          hoverinfo: 'text',
+          name: 'Годовые позиции в Top500',
+          xaxis: 'x',
+          yaxis: 'y'
+        });
+      }
+
+      var halfYearRuCandlestickLayout = {
+        title: {
+          text: 'Волатильность позиций систем Top50 в рейтинге Top500 по полугодиям',
+          font: { size: 18, color: '#333' },
+          x: 0.5,
+          xanchor: 'center'
+        },
+        xaxis: {
+          title: {
+            text: 'Период',
+            font: { size: 14 }
+          },
+          type: 'category',
+          tickangle: -45,
+          showgrid: true,
+          gridcolor: 'rgba(128, 128, 128, 0.2)'
+        },
+        yaxis: {
+          title: {
+            text: 'Позиция в Top500 (1 = лучшая)',
+            font: { size: 14 }
+          },
+          autorange: 'reversed',
+          dtick: 50,
+          showgrid: true,
+          gridcolor: 'rgba(128, 128, 128, 0.2)'
+        },
+        hovermode: 'closest',
+        height: 600,
+        margin: { l: 80, r: 40, t: 100, b: 140 },
+        showlegend: true,
+        legend: {
+          orientation: 'h',
+          yanchor: 'bottom',
+          y: 1.02,
+          xanchor: 'right',
+          x: 1,
+          font: { size: 12 }
+        },
+        plot_bgcolor: 'rgba(250, 250, 250, 0.8)',
+        paper_bgcolor: 'white'
+      };
+
+      Plotly.newPlot(candlestickHalfYearRuContainer, halfYearRuTraces, halfYearRuCandlestickLayout, {
+        displayModeBar: true,
+        modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d'],
+        responsive: true
+      });
+    }
+
+    var transitionMatrixData = #{raw @top50_top500_transition_matrix.to_json};
+
+    if (transitionMatrixData) {
+      function formatTransitionDetails(fromCat, toCat) {
+        var details = transitionMatrixData.transition_details[fromCat] && transitionMatrixData.transition_details[fromCat][toCat] ? transitionMatrixData.transition_details[fromCat][toCat] : [];
+        if (details.length === 0) return '<p>Нет данных о переходах</p>';
+        
+        var html = '<div style="max-height: 400px; overflow-y: auto;">';
+        html += '<table style="width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 10px;">';
+        html += '<thead><tr style="background-color: #f5f5f5; border-bottom: 2px solid #ddd;">';
+        html += '<th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Система</th>';
+        html += '<th style="padding: 8px; text-align: center; border: 1px solid #ddd;">Из позиции</th>';
+        html += '<th style="padding: 8px; text-align: center; border: 1px solid #ddd;">В позицию</th>';
+        html += '<th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Период</th>';
+        html += '</tr></thead><tbody>';
+        
+        details.forEach(function(detail, index) {
+          var rowStyle = index % 2 === 0 ? 'background-color: #f9f9f9;' : 'background-color: white;';
+          html += '<tr style="' + rowStyle + '">';
+          html += '<td style="padding: 6px; border: 1px solid #ddd;">' + (detail.system || 'н/д') + '</td>';
+          html += '<td style="padding: 6px; text-align: center; border: 1px solid #ddd;">' + detail.from_position + '</td>';
+          html += '<td style="padding: 6px; text-align: center; border: 1px solid #ddd;">' + detail.to_position + '</td>';
+          html += '<td style="padding: 6px; border: 1px solid #ddd;">' + detail.from_slot + ' → ' + detail.to_slot + '</td>';
+          html += '</tr>';
+        });
+        
+        html += '</tbody></table></div>';
+        return html;
+      }
+
+      // Extended version of transition matrix with filtering by time periods
+      var transitionMatrixDataExtended = #{raw @top50_top500_transition_matrix.to_json};
+      if (transitionMatrixDataExtended && transitionMatrixDataExtended.all_transitions) {
+        var allTransitions = transitionMatrixDataExtended.all_transitions || [];
+        var categoriesExtended = transitionMatrixDataExtended.categories || [];
+        var minYear = transitionMatrixDataExtended.min_year || new Date().getFullYear() - 5;
+        var maxYear = transitionMatrixDataExtended.max_year || new Date().getFullYear();
+
+        // Function to build transition matrix for specified period
+        function buildMatrixForPeriod(startYear, endYear, containerId, showProbabilitiesId, showCountsId) {
+          var container = document.getElementById(containerId);
+          if (!container) return;
+
+          // Filter transitions by period
+          var filteredTransitions = allTransitions.filter(function(t) {
+            return t.year >= startYear && t.year <= endYear;
+          });
+
+          if (filteredTransitions.length === 0) {
+            container.innerHTML = '<p class="text-muted">Нет данных за выбранный период</p>';
+            return;
+          }
+
+          // Build transition matrix
+          var transitionCounts = {};
+          var transitionDetails = {};
+
+          categoriesExtended.forEach(function(fromCat) {
+            transitionCounts[fromCat] = {};
+            transitionDetails[fromCat] = {};
+            categoriesExtended.forEach(function(toCat) {
+              transitionCounts[fromCat][toCat] = 0;
+              transitionDetails[fromCat][toCat] = [];
+            });
+          });
+
+          filteredTransitions.forEach(function(t) {
+            if (t.from && t.to) {
+              transitionCounts[t.from][t.to] += 1;
+              transitionDetails[t.from][t.to].push({
+                system: t.system || 'н/д',
+                from_position: t.from_position,
+                to_position: t.to_position,
+                from_slot: t.from_slot,
+                to_slot: t.to_slot
+              });
+            }
+          });
+
+          // Calculate probabilities
+          var probabilityMatrix = [];
+          var countMatrix = [];
+
+          categoriesExtended.forEach(function(fromCat) {
+            var probRow = [];
+            var countRow = [];
+            var totalFrom = Object.values(transitionCounts[fromCat]).reduce(function(a, b) { return a + b; }, 0);
+
+            categoriesExtended.forEach(function(toCat) {
+              var count = transitionCounts[fromCat][toCat];
+              countRow.push(count);
+              var probability = totalFrom > 0 ? (count / totalFrom * 100).toFixed(2) : 0;
+              probRow.push(parseFloat(probability));
+            });
+
+            probabilityMatrix.push(probRow);
+            countMatrix.push(countRow);
+          });
+
+          // Function to update matrix display
+          function updateMatrixDisplay(showProbs) {
+            var matrix = showProbs ? probabilityMatrix : countMatrix;
+            var title = showProbs ? 'Вероятности переходов (%)' : 'Количество переходов';
+            var colorscale = showProbs 
+              ? [[0, '#ffffff'], [0.1, '#e3f2fd'], [0.3, '#90caf9'], [0.5, '#42a5f5'], [0.7, '#1e88e5'], [1, '#1565c0']]
+              : [[0, '#ffffff'], [0.1, '#fff3e0'], [0.3, '#ffb74d'], [0.5, '#ff9800'], [0.7, '#f57c00'], [1, '#e65100']];
+
+            var hoverTexts = [];
+            for (var i = 0; i < categoriesExtended.length; i++) {
+              var row = [];
+              for (var j = 0; j < categoriesExtended.length; j++) {
+                var fromCat = categoriesExtended[i];
+                var toCat = categoriesExtended[j];
+                var value = matrix[i][j];
+                var details = transitionDetails[fromCat][toCat] || [];
+                
+                var hoverText = '<b>Из:</b> ' + fromCat + '<br><b>В:</b> ' + toCat + '<br>';
+                if (showProbs) {
+                  hoverText += '<b>Вероятность:</b> ' + value.toFixed(1) + '%<br>';
+                } else {
+                  hoverText += '<b>Количество:</b> ' + value + '<br>';
+                }
+                
+                if (details.length > 0) {
+                  hoverText += '<b>Переходов:</b> ' + details.length + '<br>';
+                }
+                
+                row.push(hoverText);
+              }
+              hoverTexts.push(row);
+            }
+
+            var heatmapTrace = {
+              z: matrix,
+              x: categoriesExtended,
+              y: categoriesExtended,
+              type: 'heatmap',
+              colorscale: colorscale,
+              showscale: true,
+              colorbar: {
+                title: showProbs ? 'Вероятность, %' : 'Количество',
+                titleside: 'right',
+                titlefont: { size: 12 }
+              },
+              text: matrix.map(function(row) {
+                return row.map(function(val) {
+                  return showProbs ? val.toFixed(1) + '%' : val.toString();
+                });
+              }),
+              texttemplate: '%{text}',
+              textfont: { size: 10, color: '#000' },
+              customdata: hoverTexts,
+              hoverinfo: 'text',
+              hovertemplate: '%{customdata}<extra></extra>'
+            };
+
+            var layout = {
+              title: {
+                text: title + ' (' + startYear + '-' + endYear + ')',
+                font: { size: 18, color: '#333' },
+                x: 0.5,
+                xanchor: 'center'
+              },
+              xaxis: {
+                title: { text: 'Целевая категория', font: { size: 14 } },
+                side: 'bottom',
+                tickangle: -45
+              },
+              yaxis: {
+                title: { text: 'Исходная категория', font: { size: 14 } },
+                autorange: 'reversed'
+              },
+              height: 700,
+              margin: { l: 120, r: 50, t: 100, b: 150 },
+              annotations: []
+            };
+
+            // Add annotations with numbers
+            for (var i = 0; i < categoriesExtended.length; i++) {
+              for (var j = 0; j < categoriesExtended.length; j++) {
+                var value = matrix[i][j];
+                if (value > 0) {
+                  var text = showProbs ? value.toFixed(1) + '%' : value.toString();
+                  layout.annotations.push({
+                    x: categoriesExtended[j],
+                    y: categoriesExtended[i],
+                    text: text,
+                    showarrow: false,
+                    font: { 
+                      color: value > (showProbs ? 30 : 5) ? '#fff' : '#000',
+                      size: 10
+                    }
+                  });
+                }
+              }
+            }
+
+            Plotly.react(container, [heatmapTrace], layout, { 
+              displayModeBar: true,
+              modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d'],
+              responsive: true
+            });
+          }
+
+          // Initialize display
+          var showProbsRadio = document.getElementById(showProbabilitiesId);
+          var showCountsRadio = document.getElementById(showCountsId);
+          var currentShowProbs = showProbsRadio && showProbsRadio.checked;
+
+          if (showProbsRadio && showCountsRadio) {
+            showProbsRadio.addEventListener('change', function() {
+              if (this.checked) updateMatrixDisplay(true);
+            });
+            showCountsRadio.addEventListener('change', function() {
+              if (this.checked) updateMatrixDisplay(false);
+            });
+          }
+
+          updateMatrixDisplay(currentShowProbs !== false);
+        }
+
+        // Tab 1: Last 5 years
+        var last5Container = document.getElementById('top50-top500-transition-matrix-last5');
+        if (last5Container) {
+          var last5EndYear = maxYear;
+          var last5StartYear = Math.max(minYear, last5EndYear - 4); // Last 5 years including current
+          buildMatrixForPeriod(last5StartYear, last5EndYear, 'top50-top500-transition-matrix-last5', 'show-probabilities-last5', 'show-counts-last5');
+        }
+
+        // Tab 2: 2-year intervals
+        var intervalContainer = document.getElementById('top50-top500-transition-matrix-interval');
+        var intervalSelector = document.getElementById('interval-selector');
+        
+        if (intervalSelector && intervalContainer) {
+          // Generate options for 2-year intervals
+          var intervals = [];
+          for (var year = minYear; year <= maxYear - 1; year += 1) {
+            var endYear = Math.min(year + 1, maxYear);
+            intervals.push({ start: year, end: endYear, label: year + '-' + endYear });
+          }
+
+          intervals.forEach(function(interval) {
+            var option = document.createElement('option');
+            option.value = interval.start + '-' + interval.end;
+            option.textContent = interval.label;
+            intervalSelector.appendChild(option);
+          });
+
+          // Change handler for interval
+          intervalSelector.addEventListener('change', function() {
+            if (this.value) {
+              var parts = this.value.split('-');
+              var startYear = parseInt(parts[0]);
+              var endYear = parseInt(parts[1]);
+              buildMatrixForPeriod(startYear, endYear, 'top50-top500-transition-matrix-interval', 'show-probabilities-interval', 'show-counts-interval');
+            }
+          });
+
+          // Set first interval by default
+          if (intervals.length > 0) {
+            intervalSelector.value = intervals[0].start + '-' + intervals[0].end;
+            intervalSelector.dispatchEvent(new Event('change'));
+          }
+        }
+
+        // Tab 3: Custom period
+        var customContainer = document.getElementById('top50-top500-transition-matrix-custom');
+        var customStartYear = document.getElementById('custom-start-year');
+        var customEndYear = document.getElementById('custom-end-year');
+        var applyCustomBtn = document.getElementById('apply-custom-period');
+
+        if (applyCustomBtn && customStartYear && customEndYear && customContainer) {
+          // Set default values
+          customStartYear.value = minYear;
+          customEndYear.value = maxYear;
+
+          applyCustomBtn.addEventListener('click', function() {
+            var startYear = parseInt(customStartYear.value);
+            var endYear = parseInt(customEndYear.value);
+
+            if (isNaN(startYear) || isNaN(endYear)) {
+              alert('Пожалуйста, введите корректные годы');
+              return;
+            }
+
+            if (startYear > endYear) {
+              alert('Начальный год не может быть больше конечного');
+              return;
+            }
+
+            if (startYear < minYear || endYear > maxYear) {
+              alert('Период должен быть в диапазоне ' + minYear + '-' + maxYear);
+              return;
+            }
+
+            buildMatrixForPeriod(startYear, endYear, 'top50-top500-transition-matrix-custom', 'show-probabilities-custom', 'show-counts-custom');
+          });
+        }
+        var transitionMatrixTabs = [
+          { tabId: 'tab-last5years', paneId: 'content-last5years' },
+          { tabId: 'tab-2year-intervals', paneId: 'content-2year-intervals' },
+          { tabId: 'tab-custom-period', paneId: 'content-custom-period' }
+        ];
+
+        transitionMatrixTabs.forEach(function(tabConfig) {
+          var tab = document.getElementById(tabConfig.tabId);
+          if (!tab) return;
+
+          tab.addEventListener('click', function(event) {
+            event.preventDefault();
+
+            transitionMatrixTabs.forEach(function(config) {
+              var currentTab = document.getElementById(config.tabId);
+              var currentPane = document.getElementById(config.paneId);
+              if (!currentTab || !currentPane) return;
+
+              var isActive = config.tabId === tabConfig.tabId;
+
+              currentTab.classList.toggle('active', isActive);
+              currentTab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+              currentPane.classList.toggle('show', isActive);
+              currentPane.classList.toggle('active', isActive);
+              currentPane.style.display = isActive ? 'block' : 'none';
+            });
+          });
+        });
+      }
+
+    }
+  });
+

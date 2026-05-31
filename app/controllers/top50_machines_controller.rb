@@ -1,4 +1,5 @@
 # encoding: UTF-8
+require 'matrix'
 class Top50MachinesController < Top50BaseController
   require_dependency "stats/percent"
   require_dependency "stats/lineage"
@@ -27,8 +28,8 @@ class Top50MachinesController < Top50BaseController
     "Финансы",
     "Seismic Processing"
   ].freeze
-  skip_before_filter :require_login, only: [:list, :get_archive, :get_archive_by_vendor, :get_archive_by_org, :get_archive_by_city, :get_archive_by_country, :get_archive_by_vendor_excl, :get_archive_by_comp, :get_archive_by_comp_attrd, :get_archive_by_attr_dict, :archive, :archive_lists, :archive_by_vendor, :archive_by_org, :archive_by_city, :archive_by_country, :archive_by_vendor_excl, :archive_by_comp, :archive_by_comp_attrd, :archive_by_attr_dict, :show, :stats, :get_ext_stats, :ext_stats, :get_stats_per_list, :stats_per_list, :download_certificate, :app_form_new, :app_form_new_post, :app_form_upgrade, :app_form_upgrade_post, :app_form_step1, :app_form_step1_presave, :app_form_step2_presave, :app_form_step3_presave, :app_form_step4_presave, :app_form_confirm_post, :app_form_finish, :download_archive]
-  skip_before_filter :require_admin_rights, only: [:list, :get_archive, :get_archive_by_vendor, :get_archive_by_org, :get_archive_by_city, :get_archive_by_country, :get_archive_by_vendor_excl, :get_archive_by_comp, :get_archive_by_comp_attrd, :get_archive_by_attr_dict, :archive, :archive_lists, :archive_by_vendor, :archive_by_org, :archive_by_city, :archive_by_country, :archive_by_vendor_excl, :archive_by_comp, :archive_by_comp_attrd, :archive_by_attr_dict, :show, :stats, :get_ext_stats, :ext_stats, :get_stats_per_list, :stats_per_list, :download_certificate, :app_form_new, :app_form_new_post, :app_form_upgrade, :app_form_upgrade_post, :app_form_step1, :app_form_step1_presave, :app_form_step2_presave, :app_form_step3_presave, :app_form_step4_presave, :app_form_confirm_post, :app_form_finish, :download_archive]
+  skip_before_filter :require_login, only: [:list, :get_archive, :get_archive_by_vendor, :get_archive_by_org, :get_archive_by_city, :get_archive_by_country, :get_archive_by_vendor_excl, :get_archive_by_comp, :get_archive_by_comp_attrd, :get_archive_by_attr_dict, :archive, :archive_lists, :archive_by_vendor, :archive_by_org, :archive_by_city, :archive_by_country, :archive_by_vendor_excl, :archive_by_comp, :archive_by_comp_attrd, :archive_by_attr_dict, :show, :stats, :get_ext_stats, :ext_stats, :get_stats_per_list, :stats_per_list, :download_certificate, :app_form_new, :app_form_new_post, :app_form_upgrade, :app_form_upgrade_post, :app_form_step1, :app_form_step1_presave, :app_form_step2_presave, :app_form_step3_presave, :app_form_step4_presave, :app_form_confirm_post, :app_form_finish, :download_archive, :export_extratings_csv]
+  skip_before_filter :require_admin_rights, only: [:list, :get_archive, :get_archive_by_vendor, :get_archive_by_org, :get_archive_by_city, :get_archive_by_country, :get_archive_by_vendor_excl, :get_archive_by_comp, :get_archive_by_comp_attrd, :get_archive_by_attr_dict, :archive, :archive_lists, :archive_by_vendor, :archive_by_org, :archive_by_city, :archive_by_country, :archive_by_vendor_excl, :archive_by_comp, :archive_by_comp_attrd, :archive_by_attr_dict, :show, :stats, :get_ext_stats, :ext_stats, :get_stats_per_list, :stats_per_list, :download_certificate, :app_form_new, :app_form_new_post, :app_form_upgrade, :app_form_upgrade_post, :app_form_step1, :app_form_step1_presave, :app_form_step2_presave, :app_form_step3_presave, :app_form_step4_presave, :app_form_confirm_post, :app_form_finish, :download_archive, :export_extratings_csv]
   def index
     @top50_machines = Top50Machine.all
   end
@@ -162,7 +163,116 @@ class Top50MachinesController < Top50BaseController
     @perf_measureid = Top50MeasureUnit.where(name_eng: 'MFlop/s').first.id
     @node_platform_attrid = Top50Attribute.where(name_eng: "Node platform").first.id
     @node_platform_vendor_attrid = Top50Attribute.where(name_eng: "Node platform Vendor").first.id
+
+    current_machine_id = params[:id].to_i
+    @related_machine_ids = get_machine_and_predecessors(current_machine_id)
+
     
+
+    @extratings_entries = ExtratingsEntry
+      .where(system_id: @related_machine_ids)
+      .includes(extratings_edition: :extratings_list)
+      .order('extratings_editions.publication_date ASC')
+
+    scores = ExtratingsScore.includes(extratings_list_unit: :extratings_unit)
+      .where(extratings_entry_id: @extratings_entries.pluck(:id))
+
+ 
+    
+    @scores_by_entry_id = scores.group_by(&:extratings_entry_id).transform_values do |scores_array|
+      scores_array.sort_by { |score| score.extratings_list_unit.priority }.map do |score|
+        unit_name = score.extratings_list_unit.extratings_unit.name_ru
+        measure_unit = score.extratings_list_unit.extratings_unit.measure_unit
+        priority = score.extratings_list_unit.priority
+        "#{unit_name}: #{score.score} #{measure_unit}, priority: #{priority}"
+      end.join(",\n")
+    end
+
+    priority_1_scores = scores.select { |score| score.extratings_list_unit&.priority == 1 }
+    @heatmap_date_points = @extratings_entries.map do |entry|
+      next unless entry.extratings_edition && entry.position
+
+      score = priority_1_scores.find { |s| s.extratings_entry_id == entry.id }
+      {
+        x: entry.extratings_edition.publication_date.to_time.to_i * 1000,
+        y: entry.position,
+        value: score&.score || 0,
+        tooltip: "Позиция: #{entry.position}, дата: #{entry.extratings_edition.publication_date.strftime('%d.%m.%Y')}"
+      }
+    end.compact
+
+    @heatmap_score_points = priority_1_scores.map do |score|
+    entry = @extratings_entries.find { |e| e.id == score.extratings_entry_id }
+    next unless entry && entry.position
+
+    {
+      x: score.score,
+      y: entry.position,
+      value: score.score,
+      tooltip: "#{score.extratings_list_unit.extratings_unit.name_ru}: #{score.score} #{score.extratings_list_unit.extratings_unit.measure_unit}, приоритет: #{score.extratings_list_unit.priority}"
+    }
+    end.compact
+
+    def random_color
+      "rgba(#{rand(255)}, #{rand(255)}, #{rand(255)}, 0.7)"
+    end
+
+    @grouped_heatmap_date_points = @extratings_entries.group_by { |e| e.extratings_edition.extratings_list }.map do |list, entries|
+      {
+        name: list.name_ru,
+        color: random_color,
+        data: entries.map do |entry|
+          score = priority_1_scores.find { |s| s.extratings_entry_id == entry.id }
+          {
+            x: entry.extratings_edition.publication_date.to_time.to_i * 1000,
+            y: entry.position,
+            value: score&.score || 0,
+            tooltip: "Позиция: #{entry.position}, дата: #{entry.extratings_edition.publication_date.strftime('%d.%m.%Y')}"
+          }
+        end.compact
+      }
+    end
+    
+    grouped_by_list = @extratings_entries.group_by { |e| e.extratings_edition.extratings_list }
+
+  @grouped_heatmap_score_points = grouped_by_list.map do |list, entries|
+    {
+      name: list.name_ru,
+      color: random_color,
+      data: entries.map do |entry|
+        score = priority_1_scores.find { |s| s.extratings_entry_id == entry.id }
+        next unless score && entry.position
+
+        {
+          x: score.score,
+          y: entry.position,
+          tooltip: "#{score.extratings_list_unit.extratings_unit.name_ru}: #{score.score} #{score.extratings_list_unit.extratings_unit.measure_unit}, приоритет: #{score.extratings_list_unit.priority}"
+        }
+      end.compact
+    }
+    end
+    
+  end
+
+  def get_machine_and_predecessors(machine_id)
+    type_id = Top50RelationType.find_by(name_eng: "Precedes")&.id
+    return [machine_id] unless type_id
+  
+    related_ids = [machine_id]
+    queue = [machine_id]
+  
+    while queue.any?
+      current = queue.shift
+      predecessors = Top50Relation.where(type_id: type_id, sec_obj_id: current).pluck(:prim_obj_id)
+      predecessors.each do |pred_id|
+        unless related_ids.include?(pred_id)
+          related_ids << pred_id
+          queue << pred_id
+        end
+      end
+    end
+  
+    related_ids
   end
   
   def prepare_archive(edition_id)
@@ -1344,6 +1454,148 @@ class Top50MachinesController < Top50BaseController
     @machine_ids    = @machine_ids.transpose
     @machine_status = @machine_status.transpose
     
+    # BEGIN: Histogram data calculation (Процент производительности системы от общей производительности TOP50)
+    @histogram_data = []
+    
+    # Получаем ID бенчмарка Linpack (Rmax - достигнутая производительность)
+    rmax_bench = Top50Benchmark.find_by(name_eng: "Linpack")
+    rpeak_attr = Top50Attribute.find_by(name_eng: "Rpeak (MFlop/s)")
+    
+    if rmax_bench.present? && rpeak_attr.present? && @top50_slists.any?
+      # Для каждой редакции TOP50 (российский рейтинг)
+      @top50_slists.each_with_index do |list, idx|
+        list_date = @edition_labels[idx]
+        
+        # Получаем все машины в списке TOP50 для этой редакции
+        machines_in_list = fetch_archive_list_simple(list.id)
+        machine_ids = machines_in_list.pluck(:id)
+        
+        # Получаем результаты Rmax (достигнутая производительность) для всех машин в списке TOP50
+        rmax_results = Top50BenchmarkResult.where(
+          benchmark_id: rmax_bench.id, 
+          machine_id: machine_ids
+        ).index_by(&:machine_id)
+        
+        # Получаем Rpeak (пиковая производительность) для всех машин в списке TOP50
+        rpeak_results = Top50AttributeValDbval.where(
+          attr_id: rpeak_attr.id,
+          obj_id: machine_ids
+        ).index_by(&:obj_id)
+        
+        # Вычисляем общую достигнутую производительность (Rmax) всех машин в TOP50
+        total_rmax_top50 = rmax_results.values.sum { |result| result.result.to_f }
+        
+        # Вычисляем общую пиковую производительность (Rpeak) всех машин в TOP50
+        total_rpeak_top50 = rpeak_results.values.sum { |result| result.value.to_f }
+        
+        # Находим производительность нашей системы (Rmax и Rpeak)
+        our_machine_ids = life_machine_ids
+        our_rmax = 0
+        our_rpeak = 0
+        
+        our_machine_ids.each do |machine_id|
+          our_rmax += rmax_results[machine_id].result.to_f if rmax_results[machine_id]
+          our_rpeak += rpeak_results[machine_id].value.to_f if rpeak_results[machine_id]
+        end
+        
+        # Вычисляем проценты от достигнутой производительности TOP50
+        rmax_from_rmax_percentage = total_rmax_top50 > 0 ? (our_rmax / total_rmax_top50 * 100).round(2) : 0
+        # Вычисляем проценты от пиковой производительности TOP50
+        rpeak_from_rpeak_percentage = total_rpeak_top50 > 0 ? (our_rpeak / total_rpeak_top50 * 100).round(2) : 0
+        
+        # Добавляем данные для гистограммы только если есть данные и система участвовала в этой редакции
+        if (our_rmax > 0 || our_rpeak > 0)
+          # Получаем номер редакции
+          edition_number = @list_nums.find { |ln| ln.obj_id == list.id }&.value || "?"
+          
+          @histogram_data << {
+            date: list_date,
+            edition_number: edition_number,
+            rmax_from_rmax_percentage: rmax_from_rmax_percentage,
+            rpeak_from_rpeak_percentage: rpeak_from_rpeak_percentage,
+            our_rmax: our_rmax,
+            our_rpeak: our_rpeak,
+            total_rmax: total_rmax_top50,
+            total_rpeak: total_rpeak_top50,
+            list_id: list.id
+          }
+        end
+      end
+      
+      # Данные уже отсортированы в хронологическом порядке (от новых к старым)
+      # Переворачиваем для отображения от старых к новым
+      @histogram_data.reverse!
+    end
+    # END: Histogram data calculation
+    
+  end
+
+  def export_extratings_csv
+    # Получаем данные для экспорта
+    if current_user and current_user.may_preview?
+      @top50_machine = Top50Machine.find(params[:id])
+    else
+      @top50_machine = Top50Machine.where(is_valid: 1).find(params[:id])
+    end
+    
+    current_machine_id = params[:id].to_i
+    @related_machine_ids = get_machine_and_predecessors(current_machine_id)
+    
+    @extratings_entries = ExtratingsEntry
+      .where(system_id: @related_machine_ids)
+      .includes(extratings_edition: :extratings_list)
+      .order('extratings_editions.publication_date ASC')
+    
+    scores = ExtratingsScore.includes(extratings_list_unit: :extratings_unit)
+      .where(extratings_entry_id: @extratings_entries.pluck(:id))
+    
+    @scores_by_entry_id = scores.group_by(&:extratings_entry_id).transform_values do |scores_array|
+      scores_array.sort_by { |score| score.extratings_list_unit.priority }.map do |score|
+        unit_name = score.extratings_list_unit.extratings_unit.name_ru
+        measure_unit = score.extratings_list_unit.extratings_unit.measure_unit
+        priority = score.extratings_list_unit.priority
+        "#{unit_name}: #{score.score} #{measure_unit}, priority: #{priority}"
+      end.join(",\n")
+    end
+    
+    # Генерируем CSV
+    require 'csv'
+    
+    csv_data = CSV.generate(headers: true, encoding: 'UTF-8', col_sep: ';') do |csv|
+      # Заголовки
+      csv << ['Рейтинг', 'ID системы', 'Позиция', 'Редакция', 'Месяц публикации редакции', 'Показатели производительности']
+      
+      # Группируем по рейтингам
+      grouped_by_list = @extratings_entries.group_by { |e| e.extratings_edition.extratings_list }
+      
+      grouped_by_list.each do |list, entries|
+        # Добавляем разделитель с названием рейтинга
+        csv << []
+        csv << [list.name_ru]
+        csv << []
+        
+        # Данные для каждого рейтинга
+        entries.each do |entry|
+          csv << [
+            entry.extratings_edition.extratings_list.name_ru,
+            entry.system_id,
+            entry.position,
+            entry.extratings_edition.edition_number,
+            entry.extratings_edition.publication_date.strftime('%d.%m.%Y'),
+            @scores_by_entry_id[entry.id] || "Нет оценки"
+          ]
+        end
+      end
+    end
+    
+    # Добавляем BOM для корректного отображения кириллицы в Excel
+    csv_data = "\uFEFF" + csv_data
+    
+    # Отправляем файл
+    send_data csv_data,
+      filename: "extratings_#{@top50_machine.name}_#{Date.today}.csv",
+      type: 'text/csv; charset=utf-8',
+      disposition: 'attachment'
   end
 
   def stats_common
@@ -1485,6 +1737,7 @@ class Top50MachinesController < Top50BaseController
     @section_headers["comm_net"] = "семейства коммуникационных сетей"
     @section_headers["comm_net_sep"] = "коммуникационные сети"
     @section_headers["performance_3d_with_machine_status"] = "обновляемость систем (3D)"
+    @section_headers["top50intop500"] = "анализ вхождений участников Top50 в рейтинг Top500"
     @section_headers["heatmap_streaks"] = "количество лет в рейтинге от номера редакции"
     @section_headers["heatmap_rank_vs_years"] = "количество лет в рейтинге от начальной позиции"
     @section_headers["sys_upg"] = "обновляемость систем"
@@ -2272,6 +2525,16 @@ class Top50MachinesController < Top50BaseController
       # else
       #   puts "DEBUG: @debug_machine is still nil!"
       # end
+    elsif @stat_section == 'performance_3d_with_machine_status'
+      prepare_machine_status_surface_data
+      prepare_top500_lifelines
+    elsif @stat_section == 'top50intop500'
+      prepare_machine_status_surface_data
+      prepare_top500_lifelines
+      prepare_top50_top500_charts
+      prepare_top50_top500_candlestick
+      prepare_top50_top500_transition_matrix
+      prepare_top50_top500_combined_surface
     #3 END: my code  
     elsif @stat_section.present? and @stat_section[0..6] == 'vendors'
       @vendors_headers = {}
@@ -4405,6 +4668,1026 @@ class Top50MachinesController < Top50BaseController
     end
   end
 
+  def prepare_machine_status_surface_data
+    return if defined?(@machine_status_prepared) && @machine_status_prepared
+
+    precedes_type_id = Top50RelationType.find_by(name_eng: "Precedes")&.id
+    @prec_machines = precedes_type_id ? Top50Relation.where(type_id: precedes_type_id, is_valid: [1, 2]) : []
+
+    list_date_attr_id = Top50Attribute.find_by(name_eng: "Edition date")&.id
+    date_vals_map = Top50AttributeValDbval
+                      .where(attr_id: list_date_attr_id, obj_id: @top50_slists.map(&:id))
+                      .index_by(&:obj_id)
+
+    @edition_labels = @top50_slists.map do |list|
+      date_vals_map[list.id]&.value || "??.??.????"
+    end
+
+    @edition_labels_for_select = @edition_labels.reverse
+
+    @ranks = (1..50).to_a
+    @z_data = Array.new(50) { [] }
+    @machine_names = Array.new(50) { [] }
+    @machine_status = Array.new(50) { [] }
+    @machine_ids = Array.new(50) { [] }
+    @top50_positions_by_slot ||= Hash.new { |h, k| h[k] = {} }
+
+    rmax_bench_id = Top50Benchmark.find_by(name_eng: "Linpack")&.id
+    all_rmax = Top50BenchmarkResult.where(benchmark_id: rmax_bench_id)
+    rmax_by_machine = all_rmax.index_by(&:machine_id)
+
+    @top50_slists.each_with_index do |list, idx|
+      machines = fetch_archive_list_simple(list.id)
+
+      prev_rated_pos_map = {}
+      if idx + 1 < @top50_slists.size
+        prev_list = @top50_slists[idx + 1]
+        prev_rated_pos = Top50BenchmarkResult.where(benchmark_id: prev_list.id)
+        prev_rated_pos_map = prev_rated_pos.index_by(&:machine_id)
+      end
+
+      machines_with_rmax = machines.map do |machine|
+        rmax = rmax_by_machine[machine.id]
+        status = :new
+
+        prec_rel = @prec_machines.find_by(sec_obj_id: machine.id)
+        if prec_rel.present?
+          prev_machine_id = prec_rel.prim_obj_id
+          if prev_rated_pos_map[prev_machine_id].present?
+            status = :upgrade
+          elsif prev_rated_pos_map[machine.id].present?
+            status = :existing
+          end
+        elsif prev_rated_pos_map[machine.id].present?
+          status = :existing
+        end
+
+        [machine, rmax&.result.to_f || 0.0001, status]
+      end
+
+      top50_sorted = machines_with_rmax.sort_by { |_, rmax, _| -rmax }.first(50)
+
+      rmax_values = top50_sorted.map { |_, rmax, _| (rmax / 1_000_000.0).round(4) }
+      names   = top50_sorted.map { |machine, _, _| machine.name.presence || machine.top50_organization&.name || "н/д" }
+      statuses = top50_sorted.map { |_, _, status| status.to_s }
+      ids     = top50_sorted.map { |machine, _, _| machine.id }
+
+      rmax_values.fill(0.0001, rmax_values.size...50)
+      names.fill("н/д", names.size...50)
+      statuses.fill("none", statuses.size...50)
+      ids.fill(nil, ids.size...50)
+
+      rmax_values.each_with_index { |val, i| @z_data[i] << val }
+      names.each_with_index       { |val, i| @machine_names[i] << val }
+      statuses.each_with_index   { |val, i| @machine_status[i] << val }
+      ids.each_with_index        { |val, i| @machine_ids[i] << val }
+
+      slot_info = slot_info_from_label(@edition_labels[idx])
+      next unless slot_info
+
+      ids.each_with_index do |machine_id, position|
+        next if machine_id.nil?
+        @top50_positions_by_slot[slot_info[:key]][machine_id] = position + 1
+      end
+    end
+
+    @z_data = @z_data.transpose
+    @machine_names = @machine_names.transpose
+    @machine_status = @machine_status.transpose
+    @machine_ids = @machine_ids.transpose
+
+    @machine_status_prepared = true
+  end
+
+  def prepare_top500_lifelines
+    return if defined?(@top500_lifelines_prepared) && @top500_lifelines_prepared
+
+    top500_entries = ExtratingsEntry
+      .joins(extratings_edition: :extratings_list)
+      .where(extratings_lists: { name_eng: 'Top 500' })
+      .includes(extratings_edition: :extratings_list, extratings_scores: { extratings_list_unit: :extratings_unit })
+      .order('extratings_editions.publication_date')
+
+    system_ids = top500_entries.map(&:system_id).compact.uniq
+    machines_map = Top50Machine.where(id: system_ids).index_by(&:id)
+    descendants_cache = {}
+    top500_systems_data = {}
+
+    top500_entries.each do |entry|
+      machine = machines_map[entry.system_id]
+      next unless machine
+
+      descendants = descendants_cache[entry.system_id] ||= get_machine_and_predecessors(entry.system_id)
+
+      system_key = machine.english_name
+      existing = top500_systems_data[system_key]
+      if existing.nil? || descendants.size > existing[:descendants_count]
+        existing = {
+          name: system_key,
+          machine_ids: descendants,
+          descendants_count: descendants.size,
+          entries: []
+        }
+        top500_systems_data[system_key] = existing
+      end
+
+      next unless existing[:machine_ids].include?(entry.system_id)
+
+      publication_date = entry.extratings_edition&.publication_date
+      next unless publication_date
+
+      position = entry.position
+      next unless position
+
+      performance_record = entry.extratings_scores.find { |score| score.extratings_list_unit&.priority == 1 }
+      performance_score = performance_record&.score
+      release_slot = publication_date.month <= 6 ? 0 : 1
+      slot_numeric = publication_date.year + (release_slot.zero? ? 0.25 : 0.75)
+      slot_label = "#{publication_date.year} #{release_slot.zero? ? 'I' : 'II'}"
+      slot_key = "#{publication_date.year}-#{release_slot}"
+      date_iso = publication_date.to_date.iso8601
+      date_label = publication_date.strftime('%d.%m.%Y')
+      existing[:entries] << {
+        year: publication_date.year,
+        date_iso: date_iso,
+        date_label: date_label,
+        slot_numeric: slot_numeric,
+        slot_label: slot_label,
+        slot_key: slot_key,
+        slot_order: release_slot,
+        position: position,
+        performance: performance_score,
+        edition_number: entry.extratings_edition.edition_number,
+        publication_date: publication_date
+      }
+    end
+
+    top500_unique_systems = top500_systems_data.values.map do |data|
+      data[:entries].uniq! { |e| [e[:slot_key], e[:position], e[:performance]] }
+      data[:entries].sort_by! { |e| [e[:slot_numeric], e[:publication_date], e[:position]] }
+      data
+    end
+
+    @top500_unique_systems = top500_unique_systems
+
+    presence_by_slot = {}
+    slot_label_map = {}
+    slot_numeric_map = {}
+
+    top500_unique_systems.each do |system|
+      system[:entries].each do |entry|
+        presence_by_slot[entry[:slot_key]] ||= []
+        presence_by_slot[entry[:slot_key]] |= system[:machine_ids].compact
+        slot_label_map[entry[:slot_key]] = entry[:slot_label]
+        slot_numeric_map[entry[:slot_key]] = entry[:slot_numeric].to_f
+      end
+    end
+
+    @top500_presence_by_slot = presence_by_slot
+    @top500_slot_labels_map = slot_label_map
+    @top500_slot_numeric_map = slot_numeric_map
+
+    @top500_2d_data = top500_unique_systems.map do |system|
+      {
+        name: system[:name],
+        points: system[:entries].map do |e|
+          {
+            x_value: e[:slot_numeric],
+            x_label: e[:slot_label],
+            y: e[:position],
+            label: "#{e[:date_label]} • позиция #{e[:position]}"
+          }
+        end
+      }
+    end
+
+    @top500_3d_data = top500_unique_systems.map do |system|
+      {
+        name: system[:name],
+        points: system[:entries].map do |e|
+          performance = e[:performance]
+          {
+            x: e[:slot_numeric],
+            x_label: e[:slot_label],
+            y: e[:position],
+            z: performance ? performance.to_f : 0,
+            tooltip: "#{system[:name]}<br>Год: #{e[:year]}<br>Позиция: #{e[:position]}<br>Производительность: #{performance ? performance.round(2) : 'н/д'}"
+          }
+        end
+      }
+    end
+
+    plane_points = top500_unique_systems.flat_map do |system|
+      system[:entries].map do |e|
+        {
+          x: e[:slot_numeric].to_f,
+          label: e[:slot_label],
+          y: e[:position].to_f,
+          z: e[:performance] ? e[:performance].to_f : 0.0
+        }
+      end
+    end
+
+    sorted_dates = top500_unique_systems.flat_map { |s| s[:entries] }.
+      map { |e| { numeric: e[:slot_numeric].to_f, label: e[:slot_label] } }.
+      uniq { |h| h[:numeric] }.
+      sort_by { |h| h[:numeric] }
+
+    sorted_positions = top500_unique_systems.flat_map { |s| s[:entries].map { |e| e[:position].to_f } }.
+      uniq.sort
+
+    design_matrix_rows = plane_points.map { |p| [p[:x], p[:y], 1.0] }
+    z_vector_rows = plane_points.map { |p| [p[:z]] }
+
+    if plane_points.size >= 3
+      design_matrix = Matrix.rows(design_matrix_rows)
+      z_vector = Matrix.rows(z_vector_rows)
+      begin
+        coefficients = (design_matrix.transpose * design_matrix).inverse * design_matrix.transpose * z_vector
+        a, b, c = coefficients.column(0).to_a
+      rescue StandardError
+        average_z = plane_points.sum { |p| p[:z] } / plane_points.size.to_f
+        a = 0.0
+        b = 0.0
+        c = average_z
+      end
+    else
+      average_z = plane_points.sum { |p| p[:z] } / [plane_points.size, 1].max.to_f
+      a = 0.0
+      b = 0.0
+      c = average_z
+    end
+
+    plane_x = sorted_dates.map { |d| d[:numeric] }
+    plane_x_labels = sorted_dates.map { |d| d[:label] }
+    plane_y = sorted_positions
+
+    plane_z = plane_y.map do |pos|
+      plane_x.map do |date|
+        (a * date) + (b * pos) + c
+      end
+    end
+
+    heatmap_matrix = plane_y.map do |pos|
+      plane_x.map do |date|
+        entries = @top500_3d_data.flat_map { |system|
+          system[:points].select { |pt| pt[:x] == date && pt[:y] == pos }
+        }
+        entries.first ? entries.first[:z] : nil
+      end
+    end
+
+    @top500_plane = {
+      x: plane_x,
+      x_labels: plane_x_labels,
+      y: plane_y,
+      z: plane_z
+    }
+
+    @top500_heatmap = {
+      x: plane_x_labels,
+      y: plane_y,
+      z: heatmap_matrix
+    }
+
+    @top500_surface_actual = {
+      x: plane_x,
+      x_labels: plane_x_labels,
+      y: plane_y,
+      z: heatmap_matrix
+    }
+
+    @top500_lifelines_prepared = true
+  end
+
+  def prepare_top50_top500_charts
+    return if defined?(@top50_top500_charts_prepared) && @top50_top500_charts_prepared
+
+    top50_presence_by_slot = Hash.new { |h, k| h[k] = [] }
+
+    @edition_labels.each_with_index do |label, idx|
+      slot_info = slot_info_from_label(label)
+      next unless slot_info
+      machine_ids = (@machine_ids[idx] || []).compact
+      next if machine_ids.empty?
+      top50_presence_by_slot[slot_info[:key]] |= machine_ids
+    end
+
+    histogram_points = []
+
+    @edition_labels.each_with_index do |label, idx|
+      slot_info = slot_info_from_label(label)
+      next unless slot_info
+
+      statuses = @machine_status[idx] || []
+      ids = @machine_ids[idx] || []
+      valid_indices = ids.each_index.select { |i| ids[i].present? }
+      total = valid_indices.size
+      next if total.zero?
+
+      upgrade_count = valid_indices.count { |i| statuses[i] == 'upgrade' }
+      top500_ids = (@top500_presence_by_slot[slot_info[:key]] || [])
+      intersection = valid_indices.count { |i| top500_ids.include?(ids[i]) }
+      histogram_points << {
+        slot_numeric: slot_info[:numeric],
+        label: slot_info[:label],
+        updated_percentage: ((upgrade_count.to_f / total) * 100).round(2),
+        top500_percentage: ((intersection.to_f / total) * 100).round(2)
+      }
+    end
+
+    histogram_points.sort_by! { |point| point[:slot_numeric] }
+
+    @top50_top500_histogram = {
+      labels: histogram_points.map { |point| point[:label] },
+      updated_percentages: histogram_points.map { |point| point[:updated_percentage] },
+      top500_percentages: histogram_points.map { |point| point[:top500_percentage] }
+    }
+
+    drop_series = []
+    axis_map = {}
+
+    @top500_unique_systems.each do |system|
+      relevant_entries = system[:entries].select do |entry|
+        top50_ids = top50_presence_by_slot[entry[:slot_key]] || []
+        (top50_ids & system[:machine_ids]).any?
+      end
+
+      next if relevant_entries.size < 2
+
+      sorted_entries = relevant_entries.sort_by { |e| [e[:slot_numeric], e[:position]] }
+
+      x_values = sorted_entries.map { |e| e[:slot_numeric].to_f }
+      y_values = sorted_entries.map { |e| e[:position].to_f }
+      hover_texts = sorted_entries.map do |e|
+        "#{system[:name]}<br>#{e[:slot_label]} • позиция #{e[:position]}"
+      end
+      top50_y_values = []
+      top50_hover = []
+
+      sorted_entries.each do |entry|
+        axis_map[entry[:slot_numeric].to_f] = entry[:slot_label]
+
+        slot_positions = @top50_positions_by_slot[entry[:slot_key]] || {}
+        best_rank = system[:machine_ids].map { |id| slot_positions[id] }.compact.min
+        if best_rank
+          top50_y_values << best_rank.to_f
+          top50_hover << "#{system[:name]}<br>#{entry[:slot_label]} • позиция в Top50 #{best_rank}"
+        else
+          top50_y_values << nil
+          top50_hover << "#{system[:name]}<br>#{entry[:slot_label]} • нет в Top50"
+        end
+      end
+
+      drop_series << {
+        name: system[:name],
+        x: x_values,
+        y: y_values,
+        hover: hover_texts,
+        top50_y: top50_y_values,
+        top50_hover: top50_hover
+      }
+    end
+
+    tickvals = axis_map.keys.sort
+    ticktext = tickvals.map { |val| axis_map[val] }
+
+    @top50_top500_drop_chart = drop_series
+    @top50_top500_drop_axis = {
+      tickvals: tickvals,
+      ticktext: ticktext
+    }
+
+    @top50_top500_charts_prepared = true
+  end
+
+  def prepare_top50_top500_candlestick
+    return if defined?(@top50_top500_candlestick_prepared) && @top50_top500_candlestick_prepared
+
+    top50_presence_by_slot = Hash.new { |h, k| h[k] = [] }
+
+    @edition_labels.each_with_index do |label, idx|
+      slot_info = slot_info_from_label(label)
+      next unless slot_info
+      machine_ids = (@machine_ids[idx] || []).compact
+      next if machine_ids.empty?
+      top50_presence_by_slot[slot_info[:key]] |= machine_ids
+    end
+
+    # Собираем все слоты с их информацией
+    all_slots = []
+    @top50_slists.each_with_index do |list, idx|
+      slot_info = slot_info_from_label(@edition_labels[idx])
+      next unless slot_info
+      all_slots << {
+        slot_key: slot_info[:key],
+        slot_label: slot_info[:label],
+        slot_numeric: slot_info[:numeric],
+        edition_idx: idx
+      }
+    end
+    all_slots.sort_by! { |s| s[:slot_numeric] }
+
+    # Группируем слоты по годам для создания годовых свечей
+    slots_by_year = {}
+    all_slots.each do |slot|
+      year = slot[:slot_key].split('-').first.to_i
+      slots_by_year[year] ||= []
+      slots_by_year[year] << slot
+    end
+
+    # Собираем данные для каждой системы (позиции в Top500)
+    system_position_data = {}
+    
+    @top500_unique_systems.each do |system|
+      system_name = system[:name]
+      system_position_data[system_name] = []
+      
+      # Проверяем, есть ли система в Top50 хотя бы в одном слоте
+      system_in_top50_anywhere = false
+      all_slots.each do |slot|
+        slot_key = slot[:slot_key]
+        top50_ids = top50_presence_by_slot[slot_key] || []
+        if (top50_ids & system[:machine_ids]).any?
+          system_in_top50_anywhere = true
+          break
+        end
+      end
+      next unless system_in_top50_anywhere
+      
+      # Собираем позиции системы в Top500 по слотам
+      system[:entries].each do |entry|
+        slot_key = entry[:slot_key]
+        slot_info = all_slots.find { |s| s[:slot_key] == slot_key }
+        next unless slot_info
+        
+        # Проверяем, есть ли система в Top50 в этом слоте
+        top50_ids = top50_presence_by_slot[slot_key] || []
+        system_in_top50 = (top50_ids & system[:machine_ids]).any?
+        next unless system_in_top50
+        
+        position = entry[:position]
+        next unless position
+        
+        system_position_data[system_name] << {
+          slot_key: slot_key,
+          slot_label: entry[:slot_label],
+          slot_numeric: entry[:slot_numeric],
+          position: position
+        }
+      end
+    end
+
+    # Создаем свечи по кварталам
+    quarter_candles = {}
+    all_slots.each do |slot|
+      period_key = slot[:slot_label]
+      quarter_candles[period_key] ||= { 
+        positions: [], 
+        systems: [],
+        open_positions: [],
+        close_positions: [],
+        all_positions_in_period: []
+      }
+      
+      system_position_data.each do |system_name, positions_data|
+        position_entry = positions_data.find { |r| r[:slot_key] == slot[:slot_key] }
+        next unless position_entry
+        
+        quarter_candles[period_key][:positions] << position_entry[:position]
+        quarter_candles[period_key][:all_positions_in_period] << position_entry[:position]
+        quarter_candles[period_key][:open_positions] << position_entry[:position]
+        quarter_candles[period_key][:close_positions] << position_entry[:position]
+        quarter_candles[period_key][:systems] << system_name unless quarter_candles[period_key][:systems].include?(system_name)
+      end
+    end
+
+    # Создаем свечи по годам
+    year_candles = {}
+    slots_by_year.each do |year, year_slots|
+      year_key = year.to_s
+      sorted_year_slots = year_slots.sort_by { |s| s[:slot_numeric] }
+      year_candles[year_key] ||= { 
+        positions: [], 
+        systems: [], 
+        slots: [],
+        all_positions_in_year: [],
+        first_slot_positions: [],
+        last_slot_positions: []
+      }
+      
+      sorted_year_slots.each_with_index do |slot, idx|
+        system_position_data.each do |system_name, positions_data|
+          position_entry = positions_data.find { |r| r[:slot_key] == slot[:slot_key] }
+          next unless position_entry
+          
+          year_candles[year_key][:positions] << position_entry[:position]
+          year_candles[year_key][:all_positions_in_year] << position_entry[:position]
+          year_candles[year_key][:systems] << system_name unless year_candles[year_key][:systems].include?(system_name)
+          
+          # Собираем позиции для первого и последнего слота года
+          if idx == 0
+            year_candles[year_key][:first_slot_positions] << position_entry[:position]
+          end
+          if idx == sorted_year_slots.size - 1
+            year_candles[year_key][:last_slot_positions] << position_entry[:position]
+          end
+        end
+        year_candles[year_key][:slots] << slot[:slot_numeric]
+      end
+    end
+
+    # Формируем финальные данные для candlestick
+    candlestick_data = []
+    
+    # Добавляем квартальные свечи
+    quarter_candles.each do |period, data|
+      next if data[:positions].empty?
+      
+      # Для квартала: open = лучшая позиция в начале (min), close = худшая позиция в конце (max)
+      # high = лучшая позиция за период (min), low = худшая позиция за период (max)
+      all_positions = data[:all_positions_in_period].compact
+      open_positions = data[:open_positions].compact
+      close_positions = data[:close_positions].compact
+      
+      next if all_positions.empty?
+      
+      candlestick_data << {
+        x: period,
+        open: open_positions.min || all_positions.min,
+        close: close_positions.max || all_positions.max,
+        high: all_positions.min,
+        low: all_positions.max,
+        systems_count: data[:systems].uniq.size,
+        systems: data[:systems].uniq,
+        period_numeric: all_slots.find { |s| s[:slot_label] == period }&.dig(:slot_numeric) || 0,
+        period_type: 'quarter'
+      }
+    end
+
+    # Добавляем годовые свечи
+    year_candles.each do |year, data|
+      next if data[:positions].empty?
+      all_positions = data[:all_positions_in_year].compact
+      next if all_positions.empty?
+      
+      # Для года: open = лучшая позиция в первом квартале, close = худшая позиция в последнем квартале
+      # high = лучшая позиция за год (min), low = худшая позиция за год (max)
+      first_positions = data[:first_slot_positions].compact
+      last_positions = data[:last_slot_positions].compact
+      
+      open_position = first_positions.min || all_positions.min
+      close_position = last_positions.max || all_positions.max
+      
+      candlestick_data << {
+        x: "#{year} (year)",
+        open: open_position,
+        close: close_position,
+        high: all_positions.min,
+        low: all_positions.max,
+        systems_count: data[:systems].uniq.size,
+        systems: data[:systems].uniq,
+        period_numeric: year.to_f,
+        period_type: 'year'
+      }
+    end
+
+    # Сортируем и фильтруем (оставляем только периоды с достаточным количеством данных)
+    @top50_top500_candlestick = candlestick_data
+      .select { |c| c[:systems_count] > 0 }
+      .sort_by { |c| c[:period_numeric] }
+
+    @top50_top500_candlestick_prepared = true
+  end
+
+  def prepare_top50_top500_transition_matrix
+    return if defined?(@top50_top500_transition_matrix_prepared) && @top50_top500_transition_matrix_prepared
+
+    top50_presence_by_slot = Hash.new { |h, k| h[k] = [] }
+
+    @edition_labels.each_with_index do |label, idx|
+      slot_info = slot_info_from_label(label)
+      next unless slot_info
+      machine_ids = (@machine_ids[idx] || []).compact
+      next if machine_ids.empty?
+      top50_presence_by_slot[slot_info[:key]] |= machine_ids
+    end
+
+    # Функция для определения категории по позиции
+    get_rank_category = lambda do |position|
+      return nil unless position
+      case position
+      when 1..10
+        '1-10'
+      when 11..20
+        '11-20'
+      when 21..30
+        '21-30'
+      when 31..40
+        '31-40'
+      when 41..50
+        '41-50'
+      when 51..100
+        '51-100'
+      when 101..200
+        '101-200'
+      when 201..300
+        '201-300'
+      when 301..400
+        '301-400'
+      when 401..500
+        '401-500'
+      else
+        nil
+      end
+    end
+
+    # Собираем последовательности категорий для каждой системы
+    system_transitions = {}
+    
+    @top500_unique_systems.each do |system|
+      # Проверяем, есть ли система в Top50 хотя бы в одном слоте
+      system_in_top50_anywhere = false
+      system[:entries].each do |entry|
+        slot_key = entry[:slot_key]
+        top50_ids = top50_presence_by_slot[slot_key] || []
+        if (top50_ids & system[:machine_ids]).any?
+          system_in_top50_anywhere = true
+          break
+        end
+      end
+      next unless system_in_top50_anywhere
+
+      # Собираем категории по периодам
+      categories_by_slot = {}
+      system[:entries].each do |entry|
+        slot_key = entry[:slot_key]
+        position = entry[:position]
+        next unless position
+
+        # Проверяем, есть ли система в Top50 в этом слоте
+        top50_ids = top50_presence_by_slot[slot_key] || []
+        system_in_top50 = (top50_ids & system[:machine_ids]).any?
+        next unless system_in_top50
+
+        category = get_rank_category.call(position)
+        next unless category
+
+        slot_numeric = entry[:slot_numeric]
+        categories_by_slot[slot_numeric] = {
+          category: category,
+          slot_key: slot_key,
+          slot_label: entry[:slot_label],
+          position: position
+        }
+      end
+
+      # Сортируем по slot_numeric и находим переходы
+      sorted_slots = categories_by_slot.keys.sort
+      next if sorted_slots.size < 2
+
+      system_name = system[:name]
+      system_transitions[system_name] = []
+
+      (0...sorted_slots.size - 1).each do |i|
+        from_slot = sorted_slots[i]
+        to_slot = sorted_slots[i + 1]
+        
+        from_data = categories_by_slot[from_slot]
+        to_data = categories_by_slot[to_slot]
+        
+        next unless from_data && to_data
+
+        # Извлекаем год из slot_key для фильтрации по периодам
+        year_from_slot = from_data[:slot_key].split('-').first.to_i
+        
+        system_transitions[system_name] << {
+          from: from_data[:category],
+          to: to_data[:category],
+          from_slot: from_data[:slot_label],
+          to_slot: to_data[:slot_label],
+          from_position: from_data[:position],
+          to_position: to_data[:position],
+          year: year_from_slot,
+          slot_numeric: from_slot,
+          system: system_name
+        }
+      end
+    end
+
+    # Определяем все возможные категории
+    all_categories = ['1-10', '11-20', '21-30', '31-40', '41-50', '51-100', '101-200', '201-300', '301-400', '401-500']
+    
+    # Строим матрицу переходов (агрегированную по всем годам)
+    transition_matrix = {}
+    transition_counts = {}
+    transition_details = {} # Детали переходов: какие системы, с каких позиций
+    
+    all_categories.each do |from_cat|
+      transition_matrix[from_cat] = {}
+      transition_counts[from_cat] = {}
+      transition_details[from_cat] = {}
+      all_categories.each do |to_cat|
+        transition_matrix[from_cat][to_cat] = 0
+        transition_counts[from_cat][to_cat] = 0
+        transition_details[from_cat][to_cat] = []
+      end
+    end
+
+    # Подсчитываем переходы и сохраняем детали
+    yearly_transition_counts = Hash.new { |h, year| h[year] = Hash.new { |h2, from_cat| h2[from_cat] = Hash.new(0) } }
+    yearly_totals = Hash.new { |h, year| h[year] = Hash.new(0) }
+
+    system_transitions.each do |system_name, transitions|
+      transitions.each do |transition|
+        from = transition[:from]
+        to = transition[:to]
+        next unless from && to
+        
+        transition_counts[from][to] += 1
+        transition_details[from][to] << {
+          system: system_name,
+          from_position: transition[:from_position],
+          to_position: transition[:to_position],
+          from_slot: transition[:from_slot],
+          to_slot: transition[:to_slot],
+          year: transition[:year],
+          slot_numeric: transition[:slot_numeric]
+        }
+
+        # Для "куба переходов" также считаем помесячно/помесячно-годовые матрицы.
+        # В качестве оси "год" используем год начала перехода (from_slot).
+        from_slot_label = transition[:from_slot].to_s
+        year_str = from_slot_label.split(' ').first
+        year = year_str.to_i
+        next if year.zero?
+
+        yearly_transition_counts[year][from][to] += 1
+        yearly_totals[year][from] += 1
+      end
+    end
+
+    # Вычисляем вероятности (нормализуем по строкам)
+    all_categories.each do |from_cat|
+      total_from = transition_counts[from_cat].values.sum
+      next if total_from.zero?
+
+      all_categories.each do |to_cat|
+        count = transition_counts[from_cat][to_cat]
+        probability = total_from > 0 ? (count.to_f / total_from * 100).round(2) : 0
+        transition_matrix[from_cat][to_cat] = probability
+      end
+    end
+
+    # Формируем данные для heatmap
+    matrix_data = []
+    all_categories.each do |from_cat|
+      row = []
+      all_categories.each do |to_cat|
+        row << transition_matrix[from_cat][to_cat]
+      end
+      matrix_data << row
+    end
+
+    # Также сохраняем количество переходов для отображения
+    count_matrix_data = []
+    all_categories.each do |from_cat|
+      row = []
+      all_categories.each do |to_cat|
+        row << transition_counts[from_cat][to_cat]
+      end
+      count_matrix_data << row
+    end
+
+    # Формируем детали переходов для передачи в JSON
+    transition_details_json = {}
+    all_categories.each do |from_cat|
+      transition_details_json[from_cat] = {}
+      all_categories.each do |to_cat|
+        transition_details_json[from_cat][to_cat] = transition_details[from_cat][to_cat]
+      end
+    end
+
+    # Строим "куб переходов" по годам: для каждого года своя матрица вероятностей
+    yearly_probability_cubes = {}
+    years_sorted = yearly_transition_counts.keys.sort
+
+    years_sorted.each do |year|
+      year_matrix = []
+      all_categories.each do |from_cat|
+        row = []
+        all_categories.each do |to_cat|
+          total_from = yearly_totals[year][from_cat]
+          count = yearly_transition_counts[year][from_cat][to_cat]
+          probability = total_from.positive? ? (count.to_f / total_from * 100).round(2) : 0.0
+          row << probability
+        end
+        year_matrix << row
+      end
+      yearly_probability_cubes[year] = year_matrix
+    end
+
+    # Сохраняем все переходы с годами для фильтрации на клиенте
+    all_transitions = []
+    system_transitions.each do |system_name, transitions|
+      transitions.each do |transition|
+        all_transitions << transition
+      end
+    end
+    
+    # Находим минимальный и максимальный годы
+    all_years = all_transitions.map { |t| t[:year] }.compact.uniq.sort
+    min_year = all_years.first || Time.now.year
+    max_year = all_years.last || Time.now.year
+
+    @top50_top500_transition_matrix = {
+      categories: all_categories,
+      probability_matrix: matrix_data,
+      count_matrix: count_matrix_data,
+      transition_details: transition_details_json,
+      total_transitions: system_transitions.values.map(&:size).sum,
+      systems_count: system_transitions.keys.size,
+      years: years_sorted,
+      yearly_probability_cubes: yearly_probability_cubes,
+      all_transitions: all_transitions,
+      min_year: min_year,
+      max_year: max_year
+    }
+
+    @top50_top500_transition_matrix_prepared = true
+  end
+
+  def prepare_top50_top500_combined_surface
+    return if defined?(@top50_top500_combined_surface_prepared) && @top50_top500_combined_surface_prepared
+
+    # Получаем позиции систем в Top50 по слотам
+    top50_positions_by_slot = {}
+    top50_presence_by_slot = Hash.new { |h, k| h[k] = [] }
+
+    @edition_labels.each_with_index do |label, idx|
+      slot_info = slot_info_from_label(label)
+      next unless slot_info
+      machine_ids = (@machine_ids[idx] || []).compact
+      next if machine_ids.empty?
+      
+      top50_presence_by_slot[slot_info[:key]] |= machine_ids
+      
+      # Сохраняем позиции машин в Top50 для этого слота
+      machine_ids.each_with_index do |machine_id, pos|
+        next if machine_id.nil?
+        top50_positions_by_slot[slot_info[:key]] ||= {}
+        top50_positions_by_slot[slot_info[:key]][machine_id] = pos + 1
+      end
+    end
+
+    # Собираем данные для всех систем из Top500
+    combined_points = []
+    systems_data = []
+
+    @top500_unique_systems.each do |system|
+      system_points = []
+      
+      system[:entries].each do |entry|
+        slot_key = entry[:slot_key]
+        slot_numeric = entry[:slot_numeric]
+        slot_label = entry[:slot_label]
+        top500_position = entry[:position]
+        
+        # Проверяем, была ли система в Top50 в этом слоте
+        top50_position = nil
+        system[:machine_ids].each do |machine_id|
+          if top50_positions_by_slot[slot_key] && top50_positions_by_slot[slot_key][machine_id]
+            top50_position = top50_positions_by_slot[slot_key][machine_id]
+            break
+          end
+        end
+        
+        # Добавляем точку только если система была в Top500
+        if top500_position
+          point = {
+            x: slot_numeric.to_f,
+            x_label: slot_label,
+            y: top50_position ? top50_position.to_f : nil,
+            z: top500_position.to_f,
+            system_name: system[:name],
+            tooltip: "#{system[:name]}<br>Период: #{slot_label}<br>Позиция в Top50: #{top50_position || 'не входит в Top50'}<br>Позиция в Top500: #{top500_position}"
+          }
+          
+          system_points << point
+          combined_points << point if top50_position # Добавляем в общий массив только если есть позиция в Top50
+        end
+      end
+      
+      if system_points.any?
+        systems_data << {
+          name: system[:name],
+          points: system_points
+        }
+      end
+    end
+
+    # Создаем сетку для поверхности на основе всех реальных точек
+    # Используем все уникальные значения x и y из реальных точек
+    sorted_dates = combined_points.map { |p| { numeric: p[:x], label: p[:x_label] } }
+      .uniq { |h| h[:numeric] }
+      .sort_by { |h| h[:numeric] }
+    
+    # Для y используем все уникальные позиции в Top50 из реальных точек
+    sorted_top50_positions = combined_points.map { |p| p[:y] }
+      .compact
+      .uniq
+      .sort
+
+    # Создаем матрицу для поверхности (x - период, y - позиция в Top50, z - позиция в Top500)
+    surface_x = sorted_dates.map { |d| d[:numeric] }
+    surface_x_labels = sorted_dates.map { |d| d[:label] }
+    surface_y = sorted_top50_positions
+    
+    # Заполняем матрицу z значениями из реальных точек
+    # Для каждой комбинации (x, y) находим соответствующую точку или интерполируем
+    tolerance = 0.001
+    
+    surface_z = surface_y.map do |top50_pos|
+      surface_x.map do |date|
+        # Ищем точку с точно таким же x и y (с учетом погрешности для чисел с плавающей точкой)
+        exact_match = combined_points.find { |p| 
+          p[:y] && (p[:x] - date).abs < tolerance && (p[:y] - top50_pos).abs < tolerance
+        }
+        
+        if exact_match
+          # Используем точное значение из точки
+          exact_match[:z]
+        else
+          # Если точного совпадения нет, ищем ближайшие точки для интерполяции
+          # Находим точки с таким же x или таким же y
+          same_x_points = combined_points.select { |p| p[:y] && (p[:x] - date).abs < tolerance }
+          same_y_points = combined_points.select { |p| p[:y] && (p[:y] - top50_pos).abs < tolerance }
+          
+          if same_x_points.any? || same_y_points.any?
+            # Используем взвешенную интерполяцию
+            candidates = []
+            
+            # Добавляем точки с тем же x
+            same_x_points.each do |p|
+              dist_y = (p[:y] - top50_pos).abs
+              weight = 1.0 / (dist_y * dist_y + 0.1)
+              candidates << { z: p[:z], weight: weight }
+            end
+            
+            # Добавляем точки с тем же y
+            same_y_points.each do |p|
+              dist_x = (p[:x] - date).abs
+              weight = 1.0 / (dist_x * dist_x + 0.1)
+              candidates << { z: p[:z], weight: weight }
+            end
+            
+            if candidates.any?
+              total_weight = candidates.sum { |c| c[:weight] }
+              weighted_z = candidates.sum { |c| c[:z] * c[:weight] } / total_weight
+              weighted_z
+            else
+              nil
+            end
+          else
+            nil
+          end
+        end
+      end
+    end
+
+    @top50_top500_combined_surface = {
+      systems: systems_data,
+      surface: {
+        x: surface_x,
+        x_labels: surface_x_labels,
+        y: surface_y,
+        z: surface_z
+      },
+      points: combined_points
+    }
+
+    @top50_top500_combined_surface_prepared = true
+  end
+
+  def slot_info_from_label(label)
+    return nil if label.blank?
+
+    parts = label.split('.')
+    return nil unless parts.size == 3
+
+    day = parts[0].to_i
+    month = parts[1].to_i
+    year = parts[2].to_i
+    return nil if year.zero? || month.zero? || day.zero?
+
+    release_slot = month <= 6 ? 0 : 1
+    {
+      key: "#{year}-#{release_slot}",
+      label: "#{year} #{release_slot.zero? ? 'I' : 'II'}",
+      numeric: year + (release_slot.zero? ? 0.25 : 0.75)
+    }
+  end
+  
   def top50machine_params
     params.require(:top50_machine).permit(:name, :name_eng, :website, :type_id, :org_id, :vendor_id, :vendor_ids, :contact_id, :installation_date, :start_date, :end_date, :is_valid, :comment)
   end

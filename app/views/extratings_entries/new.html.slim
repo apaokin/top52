@@ -1,0 +1,312 @@
+.container.mt-4
+  .card
+    .card-header.bg-primary.text-white
+      h5.mb-0 Добавление вхождения системы в рейтинг
+
+    .card-body
+      = form_for @extratings_entry, html: { class: 'needs-validation g-3', novalidate: true } do |f|
+        = hidden_field_tag :authenticity_token, form_authenticity_token
+        .row.mb-4
+          .col-md-6.mb-3.mb-md-0
+            = f.label :system_id, "Система", class: 'form-label fw-bold'
+            = f.select :system_id,
+                      options_for_select(@systems.map { |s| ["#{s.display_name} (#{s.machine_id})", s.relation_id] }),
+                      { prompt: "Выберите систему..." },
+                      class: 'form-select', required: true
+            .invalid-feedback Пожалуйста, выберите систему
+
+          .col-md-6.mb-3.mb-md-0
+            = label_tag :extratings_list_id, "Лист рейтинга", class: 'form-label fw-bold'
+            = select_tag :extratings_list_id,
+                        options_from_collection_for_select(@extratings_lists, :id, :name_eng),
+                        { prompt: "Выберите лист...", class: 'form-select', required: true }
+            .invalid-feedback Пожалуйста, выберите лист рейтинга
+
+            - if current_user and current_user.may_edit_top50?
+              = link_to "Добавить новый рейтинг", new_extratings_list_path, class: 'btn btn-outline-primary mt-2'
+              = " "
+              = link_to "Управление рейтингом", "#", id: "manage-selected-rating-link", class: "btn btn-outline-danger mt-2 disabled", aria: { disabled: "true" }
+
+        .row.mb-4
+          .col-md-4.mb-3.mb-md-0
+            = label_tag :edition_number, "Номер редакции", class: 'form-label fw-bold'
+            = number_field_tag :edition_number, nil, class: 'form-control', required: true
+            .invalid-feedback Пожалуйста, укажите номер
+
+          .col-md-4.mb-3.mb-md-0
+            = label_tag :publication_date, "Дата публикации", class: 'form-label fw-bold'
+            = date_field_tag :publication_date, Date.today, class: 'form-control', required: true
+            .invalid-feedback Пожалуйста, укажите дату
+
+          .col-md-4
+            = f.label :position, "Позиция", class: 'form-label fw-bold'
+            = f.number_field :position, class: 'form-control', required: true
+            .invalid-feedback Пожалуйста, укажите позицию
+
+        #units-list.mb-4
+          / Поля для оценок будут подгружаться здесь
+
+        .d-flex.justify-content-end
+          = link_to "Отмена", extratings_entries_path, class: 'btn btn-outline-secondary me-2'
+          = f.submit "Сохранить", class: 'btn btn-primary'
+
+javascript:
+  document.addEventListener("DOMContentLoaded", () => {
+    // Добавляем CSRF токен для AJAX запросов
+    const token = document.querySelector('meta[name="csrf-token"]');
+    if (token) {
+      $.ajaxSetup({
+        beforeSend: function(xhr) {
+          xhr.setRequestHeader('X-CSRF-Token', token.getAttribute('content'));
+        }
+      });
+    }
+    
+    const form = document.querySelector('.needs-validation');
+    const manageSelectedRatingLink = document.getElementById('manage-selected-rating-link');
+
+    function updateManageRatingLink() {
+      if (!manageSelectedRatingLink) {
+        return;
+      }
+
+      const selectedListId = listSelect ? listSelect.value : '';
+      if (selectedListId) {
+        manageSelectedRatingLink.href = `/extratings_lists/${selectedListId}/edit`;
+        manageSelectedRatingLink.classList.remove('disabled');
+        manageSelectedRatingLink.setAttribute('aria-disabled', 'false');
+      } else {
+        manageSelectedRatingLink.href = '#';
+        manageSelectedRatingLink.classList.add('disabled');
+        manageSelectedRatingLink.setAttribute('aria-disabled', 'true');
+      }
+    }
+
+    form.addEventListener('submit', function(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      
+      let isValid = form.checkValidity();
+      const validationErrors = [];
+      
+      const unitsDiv = document.getElementById("units-list");
+      if (unitsDiv) {
+        // Ищем все поля для scores и selected_units
+        const scoreInputs = unitsDiv.querySelectorAll('input[name^="scores["]');
+        const unitSelects = unitsDiv.querySelectorAll('select[name^="selected_units["]');
+        
+        // Проверяем, что есть хотя бы одна пара полей
+        if (scoreInputs.length === 0 && unitSelects.length === 0) {
+          const listSelect = document.querySelector('select[name="extratings_list_id"]');
+          if (listSelect && listSelect.value) {
+            validationErrors.push('Пожалуйста, дождитесь загрузки параметров рейтинга');
+            isValid = false;
+          }
+        }
+        
+        scoreInputs.forEach(input => {
+          if (!input.value || input.value.trim() === '') {
+            input.classList.add('is-invalid');
+            isValid = false;
+            validationErrors.push(`Не указано значение для ${input.name}`);
+          } else {
+            input.classList.remove('is-invalid');
+          }
+        });
+        
+        unitSelects.forEach(select => {
+          if (!select.value || select.value === '') {
+            select.classList.add('is-invalid');
+            isValid = false;
+            validationErrors.push(`Не выбрана единица измерения для ${select.name}`);
+          } else {
+            select.classList.remove('is-invalid');
+          }
+        });
+      }
+      
+      // Проверяем основные поля
+      const systemSelect = form.querySelector('select[name="extratings_entry[system_id]"]');
+      if (!systemSelect || !systemSelect.value) {
+        isValid = false;
+        validationErrors.push('Не выбрана система');
+      }
+      
+      const listSelect = form.querySelector('select[name="extratings_list_id"]');
+      if (!listSelect || !listSelect.value) {
+        isValid = false;
+        validationErrors.push('Не выбран лист рейтинга');
+      }
+      
+      const editionNumber = form.querySelector('input[name="edition_number"]');
+      if (!editionNumber || !editionNumber.value) {
+        isValid = false;
+        validationErrors.push('Не указан номер редакции');
+      }
+      
+      const publicationDate = form.querySelector('input[name="publication_date"]');
+      if (!publicationDate || !publicationDate.value) {
+        isValid = false;
+        validationErrors.push('Не указана дата публикации');
+      }
+      
+      const position = form.querySelector('input[name="extratings_entry[position]"]');
+      if (!position || !position.value) {
+        isValid = false;
+        validationErrors.push('Не указана позиция');
+      }
+      
+      if (validationErrors.length > 0) {
+        console.log('Ошибки валидации:', validationErrors);
+        showValidationError('Пожалуйста, заполните все обязательные поля: ' + validationErrors.join(', '));
+        form.classList.add('was-validated');
+        return;
+      }
+      
+      if (isValid) {
+        // Отправляем форму через AJAX используя jQuery
+        const formData = new FormData(form);
+        
+        // Добавляем CSRF токен
+        const csrfToken = document.querySelector('meta[name="csrf-token"]');
+        if (csrfToken) {
+          formData.append('authenticity_token', csrfToken.getAttribute('content'));
+        }
+        
+        // Логируем данные для отладки
+        console.log('Отправка формы:', {
+          url: form.action,
+          formData: Object.fromEntries(formData.entries())
+        });
+        
+        $.ajax({
+          url: form.action,
+          type: 'POST',
+          data: formData,
+          processData: false,
+          contentType: false,
+          dataType: 'script',
+          success: function(data, textStatus, jqXHR) {
+            // Обработка успешной отправки - ответ будет выполнен как JavaScript
+            console.log('Форма успешно отправлена');
+            // JavaScript код из create.js.erb будет выполнен автоматически
+          },
+          error: function(jqXHR, textStatus, errorThrown) {
+            console.error('Ошибка отправки формы:', errorThrown);
+            console.error('Response:', jqXHR.responseText);
+            // Если сервер вернул JavaScript с ошибкой, выполним его
+            if (jqXHR.responseText) {
+              try {
+                eval(jqXHR.responseText);
+              } catch (e) {
+                console.error('Ошибка выполнения ответа:', e);
+                showValidationError('Ошибка отправки формы. Пожалуйста, попробуйте еще раз.');
+              }
+            } else {
+              showValidationError('Ошибка отправки формы. Пожалуйста, попробуйте еще раз.');
+            }
+          }
+        });
+      } else {
+        showValidationError('Пожалуйста, заполните все обязательные поля');
+      }
+      
+      if (!isValid) {
+        form.classList.add('was-validated');
+      }
+    }, false);
+    
+    function showValidationError(message) {
+
+      const existingError = document.querySelector('.validation-error-alert');
+      if (existingError) {
+        existingError.remove();
+      }
+      
+      const errorDiv = document.createElement('div');
+      errorDiv.className = 'alert alert-danger validation-error-alert';
+      errorDiv.innerHTML = '<strong>Ошибка валидации:</strong> ' + message;
+      
+      const cardBody = document.querySelector('.card-body');
+      cardBody.insertBefore(errorDiv, cardBody.firstChild);
+      
+      errorDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    const listSelect = document.querySelector('select[name="extratings_list_id"]');
+    const unitsDiv = document.getElementById("units-list");
+
+    updateManageRatingLink();
+
+    listSelect.addEventListener("change", () => {
+      updateManageRatingLink();
+      const listId = listSelect.value;
+      unitsDiv.innerHTML = `
+        <div class="text-center py-4">
+          <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Загрузка...</span>
+          </div>
+          <p class="mt-2">Загрузка параметров рейтинга...</p>
+        </div>
+      `;
+
+      if (!listId) {
+        unitsDiv.innerHTML = '';
+        return;
+      }
+
+      fetch(`/extratings_entries/list_units?list_id=${listId}`, {
+        headers: { "Accept": "application/json" }
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.length === 0) {
+          unitsDiv.innerHTML = '<div class="alert alert-info">Для выбранного рейтинга нет параметров оценки</div>';
+          return;
+        }
+
+        const unitGroups = {};
+        data.forEach(unit => {
+          if (!unitGroups[unit.unit_name]) unitGroups[unit.unit_name] = [];
+          unitGroups[unit.unit_name].push(unit);
+        });
+
+        let html = `
+          <div class="card mb-4">
+            <div class="card-header bg-light">
+              <h6 class="mb-0">Параметры оценки</h6>
+            </div>
+            <div class="card-body">
+              <div class="row g-4">
+        `;
+
+        Object.entries(unitGroups).forEach(([name, units]) => {
+          html += `
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label class="form-label">${name}</label>
+                <div class="input-group">
+                  <select class="form-select" name="selected_units[${name}]" required>
+                    <option value="">Выберите единицу...</option>
+                    ${units.map(u => `<option value="${u.id}">${u.measure_unit}</option>`).join('')}
+                  </select>
+                  <input type="number"
+                         name="scores[${name}]"
+                         class="form-control"
+                         placeholder="Введите значение"
+                         step="any"
+                         required>
+                </div>
+              </div>
+            </div>
+          `;
+        });
+
+        html += `</div></div></div>`;
+        unitsDiv.innerHTML = html;
+      })
+      .catch(() => {
+        unitsDiv.innerHTML = '<div class="alert alert-danger">Ошибка загрузки параметров</div>';
+      });
+    });
+  });

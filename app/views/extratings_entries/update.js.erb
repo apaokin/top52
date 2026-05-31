@@ -1,0 +1,25 @@
+<% if defined?(error) && error.present? %>
+  $('#entryEditModal .modal-body').html(`
+    <div class="alert alert-danger">
+      <h6>Ошибка обновления записи</h6>
+      <p><%= error %></p>
+      <button class="btn btn-secondary" onclick="location.reload()">Закрыть</button>
+    </div>
+  `);
+<% else %>
+  $('#entryEditModal').modal('hide');
+  
+  const alertHtml = `
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+      <strong>Успешно!</strong> Запись рейтинга была обновлена.
+      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+  `;
+  
+  const container = $('.container').length ? $('.container') : $('body');
+  container.prepend(alertHtml);
+  
+  setTimeout(() => {
+    location.reload();
+  }, 1500);
+<% end %>

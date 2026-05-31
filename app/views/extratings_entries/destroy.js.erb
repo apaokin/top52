@@ -1,0 +1,21 @@
+<% if defined?(error) && error.present? %>
+  // Показываем ошибку
+  alert('<%= j error %>');
+<% else %>
+  // Удаляем строку из таблицы
+  $('#entry-<%= @extratings_entry.id %>').fadeOut(300, function() {
+    $(this).remove();
+  });
+  
+  // Показываем уведомление об успешном удалении
+  if (typeof showNotification === 'function') {
+    showNotification('Запись успешно удалена', 'success');
+  } else {
+    // Простое уведомление если функция showNotification не определена
+    $('body').append('<div class="alert alert-success alert-dismissible" style="position: fixed; top: 20px; right: 20px; z-index: 9999;"><button type="button" class="close" data-dismiss="alert">&times;</button>Запись успешно удалена</div>');
+    setTimeout(function() {
+      $('.alert-success').fadeOut();
+    }, 3000);
+  }
+<% end %>
+

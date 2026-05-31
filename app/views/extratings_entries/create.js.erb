@@ -1,0 +1,21 @@
+<% if flash[:alert].present? %>
+  // Показываем ошибку валидации
+  const existingError = document.querySelector('.validation-error-alert');
+  if (existingError) {
+    existingError.remove();
+  }
+  
+  const errorDiv = document.createElement('div');
+  errorDiv.className = 'alert alert-danger validation-error-alert';
+  errorDiv.innerHTML = '<strong>Ошибка валидации:</strong> <%= j flash[:alert] %>';
+  
+  const cardBody = document.querySelector('.card-body');
+  if (cardBody) {
+    cardBody.insertBefore(errorDiv, cardBody.firstChild);
+    errorDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+<% else %>
+  // Успешное создание - перенаправляем на страницу системы
+  window.location.href = '<%= top50_machines_show_path(@extratings_entry.system_id) %>';
+<% end %>
+
