@@ -1536,7 +1536,7 @@ class Top50MachinesController < Top50BaseController
     
     csv_data = CSV.generate(headers: true, encoding: 'UTF-8', col_sep: ';') do |csv|
       # Заголовки
-      csv << ['Рейтинг', 'Позиция', 'Редакция', 'Месяц публикации редакции', 'Показатели производительности']
+      csv << ['Рейтинг', 'ID системы', 'Позиция', 'Редакция', 'Месяц публикации редакции', 'Показатели производительности']
       
       # Группируем по рейтингам
       grouped_by_list = @extratings_entries.group_by { |e| e.extratings_edition.extratings_list }
@@ -1551,6 +1551,7 @@ class Top50MachinesController < Top50BaseController
         entries.each do |entry|
           csv << [
             entry.extratings_edition.extratings_list.name_ru,
+            entry.system_id,
             entry.position,
             entry.extratings_edition.edition_number,
             entry.extratings_edition.publication_date.strftime('%d.%m.%Y'),
