@@ -4,7 +4,7 @@
       h5.mb-0 Добавление вхождения системы в рейтинг
 
     .card-body
-      = form_for @extratings_entry, html: { class: 'needs-validation g-3', novalidate: true }, remote: true do |f|
+      = form_for @extratings_entry, html: { class: 'needs-validation g-3', novalidate: true } do |f|
         = hidden_field_tag :authenticity_token, form_authenticity_token
         .row.mb-4
           .col-md-6.mb-3.mb-md-0
@@ -24,6 +24,8 @@
 
             - if current_user and current_user.may_edit_top50?
               = link_to "Добавить новый рейтинг", new_extratings_list_path, class: 'btn btn-outline-primary mt-2'
+              = " "
+              = link_to "Управление рейтингом", "#", id: "manage-selected-rating-link", class: "btn btn-outline-danger mt-2 disabled", aria: { disabled: "true" }
 
         .row.mb-4
           .col-md-4.mb-3.mb-md-0
@@ -61,6 +63,25 @@ javascript:
     }
     
     const form = document.querySelector('.needs-validation');
+    const manageSelectedRatingLink = document.getElementById('manage-selected-rating-link');
+
+    function updateManageRatingLink() {
+      if (!manageSelectedRatingLink) {
+        return;
+      }
+
+      const selectedListId = listSelect ? listSelect.value : '';
+      if (selectedListId) {
+        manageSelectedRatingLink.href = `/extratings_lists/${selectedListId}/edit`;
+        manageSelectedRatingLink.classList.remove('disabled');
+        manageSelectedRatingLink.setAttribute('aria-disabled', 'false');
+      } else {
+        manageSelectedRatingLink.href = '#';
+        manageSelectedRatingLink.classList.add('disabled');
+        manageSelectedRatingLink.setAttribute('aria-disabled', 'true');
+      }
+    }
+
     form.addEventListener('submit', function(event) {
       event.preventDefault();
       event.stopPropagation();
@@ -215,7 +236,10 @@ javascript:
     const listSelect = document.querySelector('select[name="extratings_list_id"]');
     const unitsDiv = document.getElementById("units-list");
 
+    updateManageRatingLink();
+
     listSelect.addEventListener("change", () => {
+      updateManageRatingLink();
       const listId = listSelect.value;
       unitsDiv.innerHTML = `
         <div class="text-center py-4">

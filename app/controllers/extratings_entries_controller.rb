@@ -49,14 +49,14 @@ class ExtratingsEntriesController < Top50BaseController
 
     respond_to do |format|
       format.html { redirect_to top50_machines_show_path(@extratings_entry.system_id), notice: "Запись рейтинга и оценки успешно созданы." }
-      format.js { redirect_to top50_machines_show_path(@extratings_entry.system_id), notice: "Запись рейтинга и оценки успешно созданы." }
+      format.js
     end
   rescue ActiveRecord::RecordInvalid => e
     flash.now[:alert] = "Ошибка создания записи: #{e.message}"
     new
     respond_to do |format|
       format.html { render :new }
-      format.js { render :new }
+      format.js { render :create, status: :unprocessable_entity }
     end
   rescue => e
     flash.now[:alert] = "Ошибка создания записи: #{e.message}"
@@ -64,7 +64,7 @@ class ExtratingsEntriesController < Top50BaseController
     new
     respond_to do |format|
       format.html { render :new }
-      format.js { render :new }
+      format.js { render :create, status: :unprocessable_entity }
     end
   end
 
@@ -206,7 +206,7 @@ class ExtratingsEntriesController < Top50BaseController
     new
     respond_to do |format|
       format.html { render :new }
-      format.js { render :new }
+      format.js { render :create, status: :unprocessable_entity }
     end
   end
 
